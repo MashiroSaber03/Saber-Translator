@@ -90,10 +90,11 @@ export function createChapterExportJob(
   format: 'cbz' | 'pdf' | 'zip',
   preserveOriginalFilenames: boolean,
   pageIds?: string[],
+  imageFormat: 'jpeg' | 'png' = 'jpeg',
 ): Promise<V2TranslationBatchAccepted> {
   return apiClient.post<V2TranslationBatchAccepted>(
     `/api/v2/chapters/${encodeURIComponent(chapterId)}/export-jobs`,
-    { format, preserveOriginalFilenames, ...(pageIds ? { pageIds } : {}) },
+    { format, preserveOriginalFilenames, imageFormat, ...(pageIds ? { pageIds } : {}) },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }

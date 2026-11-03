@@ -697,6 +697,7 @@ describe('bookshelf detail child components', () => {
     expect(createExportSpy).toHaveBeenCalledWith(
       ['chapter-1', 'chapter-2'],
       true,
+      'jpeg',
     )
     expect(openSpy).toHaveBeenCalledWith({ batchId: 'batch-export' })
     expect(downloadSpy).toHaveBeenCalledWith(

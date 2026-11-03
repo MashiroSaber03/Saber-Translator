@@ -438,7 +438,7 @@ describe('BookshelfView', () => {
     await button?.trigger('click')
     await flushPromises()
 
-    expect(createBooksExportJobMock).toHaveBeenCalledWith(['book-1'], false)
+    expect(createBooksExportJobMock).toHaveBeenCalledWith(['book-1'], false, 'jpeg')
     expect(taskCenter.waitForJob).toHaveBeenCalledWith('job-export')
     expect(triggerUrlDownloadMock).toHaveBeenCalledWith(
       '/api/v2/assets/asset-export?download=1&filename=books-1-export.zip',

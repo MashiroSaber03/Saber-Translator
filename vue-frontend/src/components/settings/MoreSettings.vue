@@ -4,6 +4,14 @@
 
     <ProductFormSection>
       <template #title>下载设置</template>
+      <UiField variant="settings" label="图片格式" hint="适用于当前页、章节和书架导出。JPG 使用质量 95 的有损压缩，体积更小；PNG 保留完整像素。均不缩放图片。">
+        <UiSelect
+          :model-value="settingsStore.exportPreferences.imageFormat ?? 'jpeg'"
+          :options="IMAGE_EXPORT_FORMAT_OPTIONS"
+          aria-label="默认导出图片格式"
+          @update:model-value="value => { if (value === 'jpeg' || value === 'png') settingsStore.exportPreferences.imageFormat = value }"
+        />
+      </UiField>
       <UiField
         variant="settings"
         control="checkbox"
@@ -167,6 +175,8 @@ import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import { IMAGE_EXPORT_FORMAT_OPTIONS } from '@/constants'
 import { computed, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from tempfile import SpooledTemporaryFile
 import uuid
 
 from flask import Blueprint, Response, jsonify, request, send_file
@@ -40,6 +41,7 @@ from src.backend_v2.storage.platform_repositories import (
 )
 from src.backend_v2.public_policy import PublicUserPolicyAccess
 from src.backend_v2.runtime_profile import RuntimeProfile
+from src.backend_v2.transfer.images import IMAGE_FORMATS, validate_image_format, write_export_image
 
 
 def _asset_download_name(
@@ -665,6 +667,26 @@ def create_content_blueprint(
         asset = media.locate(asset_id)
         if asset is None:
             return _error("asset_missing", "asset does not exist or failed integrity", 404)
+        if "imageFormat" in request.args:
+            image_format = validate_image_format(request.args["imageFormat"])
+            if request.args.get("download") != "1" or not asset.mime_type.startswith("image/"):
+                raise ValueError("imageFormat requires an image download")
+            suffix, mime = IMAGE_FORMATS[image_format]
+            directory = storage.data_root / "temp" / "exports"
+            directory.mkdir(parents=True, exist_ok=True)
+            output = SpooledTemporaryFile(max_size=8 * 1024 * 1024, dir=directory)
+            try:
+                write_export_image(asset.path, output, image_format)
+                output.seek(0)
+                name = _asset_download_name(request.args.get("filename"), asset_id=asset_id, suffix=suffix)
+                response = send_file(output, mimetype=mime, as_attachment=True,
+                                     download_name=str(Path(name).with_suffix(suffix)), max_age=0, etag=False)
+            except BaseException:
+                output.close()
+                raise
+            response.call_on_close(output.close)
+            response.headers["Cache-Control"] = "no-store"
+            return response
         response = send_file(
             asset.path,
             mimetype=asset.mime_type,

@@ -164,10 +164,11 @@ describe('backend-owned export/import contracts', () => {
     )
   })
 
-  it('keeps the original basename when the export preference is enabled', () => {
+  it.each(['jpeg', 'png'] as const)('keeps the original basename for %s when the export preference is enabled', imageFormat => {
     const imageStore = seedChapter()
     const settingsStore = useSettingsStore()
     settingsStore.exportPreferences.preserveOriginalFilenames = true
+    settingsStore.exportPreferences.imageFormat = imageFormat
     imageStore.updateCurrentImage({
       fileName: 'folder/001.jpg',
       translatedAssetUrl: '/api/v2/assets/translated-1',
@@ -176,7 +177,7 @@ describe('backend-owned export/import contracts', () => {
     useExportImport().downloadCurrentImage()
 
     expect(mocks.triggerUrlDownload).toHaveBeenCalledWith(
-      '/api/v2/assets/translated-1?download=1&filename=001.png',
+      `/api/v2/assets/translated-1?download=1&filename=001.${imageFormat === 'jpeg' ? 'jpg' : 'png'}&imageFormat=${imageFormat}`,
     )
   })
 
@@ -274,6 +275,7 @@ describe('backend-owned export/import contracts', () => {
       'cbz',
       false,
       ['page-1', 'page-2'],
+      'jpeg',
     )
     expect(mocks.jobGet).toHaveBeenCalledWith('job-export-1')
     expect(mocks.triggerUrlDownload).toHaveBeenCalledWith(

@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -71,7 +71,7 @@ describe('ImageResultDisplay', () => {
     expect(progress.text()).toContain('正在打包下载')
     expect(wrapper.find('.progress').exists()).toBe(false)
     expect(wrapper.findAllComponents(UiButton).filter(button => (
-      ['下载当前页', '下载全部', '导出文本', '导入 Saber JSON'].includes(button.text())
+      ['下载当前页', '下载全部', '导出文本', '导入 JSON'].includes(button.text())
     )).every(button => button.props('disabled'))).toBe(true)
   })
 
@@ -186,7 +186,7 @@ describe('ImageResultDisplay', () => {
 
     const wrapper = mount(ImageResultDisplay)
 
-    const formatSelect = wrapper.findAllComponents(UiSelect)[0]!
+    const formatSelect = wrapper.findAllComponents(UiSelect).find(select => select.vm.$attrs['aria-label'] === '图片导出格式')!
     expect(formatSelect.exists()).toBe(true)
 
     formatSelect.vm.$emit('update:modelValue', 'pdf')
@@ -197,6 +197,50 @@ describe('ImageResultDisplay', () => {
     await downloadAllButton!.trigger('click')
 
     expect(exportImportMock.downloadAllImages).toHaveBeenCalledWith('pdf')
+  })
+
+  it('saves the image encoding preference and prevents downloads until it finishes', async () => {
+    exportImportMock.state.isDownloading = false
+    addTestImage(useImageStore(), 'page.png', '/api/v2/assets/source-1')
+    const settings = useSettingsStore()
+    let finish!: (saved: boolean) => void
+    const save = vi.spyOn(settings, 'saveToBackend').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mount(ImageResultDisplay)
+    const select = wrapper.findAllComponents(UiSelect).find(control => control.vm.$attrs['aria-label'] === '导出图片格式')!
+    expect(select.props('modelValue')).toBe('jpeg')
+    select.vm.$emit('update:modelValue', 'png')
+    await wrapper.vm.$nextTick()
+    expect(settings.exportPreferences.imageFormat).toBe('png')
+    expect(save).toHaveBeenCalledOnce()
+    expect(select.props('disabled')).toBe(true)
+    const current = wrapper.findAllComponents(UiButton).find(button => button.text() === '下载当前页')!
+    expect(current.props('disabled')).toBe(true)
+    finish(true)
+    await flushPromises()
+    expect(select.props('disabled')).toBe(false)
+    expect(current.props('disabled')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('restores the previous image format after a failed save and allows retry', async () => {
+    exportImportMock.state.isDownloading = false
+    addTestImage(useImageStore(), 'page.png', '/api/v2/assets/source-1')
+    const settings = useSettingsStore()
+    const save = vi.spyOn(settings, 'saveToBackend').mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const wrapper = mount(ImageResultDisplay)
+    const select = wrapper.findAllComponents(UiSelect).find(control => control.vm.$attrs['aria-label'] === '导出图片格式')!
+
+    select.vm.$emit('update:modelValue', 'png')
+    await flushPromises()
+    expect(settings.exportPreferences.imageFormat).toBe('jpeg')
+    expect(select.props('modelValue')).toBe('jpeg')
+    expect(select.props('disabled')).toBe(false)
+
+    select.vm.$emit('update:modelValue', 'png')
+    await flushPromises()
+    expect(settings.exportPreferences.imageFormat).toBe('png')
+    expect(save).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
   })
 
   it('groups image and export actions through shared product action rows', () => {
@@ -210,10 +254,12 @@ describe('ImageResultDisplay', () => {
     expect(actionRows.map(row => row.props('ariaLabel'))).toEqual([
       '图片查看操作',
       '图片文件导出操作',
+      '批量图片导出操作',
       '文本交换操作',
     ])
     expect(actionRows.map(row => row.props('justify'))).toEqual([
       'center',
+      'start',
       'start',
       'start',
     ])
@@ -247,7 +293,7 @@ describe('ImageResultDisplay', () => {
     const imageStore = useImageStore()
     addTestImage(imageStore, 'page.png', 'data:image/png;base64,aW1hZ2U=')
     const wrapper = mount(ImageResultDisplay)
-    const textFormatSelect = wrapper.findAllComponents(UiSelect)[1]!
+    const textFormatSelect = wrapper.findAllComponents(UiSelect).find(select => select.vm.$attrs['aria-label'] === '文本导出格式')!
 
     textFormatSelect.vm.$emit('update:modelValue', 'labelplus')
     await wrapper.vm.$nextTick()

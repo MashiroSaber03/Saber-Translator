@@ -602,6 +602,7 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
     }
     assert settings_by_domain["export_preferences"]["payload"] == {
         "preserveOriginalFilenames": False,
+        "imageFormat": "jpeg",
     }
     assert payload["fonts"] == [
         {
@@ -1499,6 +1500,18 @@ def test_media_api_streams_immutable_asset_and_honors_conditional_get(
         "task-artifact.webp"
         in extensionless_download.headers["Content-Disposition"]
     )
+
+    for fmt, suffix, mime in (("jpeg", "jpg", "image/jpeg"), ("png", "png", "image/png")):
+        with client.get(f'{result["page"]["sourceUrl"]}?download=1&filename=page.wrong&imageFormat={fmt}') as encoded:
+            assert encoded.status_code == 200
+            assert encoded.content_type == mime
+            assert f"page.{suffix}" in encoded.headers["Content-Disposition"]
+            assert encoded.headers["Cache-Control"] == "no-store"
+            with Image.open(BytesIO(encoded.data)) as image:
+                assert image.size == (20, 20)
+                assert image.format == ("JPEG" if fmt == "jpeg" else "PNG")
+    assert client.get(f'{result["page"]["sourceUrl"]}?download=1&imageFormat=gif').status_code == 422
+    assert client.get(f'{result["page"]["sourceUrl"]}?imageFormat=png').status_code == 422
 
 
 def test_media_api_marks_missing_object_as_failed_integrity(

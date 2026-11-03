@@ -268,10 +268,11 @@ export async function updateChapter(
 export function createBooksExportJob(
   bookIds: string[],
   preserveOriginalFilenames: boolean,
+  imageFormat: 'jpeg' | 'png' = 'jpeg',
 ): Promise<V2JobBatchAccepted> {
   return apiClient.post<V2JobBatchAccepted>(
     `${BOOKS_ENDPOINT}/export-jobs`,
-    { bookIds, preserveOriginalFilenames },
+    { bookIds, preserveOriginalFilenames, imageFormat },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
@@ -279,10 +280,11 @@ export function createBooksExportJob(
 export function createChaptersExportJob(
   chapterIds: string[],
   preserveOriginalFilenames: boolean,
+  imageFormat: 'jpeg' | 'png' = 'jpeg',
 ): Promise<V2JobBatchAccepted> {
   return apiClient.post<V2JobBatchAccepted>(
     `${CHAPTERS_ENDPOINT}/export-jobs`,
-    { chapterIds, preserveOriginalFilenames },
+    { chapterIds, preserveOriginalFilenames, imageFormat },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }

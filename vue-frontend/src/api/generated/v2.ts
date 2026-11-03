@@ -3922,8 +3922,15 @@ export interface components {
             lastWorkflowMode: "translate-current" | "translate-batch" | "hq-batch" | "proofread-batch" | "remove-current" | "remove-batch" | "retry-failed" | "delete-current" | "clear-all";
             rememberWorkflowModeEnabled: boolean;
         };
+        /**
+         * @description JPEG quality 95 with no chroma subsampling, or lossless PNG. Pixel dimensions are preserved.
+         * @default jpeg
+         * @enum {string}
+         */
+        ExportImageFormat: "jpeg" | "png";
         ExportPreferences: {
             preserveOriginalFilenames: boolean;
+            imageFormat?: components["schemas"]["ExportImageFormat"];
         };
         /** @enum {string} */
         PromptType: "translate" | "textbox" | "ai_vision_ocr" | "hq_translate" | "proofreading" | "batch_analysis" | "segment_summary" | "chapter_summary" | "book_overview" | "group_summary" | "qa_response" | "question_decompose" | "analysis_system";
@@ -4230,12 +4237,14 @@ export interface components {
             selectedFields: string[];
         };
         ChapterExportJobCommand: {
+            imageFormat?: components["schemas"]["ExportImageFormat"];
             /** @enum {string} */
             format: "cbz" | "pdf" | "zip";
             pageIds?: components["schemas"]["Uuid"][];
             preserveOriginalFilenames: boolean;
         };
         ChaptersExportJobCommand: {
+            imageFormat?: components["schemas"]["ExportImageFormat"];
             chapterIds: components["schemas"]["Uuid"][];
             preserveOriginalFilenames: boolean;
         };
@@ -5187,6 +5196,7 @@ export interface components {
             action: "add" | "remove";
         };
         BooksExportJobCommand: {
+            imageFormat?: components["schemas"]["ExportImageFormat"];
             bookIds: components["schemas"]["Uuid"][];
             preserveOriginalFilenames: boolean;
         };
@@ -10165,7 +10175,12 @@ export interface operations {
     };
     getImmutableAsset: {
         parameters: {
-            query?: never;
+            query?: {
+                download?: "1";
+                filename?: string;
+                /** @description Encode an image download using the same rules as chapter exports. Requires download=1. Omit to stream the original asset bytes. */
+                imageFormat?: components["schemas"]["ExportImageFormat"];
+            };
             header?: never;
             path: {
                 asset_id: components["parameters"]["AssetId"];
@@ -10174,7 +10189,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Streamed immutable file with conditional-cache headers. */
+            /** @description Immutable asset bytes, or an explicitly encoded image download without immutable-cache headers. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -10186,6 +10201,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     getTranslationBootstrap: {

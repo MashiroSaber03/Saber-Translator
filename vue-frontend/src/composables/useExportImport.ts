@@ -25,11 +25,12 @@ export function resolveDownloadFileName(
   originalFileName: string,
   imageIndex: number,
   type: DownloadImageType,
-  preserveOriginalFilename: boolean,
+  preserveOriginalFilename = false,
+  imageFormat: 'jpeg' | 'png' = 'jpeg',
 ): string {
   const fileName = originalFileName.split(/[\\/]/).pop() || `image_${imageIndex}.png`
   const stem = fileName.replace(/\.[^/.]+$/, '')
-  return `${preserveOriginalFilename ? '' : `${type}_`}${stem}.png`
+  return `${preserveOriginalFilename ? '' : `${type}_`}${stem}.${imageFormat === 'jpeg' ? 'jpg' : 'png'}`
 }
 
 function chapterIdFor(images: ImageData[]): string | null {
@@ -151,8 +152,9 @@ export function useExportImport() {
       imageStore.currentImageIndex,
       type,
       settingsStore.exportPreferences.preserveOriginalFilenames,
+      settingsStore.exportPreferences.imageFormat ?? 'jpeg',
     )
-    triggerUrlDownload(withDownloadFileName(assetUrl, filename))
+    triggerUrlDownload(`${withDownloadFileName(assetUrl, filename)}&imageFormat=${settingsStore.exportPreferences.imageFormat ?? 'jpeg'}`)
     toast.success(`下载已开始：${filename}`)
   }
 
@@ -214,6 +216,7 @@ export function useExportImport() {
         format,
         settingsStore.exportPreferences.preserveOriginalFilenames,
         imageStore.images.map(image => image.id),
+        settingsStore.exportPreferences.imageFormat ?? 'jpeg',
       )
       const jobId = accepted.jobIds[0]
       if (!jobId) throw new Error('后端没有返回导出任务')

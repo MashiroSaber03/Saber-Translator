@@ -29,6 +29,7 @@ export interface CurrentWorkflowPreferences {
 
 export interface CurrentExportPreferences {
   preserveOriginalFilenames: boolean
+  imageFormat: 'jpeg' | 'png'
 }
 
 const CURRENT_WORKFLOW_MODES: ReadonlySet<string> = new Set([
@@ -335,12 +336,14 @@ export function parseCurrentExportPreferences(
 ): CurrentExportPreferences | null {
   if (
     !isPlainRecord(value)
-    || !hasExactKeys(value, ['preserveOriginalFilenames'])
+    || !hasExactKeys(value, ['preserveOriginalFilenames', ...('imageFormat' in value ? ['imageFormat'] : [])])
     || typeof value.preserveOriginalFilenames !== 'boolean'
+    || ('imageFormat' in value && value.imageFormat !== 'jpeg' && value.imageFormat !== 'png')
   ) {
     return null
   }
   return {
     preserveOriginalFilenames: value.preserveOriginalFilenames,
+    imageFormat: value.imageFormat === 'png' ? 'png' : 'jpeg',
   }
 }

@@ -76,7 +76,7 @@ Saber-Translator 提供了一站式的漫画翻译与管理解决方案，集成
 <tr>
 <td><b>📤 导出下载</b></td>
 <td>多格式导出</td>
-<td>PNG / ZIP / PDF / CBZ</td>
+<td>JPG / PNG / ZIP / PDF / CBZ</td>
 </tr>
 </table>
 

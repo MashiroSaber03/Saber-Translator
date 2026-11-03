@@ -6,6 +6,9 @@ import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import type { DownloadFormat, TextExportFormat } from '@/composables/useExportImport'
+import { IMAGE_EXPORT_FORMAT_OPTIONS } from '@/constants'
+import { useSettingsStore } from '@/stores/settings'
+import { useToast } from '@/utils/toast'
 
 const downloadFormatOptions = [
   { label: 'ZIP 压缩包', value: 'zip' },
@@ -41,6 +44,24 @@ const emit = defineEmits<{
 }>()
 
 const importFileInput = ref<InstanceType<typeof UiFileInput> | null>(null)
+const settingsStore = useSettingsStore()
+const toast = useToast()
+const isSavingImageFormat = ref(false)
+
+async function updateImageFormat(value: string | number): Promise<void> {
+  if ((value !== 'jpeg' && value !== 'png') || isSavingImageFormat.value) return
+  const previousFormat = settingsStore.exportPreferences.imageFormat ?? 'jpeg'
+  settingsStore.exportPreferences.imageFormat = value
+  isSavingImageFormat.value = true
+  try {
+    if (!await settingsStore.saveToBackend()) {
+      settingsStore.exportPreferences.imageFormat = previousFormat
+      toast.error(settingsStore.backendError || '导出格式保存失败')
+    }
+  } finally {
+    isSavingImageFormat.value = false
+  }
+}
 
 function updateDownloadFormat(value: string | number): void {
   if (value === 'zip' || value === 'pdf' || value === 'cbz') {
@@ -70,8 +91,7 @@ function handleImportFile(files: File[]): void {
 <template>
   <section class="result-export-actions" aria-label="翻译结果导出">
     <header class="result-export-actions__header">
-      <h3>导出与交换</h3>
-      <p>下载处理后的图片，或导出可交接的翻译文本。</p>
+      <h3>下载与导出</h3>
     </header>
 
     <UiProgressBar
@@ -83,89 +103,111 @@ function handleImportFile(files: File[]): void {
       <span class="result-export-actions__progress-label">{{ downloadProgressText || '下载中，请稍候...' }}</span>
     </UiProgressBar>
 
-    <div class="result-export-actions__grid">
-      <article class="result-export-actions__card">
-        <div class="result-export-actions__card-heading">
-          <h4>图片文件</h4>
-          <p>下载当前页，或把本章节图片统一打包。</p>
+    <div class="result-export-actions__content">
+      <ProductActionRow
+        class="result-export-actions__row"
+        aria-label="图片文件导出操作"
+        justify="start"
+      >
+        <div class="result-export-actions__field">
+          <span>图片格式</span>
+          <UiSelect
+            :model-value="settingsStore.exportPreferences.imageFormat ?? 'jpeg'"
+            :options="IMAGE_EXPORT_FORMAT_OPTIONS"
+            :disabled="isDownloading || isSavingImageFormat"
+            aria-label="导出图片格式"
+            @update:model-value="updateImageFormat"
+          />
         </div>
-        <ProductActionRow
-          class="result-export-actions__row"
-          aria-label="图片文件导出操作"
-          justify="start"
-        >
+        <div class="result-export-actions__buttons">
           <UiButton
             class="result-export-actions__button"
+            size="sm"
             variant="secondary"
-            :disabled="!hasDownloadableImage || isDownloading || isImporting"
+            :disabled="!hasDownloadableImage || isDownloading || isImporting || isSavingImageFormat"
             @click="$emit('downloadCurrent')"
           >
             下载当前页
           </UiButton>
-          <UiButton variant="secondary" :disabled="!hasImages || isDownloading || isImporting || editModeAvailable === false" :title="editModeAvailable === false ? '当前账户未开放编辑模式，无法导出 PSD' : '导出当前页，保留文字及修复背景图层，可在 PS 中继续编辑'" @click="emit('downloadPsd')">当前页 PSD</UiButton>
-          <div class="result-export-actions__format-action">
-            <div class="result-export-actions__select">
-              <UiSelect
-                :model-value="downloadFormat"
-                :options="downloadFormatOptions"
-                :disabled="isDownloading || isImporting"
-                size="sm"
-                aria-label="图片导出格式"
-                @update:model-value="updateDownloadFormat"
-              />
-            </div>
-            <UiButton
-              class="result-export-actions__button"
-              variant="primary"
-              :disabled="!hasImages || isDownloading || isImporting"
-              @click="$emit('downloadAll')"
-            >
-              下载全部
-            </UiButton>
-          </div>
-        </ProductActionRow>
-      </article>
-
-      <article class="result-export-actions__card">
-        <div class="result-export-actions__card-heading">
-          <h4>翻译文本</h4>
-          <p>Saber JSON 可重新导入；LabelPlus TXT 用于外部嵌字。</p>
+          <UiButton
+            class="result-export-actions__button"
+            size="sm"
+            variant="secondary"
+            :disabled="!hasImages || isDownloading || isImporting || editModeAvailable === false"
+            :title="editModeAvailable === false ? '当前账户未开放编辑模式，无法导出 PSD' : '导出当前页，保留文字及修复背景图层，可在 PS 中继续编辑'"
+            @click="emit('downloadPsd')"
+          >
+            当前页 PSD
+          </UiButton>
         </div>
-        <ProductActionRow
-          class="result-export-actions__row"
-          aria-label="文本交换操作"
-          justify="start"
-        >
-          <div class="result-export-actions__format-action">
-            <div class="result-export-actions__select">
-              <UiSelect
-                :model-value="textExportFormat"
-                :options="textExportFormatOptions"
-                :disabled="isDownloading || isImporting"
-                size="sm"
-                aria-label="文本导出格式"
-                @update:model-value="updateTextExportFormat"
-              />
-            </div>
+      </ProductActionRow>
+
+      <ProductActionRow
+        class="result-export-actions__row"
+        aria-label="批量图片导出操作"
+        justify="start"
+      >
+        <div class="result-export-actions__field">
+          <span>打包格式</span>
+          <UiSelect
+            :model-value="downloadFormat"
+            :options="downloadFormatOptions"
+            :disabled="isDownloading || isImporting"
+            aria-label="图片导出格式"
+            @update:model-value="updateDownloadFormat"
+          />
+        </div>
+        <div class="result-export-actions__buttons result-export-actions__buttons--single">
+          <UiButton
+            class="result-export-actions__button"
+            size="sm"
+            variant="primary"
+            :disabled="!hasImages || isDownloading || isImporting || isSavingImageFormat"
+            @click="$emit('downloadAll')"
+          >
+            下载全部
+          </UiButton>
+        </div>
+      </ProductActionRow>
+      <p class="result-export-actions__hint">JPG 高质量压缩，PNG 无损保存；均保持原图尺寸。</p>
+
+      <div class="result-export-actions__text">
+        <ProductActionRow class="result-export-actions__row" aria-label="文本交换操作" justify="start">
+          <div class="result-export-actions__field">
+            <span>文本格式</span>
+            <UiSelect
+              :model-value="textExportFormat"
+              :options="textExportFormatOptions"
+              :disabled="isDownloading || isImporting"
+              aria-label="文本导出格式"
+              @update:model-value="updateTextExportFormat"
+            />
+          </div>
+          <div class="result-export-actions__buttons">
             <UiButton
               class="result-export-actions__button"
-              variant="primary"
+              size="sm"
+              variant="secondary"
               :disabled="!hasImages || isDownloading || isImporting"
               @click="$emit('exportText')"
             >
               导出文本
             </UiButton>
+            <UiButton
+              class="result-export-actions__button"
+              size="sm"
+              variant="secondary"
+              :disabled="!hasImages || isDownloading || isImporting"
+              aria-label="导入 Saber JSON"
+              title="导入 Saber JSON 翻译文本"
+              @click="triggerImportText"
+            >
+              {{ isImporting ? '导入中…' : '导入 JSON' }}
+            </UiButton>
           </div>
-          <UiButton
-            class="result-export-actions__button"
-            variant="secondary"
-            :disabled="!hasImages || isDownloading || isImporting"
-            @click="triggerImportText"
-          >
-            {{ isImporting ? '导入中…' : '导入 Saber JSON' }}
-          </UiButton>
         </ProductActionRow>
-      </article>
+        <p class="result-export-actions__hint">Saber JSON 可重新导入；LabelPlus TXT 用于外部嵌字。</p>
+      </div>
     </div>
 
     <UiFileInput
@@ -179,6 +221,12 @@ function handleImportFile(files: File[]): void {
 
 <style scoped>
 .result-export-actions {
+  --ui-select-min-height: 38px;
+  --ui-select-padding: 8px 10px;
+  --ui-select-font-size: 0.85rem;
+
+  container: result-export / inline-size;
+  box-sizing: border-box;
   width: 100%;
   margin-top: 20px;
   padding: 18px;
@@ -188,22 +236,15 @@ function handleImportFile(files: File[]): void {
   text-align: left;
 }
 
-.result-export-actions__header h3,
-.result-export-actions__card-heading h4,
-.result-export-actions__header p,
-.result-export-actions__card-heading p {
-  margin: 0;
-}
-
 .result-export-actions__header h3 {
+  margin: 0;
   color: var(--color-text-heading);
   font-size: 1.05rem;
   line-height: 1.4;
 }
 
-.result-export-actions__header p,
-.result-export-actions__card-heading p {
-  margin-top: 4px;
+.result-export-actions__hint {
+  margin: 0;
   color: var(--color-text-supporting);
   font-size: 0.84rem;
   line-height: 1.55;
@@ -213,77 +254,62 @@ function handleImportFile(files: File[]): void {
   margin-top: 14px;
 }
 
-.result-export-actions__grid {
+.result-export-actions__content {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 10px;
   margin-top: 14px;
-}
-
-.result-export-actions__card {
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid var(--color-border-muted);
-  border-radius: 10px;
-  background: var(--color-surface-card);
-}
-
-.result-export-actions__card-heading h4 {
-  color: var(--color-text-heading);
-  font-size: 0.95rem;
-  line-height: 1.4;
 }
 
 .result-export-actions__row {
-  width: 100%;
-  margin-top: 14px;
-  gap: 10px;
-}
-
-.result-export-actions__format-action {
   display: grid;
-  grid-template-columns: minmax(132px, 1fr) auto;
-  flex: 1 1 260px;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 272px;
+  gap: 12px;
+}
+
+.result-export-actions__buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
   min-width: 0;
 }
 
-.result-export-actions__select {
+.result-export-actions__buttons--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.result-export-actions__field {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
   min-width: 0;
+  color: var(--color-text-supporting);
+  font-size: 0.84rem;
+}
+
+.result-export-actions__text {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-muted);
 }
 
 .result-export-actions__button {
-  --ui-button-padding: 9px 15px;
-  --ui-button-font-size: 0.88rem;
+  --ui-button-sm-padding: 8px 10px;
   --ui-button-primary-background: var(--color-action-brand-fill, var(--color-action-brand));
   --ui-button-primary-hover-background: var(--color-action-brand-fill-strong, var(--color-action-brand-strong));
   --ui-button-primary-shadow: none;
   --ui-button-primary-hover-shadow: none;
   --ui-button-primary-hover-transform: none;
+
+  min-width: 0;
+  height: 38px;
 }
 
-@media (--breakpoint-lg-down) {
-  .result-export-actions__grid {
+@container result-export (width < 480px) {
+  .result-export-actions__row {
     grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (--breakpoint-sm-down) {
-  .result-export-actions {
-    padding: 14px;
-  }
-
-  .result-export-actions__card {
-    padding: 14px;
-  }
-
-  .result-export-actions__format-action {
-    grid-template-columns: minmax(0, 1fr);
-    flex-basis: 100%;
-  }
-
-  .result-export-actions__button {
-    --ui-button-width: 100%;
+    gap: 8px;
   }
 }
 </style>

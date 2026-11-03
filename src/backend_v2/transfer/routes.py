@@ -61,7 +61,7 @@ def create_transfer_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     @blueprint.post("/chapters/<chapter_id>/export-jobs")
     def create_export(chapter_id: str):
         body = _json_body(
-            allowed_keys={"format", "pageIds", "preserveOriginalFilenames"}
+            allowed_keys={"format", "pageIds", "preserveOriginalFilenames", "imageFormat"}
         )
         page_ids = body.get("pageIds")
         if page_ids is not None and (
@@ -72,6 +72,7 @@ def create_transfer_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
         result = service.create_export(
             chapter_id=chapter_id,
             export_format=_required_string(body, "format"),
+            image_format=body.get("imageFormat", "jpeg"),
             page_ids=page_ids,
             preserve_original_filenames=_required_boolean(
                 body,
@@ -84,7 +85,7 @@ def create_transfer_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     @blueprint.post("/chapters/export-jobs")
     def create_chapters_export():
         body = _json_body(
-            allowed_keys={"chapterIds", "preserveOriginalFilenames"}
+            allowed_keys={"chapterIds", "preserveOriginalFilenames", "imageFormat"}
         )
         chapter_ids = body.get("chapterIds")
         if (
@@ -95,6 +96,7 @@ def create_transfer_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
             raise ValueError("chapterIds must be a non-empty string array")
         result = service.create_chapters_export(
             chapter_ids=chapter_ids,
+            image_format=body.get("imageFormat", "jpeg"),
             preserve_original_filenames=_required_boolean(
                 body,
                 "preserveOriginalFilenames",
@@ -106,7 +108,7 @@ def create_transfer_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     @blueprint.post("/books/export-jobs")
     def create_books_export():
         body = _json_body(
-            allowed_keys={"bookIds", "preserveOriginalFilenames"}
+            allowed_keys={"bookIds", "preserveOriginalFilenames", "imageFormat"}
         )
         book_ids = body.get("bookIds")
         if (
@@ -117,6 +119,7 @@ def create_transfer_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
             raise ValueError("bookIds must be a non-empty string array")
         result = service.create_books_export(
             book_ids=book_ids,
+            image_format=body.get("imageFormat", "jpeg"),
             preserve_original_filenames=_required_boolean(
                 body,
                 "preserveOriginalFilenames",

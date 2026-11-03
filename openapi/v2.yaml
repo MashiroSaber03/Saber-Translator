@@ -2693,15 +2693,26 @@ paths:
       operationId: getImmutableAsset
       parameters:
         - $ref: "#/components/parameters/AssetId"
+        - name: download
+          in: query
+          schema: {type: string, enum: ["1"]}
+        - name: filename
+          in: query
+          schema: {type: string}
+        - name: imageFormat
+          in: query
+          description: Encode an image download using the same rules as chapter exports. Requires download=1. Omit to stream the original asset bytes.
+          schema: {$ref: "#/components/schemas/ExportImageFormat"}
       responses:
         "200":
-          description: Streamed immutable file with conditional-cache headers.
+          description: Immutable asset bytes, or an explicitly encoded image download without immutable-cache headers.
           content:
             image/jpeg: {schema: {type: string, format: binary}}
             image/png: {schema: {type: string, format: binary}}
             image/webp: {schema: {type: string, format: binary}}
         "404":
           $ref: "#/components/responses/NotFound"
+        "422": {$ref: "#/components/responses/ValidationError"}
   /translation/bootstrap:
     get:
       tags: [content]
@@ -5935,12 +5946,18 @@ components:
             - delete-current
             - clear-all
         rememberWorkflowModeEnabled: {type: boolean}
+    ExportImageFormat:
+      type: string
+      enum: [jpeg, png]
+      default: jpeg
+      description: JPEG quality 95 with no chroma subsampling, or lossless PNG. Pixel dimensions are preserved.
     ExportPreferences:
       type: object
       additionalProperties: false
       required: [preserveOriginalFilenames]
       properties:
         preserveOriginalFilenames: {type: boolean}
+        imageFormat: {$ref: "#/components/schemas/ExportImageFormat"}
     PromptType:
       type: string
       enum:
@@ -6605,6 +6622,7 @@ components:
       additionalProperties: false
       required: [format, preserveOriginalFilenames]
       properties:
+        imageFormat: {$ref: "#/components/schemas/ExportImageFormat"}
         format:
           type: string
           enum: [cbz, pdf, zip]
@@ -6619,6 +6637,7 @@ components:
       additionalProperties: false
       required: [chapterIds, preserveOriginalFilenames]
       properties:
+        imageFormat: {$ref: "#/components/schemas/ExportImageFormat"}
         chapterIds:
           type: array
           minItems: 1
@@ -8482,6 +8501,7 @@ components:
       additionalProperties: false
       required: [bookIds, preserveOriginalFilenames]
       properties:
+        imageFormat: {$ref: "#/components/schemas/ExportImageFormat"}
         bookIds:
           type: array
           minItems: 1

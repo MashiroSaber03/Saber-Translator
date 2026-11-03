@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 import posixpath
 import shutil
 import stat
+from tempfile import TemporaryDirectory
 from typing import Any, Mapping
 from urllib.parse import unquote, urlsplit
 import uuid
@@ -60,6 +61,7 @@ from src.backend_v2.storage.schema import (
 from src.backend_v2.transfer.commands import (
     validate_container_config,
 )
+from src.backend_v2.transfer.images import IMAGE_FORMATS, validate_image_format, write_export_image
 from src.shared.user_logging import log_result
 
 
@@ -399,6 +401,10 @@ class TransferWorkerService:
         config = self._config(step)
         entries = config.get("entries")
         export_format = str(config.get("format", ""))
+        # Missing on already-frozen jobs: keep their original asset bytes.
+        image_format = config.get("imageFormat")
+        if image_format is not None:
+            validate_image_format(image_format)
         if not isinstance(entries, list) or export_format not in {"zip", "cbz", "pdf"}:
             raise RuntimeError("export snapshot is invalid")
         asset_paths = self._bound_export_paths(fence.job_id, entries)
@@ -420,25 +426,36 @@ class TransferWorkerService:
                         member = self._export_member_name(
                             entry,
                             used_names,
-                            extension=path.suffix.lower() or ".png",
+                            extension=IMAGE_FORMATS[image_format][0] if image_format else path.suffix.lower() or ".png",
                             preserve_original_filename=bool(
                                 config["preserveOriginalFilenames"]
                             ),
                         )
-                        archive.write(path, member)
+                        if image_format:
+                            with archive.open(member, "w", force_zip64=True) as output:
+                                write_export_image(path, output, image_format)
+                        else:
+                            archive.write(path, member)
                         successful += 1
             else:
                 import img2pdf
 
-                paths: list[str] = []
-                for entry in entries:
-                    path = asset_paths[str(entry["assetId"])]
-                    with Image.open(path) as image:
-                        image.verify()
-                    paths.append(str(path))
-                    successful += 1
-                with output_path.open("wb") as output:
-                    img2pdf.convert(*paths, outputstream=output)
+                with TemporaryDirectory(dir=output_dir) as directory:
+                    paths: list[str] = []
+                    for index, entry in enumerate(entries):
+                        path = asset_paths[str(entry["assetId"])]
+                        if image_format:
+                            encoded = Path(directory) / f"{index}{IMAGE_FORMATS[image_format][0]}"
+                            with encoded.open("wb") as output:
+                                write_export_image(path, output, image_format)
+                            path = encoded
+                        else:
+                            with Image.open(path) as image:
+                                image.verify()
+                        paths.append(str(path))
+                        successful += 1
+                    with output_path.open("wb") as output:
+                        img2pdf.convert(*paths, outputstream=output)
             mime = (
                 "application/pdf"
                 if export_format == "pdf"

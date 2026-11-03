@@ -531,11 +531,15 @@ def _validate_workflow_preferences(payload: dict[str, Any]) -> None:
 def _validate_export_preferences(payload: dict[str, Any]) -> None:
     _exact_keys(
         payload,
-        {"preserveOriginalFilenames"},
+        {"preserveOriginalFilenames"} | ({"imageFormat"} if "imageFormat" in payload else set()),
         "export_preferences",
     )
     if not isinstance(payload["preserveOriginalFilenames"], bool):
         raise ValueError("preserveOriginalFilenames must be boolean")
+    if "imageFormat" in payload:
+        from src.backend_v2.transfer.images import validate_image_format
+
+        validate_image_format(payload["imageFormat"])
 
 
 def _validate_custom_ai_profiles(payload: dict[str, Any]) -> None:

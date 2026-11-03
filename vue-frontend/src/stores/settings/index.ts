@@ -287,6 +287,7 @@ export const useSettingsStore = defineStore('settings', () => {
   })
   const exportPreferences = ref<V2ExportPreferences>({
     preserveOriginalFilenames: false,
+    imageFormat: 'jpeg',
   })
   const isBackendReady = ref(false)
   const backendError = ref<string | null>(null)

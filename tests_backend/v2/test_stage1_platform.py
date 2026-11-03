@@ -408,8 +408,11 @@ def test_custom_insight_architecture_has_no_arbitrary_size_gate() -> None:
     assert len(validated["analysis"]["batch"]["customLayers"]) == 9
 
 
-def test_export_preferences_accept_only_the_current_boolean_contract() -> None:
+@pytest.mark.parametrize("image_format", [None, "jpeg", "png"])
+def test_export_preferences_accept_the_current_and_legacy_contract(image_format) -> None:
     payload = {"preserveOriginalFilenames": True}
+    if image_format is not None:
+        payload["imageFormat"] = image_format
     assert validate_setting_payload(
         "export_preferences",
         payload,
@@ -418,6 +421,15 @@ def test_export_preferences_accept_only_the_current_boolean_contract() -> None:
         validate_setting_payload(
             "export_preferences",
             {"preserveOriginalFilenames": "true"},
+        )
+
+
+@pytest.mark.parametrize("image_format", [None, True, 1, "gif", "JPEG", {}])
+def test_export_preferences_reject_invalid_image_formats(image_format) -> None:
+    with pytest.raises(ValueError, match="imageFormat"):
+        validate_setting_payload(
+            "export_preferences",
+            {"preserveOriginalFilenames": True, "imageFormat": image_format},
         )
 
 

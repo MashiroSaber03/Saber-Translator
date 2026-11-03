@@ -22,6 +22,7 @@ from src.backend_v2.jobs.repository import (
     JobSpec,
 )
 from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.transfer.images import validate_image_format
 from src.backend_v2.storage.schema import (
     books,
     chapters,
@@ -152,13 +153,16 @@ def validate_export_config(value: object) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise TransferDataInvalid("export config must be an object")
     config = dict(value)
-    if set(config) != {
+    required = {
         "format",
         "entries",
         "executionMode",
         "preserveOriginalFilenames",
-    }:
+    }
+    if not required <= config.keys() or config.keys() - required - {"imageFormat"}:
         raise TransferDataInvalid("export config fields are invalid")
+    if "imageFormat" in config:
+        validate_image_format(config["imageFormat"])
     if config.get("format") not in EXPORT_FORMATS:
         raise TransferDataInvalid("export format is invalid")
     if config.get("executionMode") != "sequential":
@@ -320,7 +324,9 @@ class TransferCommandService:
         page_ids: list[str] | None,
         preserve_original_filenames: bool,
         idempotency_key: str,
+        image_format: str = "jpeg",
     ) -> dict[str, object]:
+        image_format = validate_image_format(image_format)
         if export_format not in EXPORT_FORMATS:
             raise ValueError("export format must be zip, cbz, or pdf")
         chapter = self._chapter(chapter_id)
@@ -382,6 +388,7 @@ class TransferCommandService:
                 "entries": entries,
                 "executionMode": "sequential",
                 "preserveOriginalFilenames": preserve_original_filenames,
+                "imageFormat": image_format,
             }
         )
         return self.jobs.create_batch(
@@ -412,6 +419,7 @@ class TransferCommandService:
             idempotency_payload={
                 "chapterId": chapter_id,
                 "format": export_format,
+                "imageFormat": image_format,
                 "preserveOriginalFilenames": preserve_original_filenames,
                 "entries": [
                     {
@@ -429,6 +437,7 @@ class TransferCommandService:
         book_ids: list[str],
         preserve_original_filenames: bool,
         idempotency_key: str,
+        image_format: str = "jpeg",
     ) -> dict[str, object]:
         selected_book_ids = set(book_ids)
         if not book_ids or len(selected_book_ids) != len(book_ids):
@@ -456,6 +465,7 @@ class TransferCommandService:
                 ).scalars()
             }
         return self._create_library_export(
+            image_format=image_format,
             selected_chapter_ids=selected_chapter_ids,
             preserve_original_filenames=preserve_original_filenames,
             display_name=f"批量导出 {len(book_rows)} 本书籍",
@@ -472,6 +482,7 @@ class TransferCommandService:
         chapter_ids: list[str],
         preserve_original_filenames: bool,
         idempotency_key: str,
+        image_format: str = "jpeg",
     ) -> dict[str, object]:
         selected_chapter_ids = set(chapter_ids)
         if not chapter_ids or len(selected_chapter_ids) != len(chapter_ids):
@@ -493,6 +504,7 @@ class TransferCommandService:
                 "chapterIds must all belong to library books owned by the current user"
             )
         return self._create_library_export(
+            image_format=image_format,
             selected_chapter_ids=selected_chapter_ids,
             preserve_original_filenames=preserve_original_filenames,
             display_name=f"批量导出 {len(chapter_rows)} 个章节",
@@ -517,7 +529,9 @@ class TransferCommandService:
         idempotency_scope: str,
         idempotency_key: str,
         selection_payload: dict[str, object],
+        image_format: str,
     ) -> dict[str, object]:
+        image_format = validate_image_format(image_format)
         with self.engine.connect() as connection:
             rows = list(
                 connection.execute(
@@ -587,6 +601,7 @@ class TransferCommandService:
         config = validate_export_config(
             {
                 "format": "zip",
+                "imageFormat": image_format,
                 "entries": entries,
                 "executionMode": "sequential",
                 "preserveOriginalFilenames": preserve_original_filenames,
@@ -616,6 +631,7 @@ class TransferCommandService:
             idempotency_key=idempotency_key,
             idempotency_payload={
                 **selection_payload,
+                "imageFormat": image_format,
                 "preserveOriginalFilenames": preserve_original_filenames,
                 "entries": [
                     {

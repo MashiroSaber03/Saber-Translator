@@ -338,8 +338,10 @@ def _run_job(
     return fence.job_id
 
 
+@pytest.mark.parametrize("image_format", ["jpeg", "png"])
 def test_container_import_and_export_are_worker_owned_and_durable(
     tmp_path: Path,
+    image_format: str,
 ) -> None:
     data_root = tmp_path / "data-v2"
     data_root.mkdir()
@@ -475,6 +477,7 @@ def test_container_import_and_export_are_worker_owned_and_durable(
         page_ids=None,
         preserve_original_filenames=False,
         idempotency_key="export-1",
+        image_format=image_format,
     )
     export_job_id = _run_job(jobs, worker, epoch_id)
     assert export_job_id == export["jobIds"][0]
@@ -497,9 +500,13 @@ def test_container_import_and_export_are_worker_owned_and_durable(
         AssetStorageService(data_root, engine).resolve_relative_path(relative)
     ) as packaged:
         assert packaged.namelist() == [
-            "chapter/translated_001.png",
-            "chapter/clean_002.png",
+            f"chapter/translated_001.{'jpg' if image_format == 'jpeg' else 'png'}",
+            f"chapter/clean_002.{'jpg' if image_format == 'jpeg' else 'png'}",
         ]
+        for name in packaged.namelist():
+            with Image.open(BytesIO(packaged.read(name))) as image:
+                assert image.size == (32, 40)
+                assert image.format == ("JPEG" if image_format == "jpeg" else "PNG")
 
     preserved_export = commands.create_export(
         chapter_id=str(chapter["id"]),
@@ -507,6 +514,7 @@ def test_container_import_and_export_are_worker_owned_and_durable(
         page_ids=None,
         preserve_original_filenames=True,
         idempotency_key="export-preserved-names",
+        image_format="png",
     )
     preserved_job_id = _run_job(jobs, worker, epoch_id)
     assert preserved_job_id == preserved_export["jobIds"][0]
@@ -631,7 +639,7 @@ def test_export_propagates_memory_failure_and_removes_partial_file(
     def fail_write(*_args, **_kwargs) -> None:
         raise MemoryError("native allocation failed")
 
-    monkeypatch.setattr(zipfile.ZipFile, "write", fail_write)
+    monkeypatch.setattr("src.backend_v2.transfer.worker.write_export_image", fail_write)
     with pytest.raises(MemoryError, match="allocation failed"):
         worker.handler(fence, step)
     assert not (
@@ -724,8 +732,8 @@ def test_multi_book_export_uses_one_durable_zip_job(tmp_path: Path) -> None:
         ).scalar_one()
     with zipfile.ZipFile(storage.resolve_relative_path(relative)) as packaged:
         assert packaged.namelist() == [
-            "Book Two/Chapter B/nested/002.png",
-            "Book_One/Chapter_A/001.png",
+            "Book Two/Chapter B/nested/002.jpg",
+            "Book_One/Chapter_A/001.jpg",
         ]
     engine.dispose()
 
@@ -782,6 +790,7 @@ def test_selected_chapters_export_as_one_durable_zip_job(tmp_path: Path) -> None
         chapter_ids=selected_chapter_ids,
         preserve_original_filenames=True,
         idempotency_key="chapters-export",
+        image_format="png",
     )
     assert len(accepted["jobIds"]) == 1
     epoch_id = str(uuid.uuid4())

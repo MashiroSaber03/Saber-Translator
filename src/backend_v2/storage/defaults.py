@@ -40,6 +40,7 @@ DEFAULT_WORKFLOW_PREFERENCES: dict[str, object] = {
 
 DEFAULT_EXPORT_PREFERENCES: dict[str, object] = {
     "preserveOriginalFilenames": False,
+    "imageFormat": "jpeg",
 }
 
 DEFAULT_CUSTOM_AI_PROFILES: dict[str, object] = {

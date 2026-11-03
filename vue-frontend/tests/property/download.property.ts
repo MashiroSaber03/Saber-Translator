@@ -21,14 +21,18 @@ describe('download export contracts', () => {
       fc.constantFrom('translated', 'clean', 'original'),
       (originalFileName, imageIndex, type) => {
         expect(resolveDownloadFileName(originalFileName, imageIndex, type)).toBe(
-          `${type}_${originalFileName.replace(/\.[^/.]+$/, '')}.png`,
+          `${type}_${originalFileName.replace(/\.[^/.]+$/, '')}.jpg`,
         )
       },
     ))
   })
 
   it('uses the current fallback filename and format set', () => {
-    expect(resolveDownloadFileName('', 3, 'original')).toBe('original_image_3.png')
+    expect(resolveDownloadFileName('', 3, 'original')).toBe('original_image_3.jpg')
     expect(DOWNLOAD_FORMATS).toEqual(['zip', 'pdf', 'cbz'])
+  })
+
+  it('uses the selected encoding for the filename extension', () => {
+    expect(resolveDownloadFileName('folder/page.jpg', 0, 'translated', true, 'png')).toBe('page.png')
   })
 })

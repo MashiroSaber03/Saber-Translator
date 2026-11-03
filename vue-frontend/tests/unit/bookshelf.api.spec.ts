@@ -119,6 +119,7 @@ describe('bookshelf v2 api contracts', () => {
       {
         bookIds: ['book-1', 'book-2'],
         preserveOriginalFilenames: true,
+        imageFormat: 'jpeg',
       },
       {
         headers: {
@@ -143,6 +144,7 @@ describe('bookshelf v2 api contracts', () => {
       {
         chapterIds: ['chapter-1', 'chapter-3'],
         preserveOriginalFilenames: true,
+        imageFormat: 'jpeg',
       },
       {
         headers: {

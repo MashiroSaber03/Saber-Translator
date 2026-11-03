@@ -236,6 +236,7 @@ async function downloadSelectedBooks() {
     const accepted = await createBooksExportJob(
       bookIds,
       settingsStore.exportPreferences.preserveOriginalFilenames,
+      settingsStore.exportPreferences.imageFormat ?? 'jpeg',
     )
     const jobId = accepted.jobIds[0]
     if (!jobId) throw new Error('后端没有返回批量导出任务')
