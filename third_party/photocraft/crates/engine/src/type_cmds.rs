@@ -297,6 +297,7 @@ pub fn apply_char_props(s: &mut CharStyle, p: &Value) -> bool {
     }
     for (k, f) in [
         ("underline", &mut s.underline),
+        ("emphasis", &mut s.emphasis),
         ("strikethrough", &mut s.strikethrough),
         ("fauxBold", &mut s.faux_bold),
         ("fauxItalic", &mut s.faux_italic),
@@ -786,7 +787,7 @@ pub(crate) fn new_text_layer(s: &Session, p: &Value, cmd: &str) -> Result<TextLa
     Ok(t)
 }
 
-const CHAR_PARAMS: &str = r##""font":str,"fontStyle":str,"weight":100..900,"italic":bool,"size":0.1..=1296 pt,"color":"#rrggbb"|[r,g,b,a],"tracking":-1000..=10000 (1/1000 em),"leading":pt|"auto","baselineShift":pt,"horizontalScale":%,"verticalScale":%,"underline":bool,"strikethrough":bool,"fauxBold":bool,"fauxItalic":bool,"kerning":1/1000em (manual, after each character)|"metrics"|"optical"|"off","caps":"normal|small|all","ligatures":bool,"discretionaryLigatures":bool,"features":{"ss01":1},"variations":{"wght":650},"language":str"##;
+const CHAR_PARAMS: &str = r##""font":str,"fontStyle":str,"weight":100..900,"italic":bool,"size":0.1..=1296 pt,"color":"#rrggbb"|[r,g,b,a],"tracking":-1000..=10000 (1/1000 em),"leading":pt|"auto","baselineShift":pt,"horizontalScale":%,"verticalScale":%,"underline":bool,"emphasis":bool,"strikethrough":bool,"fauxBold":bool,"fauxItalic":bool,"kerning":1/1000em (manual, after each character)|"metrics"|"optical"|"off","caps":"normal|small|all","ligatures":bool,"discretionaryLigatures":bool,"features":{"ss01":1},"variations":{"wght":650},"language":str"##;
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
@@ -1261,6 +1262,21 @@ mod tests {
         assert_eq!(layer_name_of(&s, id), "Title");
         assert!(s.undo());
         assert_eq!(layer_name_of(&s, id), "Type Layer");
+    }
+
+    #[test]
+    fn emphasis_uses_character_ranges_and_existing_history() {
+        let mut s = session();
+        let id = s.execute("type.create", json!({"x": 0, "y": 40, "text": "AB中文CD"})).unwrap()["layer"].as_u64().unwrap();
+        let before = text_layer(&s, id).clone();
+        s.execute("type.setStyle", json!({"layer": id, "range": [2, 4], "emphasis": true})).unwrap();
+        let after = text_layer(&s, id).clone();
+        assert_eq!(after.text, before.text);
+        assert_eq!(after.char_runs().iter().map(|r| (r.len, r.style.emphasis)).collect::<Vec<_>>(), vec![(2, false), (6, true), (2, false)]);
+        assert!(s.undo());
+        assert_eq!(text_layer(&s, id), before);
+        assert!(s.redo());
+        assert_eq!(text_layer(&s, id), after);
     }
 
     #[test]

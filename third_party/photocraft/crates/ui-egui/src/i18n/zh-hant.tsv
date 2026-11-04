@@ -2741,3 +2741,5 @@ curves	Smooth	平滑
 	ICO is limited to 256 × 256 pixels	ICO 最大為 256 × 256 像素
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	保留圖層與可編輯文字。請在 Photoshop 中安裝相同字體；首次編輯時文字可能重新排版。
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	已保留目前畫面與可編輯文字。新增文字的光學字距在 Photoshop 編輯時將使用「度量」字距。
+
+	Emphasis Marks	著重號

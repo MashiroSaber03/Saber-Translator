@@ -15,6 +15,34 @@ function editor(text = '中文😀') {
 }
 
 describe('ordinary rich text input', () => {
+  it('reselects all after the browser caret moves while the previous logical selection is still all', async () => {
+    const { wrapper } = editor('中文😀')
+    const input = wrapper.get('[role=textbox]')
+    ;(input.element as HTMLElement).focus()
+    await input.trigger('keydown', { key: 'a', ctrlKey: true })
+    expect(window.getSelection()!.toString()).toBe('中文😀')
+    const text = document.createTreeWalker(input.element, NodeFilter.SHOW_TEXT).nextNode()!
+    // Refocusing after a number-field edit can move the native caret before
+    // ProseMirror receives selectionchange, leaving its logical range unchanged.
+    window.getSelection()!.collapse(text, text.textContent!.length)
+    await input.trigger('keydown', { key: 'a', ctrlKey: true })
+    expect(window.getSelection()!.toString()).toBe('中文😀')
+  })
+  it('selects characters across paragraphs and keeps their formatting range after blur', async () => {
+    const { wrapper, vm } = editor('今天\n中文😀')
+    const input = wrapper.get('[role=textbox]')
+    await input.trigger('focus')
+    await input.trigger('keydown', { key: 'a', ctrlKey: true })
+    expect(wrapper.emitted('selection')?.at(-1)?.[0]).toMatchObject({ active: true, count: 6 })
+    expect(wrapper.findAll('.rich-text-input__selection').map(part => part.text()).join('')).toBe('今天中文😀')
+    await input.trigger('blur')
+    vm.format({ emphasis: true })
+    const value = wrapper.emitted('update')!.at(-1)![0] as { translatedText: string; richText: { runs: { len: number; style: { emphasis?: boolean } }[] } }
+    expect(value.translatedText).toBe('今天\n中文😀')
+    expect(value.richText.runs.every(run => run.style.emphasis)).toBe(true)
+    expect(value.richText.runs.reduce((sum, run) => sum + run.len, 0)).toBe(17)
+    expect(wrapper.emitted('selection')?.at(-1)?.[0]).toMatchObject({ active: true, count: 6 })
+  })
   it('installs editing/history for unsaved boxes and preserves a caret style on insertion', async () => {
     const { wrapper, vm } = editor('')
     await wrapper.get('[role=textbox]').trigger('focus')

@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EditorState, TextSelection, type Selection } from 'prosemirror-state'
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view'
-import { baseKeymap, joinBackward, splitBlockKeepMarks } from 'prosemirror-commands'
+import { baseKeymap, joinBackward, selectAll, splitBlockKeepMarks } from 'prosemirror-commands'
 import { keymap } from 'prosemirror-keymap'
 import { history, undo, redo } from 'prosemirror-history'
 import type { BubbleState } from '@/types/bubble'
@@ -23,6 +23,13 @@ const faces = new Map<string, FontFace>()
 const fallback = () => defaultRun(props.bubble, props.fonts.find(f => f.id === props.bubble.fontFamily)?.style)
 const plugins = () => [history(), keymap({
   'Mod-z': undo, 'Mod-y': redo, 'Mod-Shift-z': redo,
+  // Reapply the DOM selection even if the logical range is unchanged: Chrome's
+  // caret can move on refocus before ProseMirror observes that click.
+  'Mod-a': (state, dispatch, inputView) => {
+    const handled = selectAll(state, dispatch)
+    inputView?.focus()
+    return handled
+  },
   'Mod-b': () => toggle('faux_bold'), 'Mod-i': () => toggle('faux_italic'), 'Mod-u': () => toggle('underline'),
   Enter: splitBlockKeepMarks, 'Shift-Enter': splitBlockKeepMarks,
 }), keymap(baseKeymap)]

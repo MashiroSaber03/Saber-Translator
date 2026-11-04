@@ -2213,7 +2213,7 @@ fn type_sections(app: &mut PhotocraftApp, ui: &mut egui::Ui, character: bool, pa
         // Faux styles: T (bold)  T (italic)  TT  Tᴛ  T̲  T̶, sharing the row evenly.
         let caps = c.caps;
         // Tip strings are English keys; `toggle_cell` runs them through `tl!`.
-        let toggles: [(&str, &str, bool, serde_json::Value); 6] = [
+        let toggles: [(&str, &str, bool, serde_json::Value); 7] = [
             ("T", "Faux Bold", c.faux_bold, json!({"fauxBold": !c.faux_bold})),
             ("T", "Faux Italic", c.faux_italic, json!({"fauxItalic": !c.faux_italic})),
             (
@@ -2230,6 +2230,7 @@ fn type_sections(app: &mut PhotocraftApp, ui: &mut egui::Ui, character: bool, pa
             ),
             ("T", "Underline", c.underline, json!({"underline": !c.underline})),
             ("T", "Strikethrough", c.strikethrough, json!({"strikethrough": !c.strikethrough})),
+            ("T", "Emphasis Marks", c.emphasis, json!({"emphasis": !c.emphasis})),
         ];
         let cw = cell_width(full, toggles.len());
         ui.horizontal(|ui| {
@@ -2255,6 +2256,9 @@ fn type_sections(app: &mut PhotocraftApp, ui: &mut egui::Ui, character: bool, pa
                     if i == 5 {
                         ui.painter()
                             .line_segment([egui::pos2(gr.left() - 1.0, gr.center().y), egui::pos2(gr.right() + 1.0, gr.center().y)], Stroke::new(1.0, col));
+                    }
+                    if i == 6 {
+                        ui.painter().circle_filled(egui::pos2(gr.center().x, gr.top() - 1.0), 1.2, col);
                     }
                 });
                 if clicked {

@@ -114,6 +114,7 @@ pub fn preview(engine: &mut crate::TextEngine, style: &CharStyle, c: char, px: u
     let mut st = style.clone();
     st.size_pt = px as f32 * 0.72;
     st.underline = false;
+    st.emphasis = false;
     st.strikethrough = false;
     st.tracking = 0.0;
     st.baseline_shift_pt = 0.0;

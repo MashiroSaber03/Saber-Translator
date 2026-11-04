@@ -99,6 +99,7 @@ fn perturbed_char() -> CharStyle {
         horizontal_scale: -1.0,
         vertical_scale: -1.0,
         underline: true,
+        emphasis: true,
         strikethrough: true,
         faux_bold: true,
         faux_italic: true,

@@ -24,7 +24,7 @@ describe('ordinary rich text uses native character and paragraph runs', () => {
     expect(patchRunStyle({ size_pt: 24, leading_pt: 30 }, { size_pt: 32, leading_pt: 35 })).toEqual({ size_pt: 32, leading_pt: 35 })
   })
   const normal = { font_family: 'Test', size_pt: 24, tracking: -25, variations: [{ tag: 'wght', value: 523 }], language: 'ja' }
-  const red = { ...normal, color: { mode: 'Rgb', c: [1, 0, 0, 0], alpha: 0.7 }, faux_bold: true }
+  const red = { ...normal, color: { mode: 'Rgb', c: [1, 0, 0, 0], alpha: 0.7 }, faux_bold: true, emphasis: true }
   const large = { ...normal, size_pt: 40, baseline_shift_pt: 3 }
   it('proofreads variable-length matches across paragraphs without resetting surrounding character styles', () => {
     const bubble = createBubbleState({ coords: [10, 20, 120, 220], fontFamily: '', translatedText: '甲😀\n乙😀丙', richText: {

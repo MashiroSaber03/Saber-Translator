@@ -87,15 +87,20 @@ pub enum VClass {
     /// Upright through its vertical alternate (brackets, the long-vowel mark, dashes); rotated
     /// when the font has none.
     AlternateOrRotate = 2,
+    /// Comic exclamation/question marks stay upright and centre their visible ink.
+    Centered = 3,
 }
 
 // Comic emphasis marks that override the usual rotation of half-width text.
 fn emphasis_override(c: char) -> bool {
-    matches!(c, '!' | '?' | '¡' | '¿' | '؟' | '‼' | '⁇' | '⁈' | '⁉' | '﹖' | '﹗')
+    matches!(c, '!' | '?' | '！' | '？' | '¡' | '¿' | '؟' | '‼' | '⁇' | '⁈' | '⁉' | '﹖' | '﹗' | '︕' | '︖' | 'ǃ' | '❕' | '❗' | '❢' | '❣' | '‽')
 }
 
 /// The vertical-type class of a character.
 pub fn vertical_class(c: char) -> VClass {
+    if emphasis_override(c) {
+        return VClass::Centered;
+    }
     let u = c as u32;
     let alt = matches!(
         u,
@@ -127,8 +132,7 @@ pub fn vertical_class(c: char) -> VClass {
     if (0xFF61..=0xFFDC).contains(&u) {
         return VClass::Rotate;
     }
-    let upright = emphasis_override(c)
-        || crate::cjk::classify(c).is_some()
+    let upright = crate::cjk::classify(c).is_some()
         || matches!(u, 0xA7 | 0xA9 | 0xAE | 0xB1 | 0xBC..=0xBE | 0xD7 | 0xF7 | 0x2E80..=0x2EFF | 0xFE10..=0xFE1F | 0xFE30..=0xFE4F | 0x1F000..=0x1FAFF);
     if upright { VClass::Upright } else { VClass::Rotate }
 }
@@ -172,7 +176,7 @@ pub struct PlacedGlyph {
     pub orient: GlyphOrient,
 }
 
-/// Underline/strikethrough rectangle (text space px).
+/// Character decoration bounds (text space px).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DecorationRect {
     pub x0: f32,
@@ -180,6 +184,8 @@ pub struct DecorationRect {
     pub x1: f32,
     pub y1: f32,
     pub style: u32,
+    /// Filled ellipse for a character's emphasis dot; other decorations are rectangles.
+    pub round: bool,
 }
 
 /// A line (a column in vertical type) in line space: `x` runs along the line and `baseline` is the
@@ -565,6 +571,13 @@ impl Layouter {
                     continue;
                 }
                 let style = &out.styles[style_at(prange.start + i)];
+                // These ornaments are often supplied by the browser's emoji font but absent
+                // from an offline font set. Fall back only the displayed glyph, preserving
+                // native text and the same three-byte UTF-8 offsets used by runs/carets.
+                if matches!(ch, '❕' | '❗') && !fonts.selected_face_has_character(&style.font_family, style.weight, style.italic, ch) {
+                    ptext.push('！');
+                    continue;
+                }
                 let caps = style.caps;
                 if caps == Caps::AllCaps || small_caps[style_at(prange.start + i)] == SmallCapsMode::Synthetic {
                     let up: String = ch.to_uppercase().collect();
@@ -732,17 +745,24 @@ impl Layouter {
                 let m = *line.metrics();
                 // Largest leading among the glyph runs of the line.
                 let mut leading = 0.0f32;
+                let mut emphasis_leading = 0.0f32;
                 for item in line.items() {
                     if let PositionedLayoutItem::GlyphRun(gr) = item {
                         let st = &out.styles[gr.style().brush.0 as usize];
                         let px = gr.run().font_size();
                         leading = leading.max(st.leading_pt.map_or(ps.auto_leading * px, |l| l * k));
+                        if st.emphasis {
+                            let scale = if vertical { st.horizontal_scale } else { st.vertical_scale };
+                            emphasis_leading = emphasis_leading.max(px * scale.max(0.01) * 1.3);
+                        }
                     }
                 }
                 if leading == 0.0 {
                     let st = &out.styles[style_at(prange.start)];
                     leading = st.leading_pt.map_or(ps.auto_leading * st.size_pt * k, |l| l * k);
                 }
+                // Preserve the requested spacing whenever it already has room for the dots.
+                leading = leading.max(emphasis_leading);
                 // Vertical type: half the column width (the largest em on the column).
                 let col_half = line
                     .items()
@@ -993,11 +1013,16 @@ impl Layouter {
                             orient: GlyphOrient::Horizontal,
                         });
                         if let Some(v) = &vm {
-                            let upright = class == 1 || (class == 2 && !plain.contains(&g.id));
+                            let upright = class == VClass::Upright as u8 || class == VClass::Centered as u8 || (class == 2 && !plain.contains(&g.id));
+                            let advance = (g.advance - padding).max(0.0);
+                            let skew = (if st.faux_italic { crate::render::FAUX_ITALIC_DEG } else { 0.0 } + synth.skew().unwrap_or(0.0)).to_radians().tan() * st.vertical_scale;
+                            let centre_x = if class == VClass::Centered as u8 {
+                                v.ink_center(g.id, hs, skew).unwrap_or(advance * hs * 0.5)
+                            } else { advance * hs * 0.5 };
                             vinfo.push(VGlyph {
                                 upright,
                                 // Padding separates glyphs along the column, not across it.
-                                advance: (g.advance - padding).max(0.0) * hs,
+                                centre_x,
                                 origin: if upright { v.origin(g.id) } else { 0.0 },
                                 // Rotated text is centred on the column: its baseline sits
                                 // (ascent − descent) / 2 from the centre line.
@@ -1023,7 +1048,7 @@ impl Layouter {
                         // Underline to the right of the column, strikethrough through its centre
                         // (stored directly in text space).
                         let half = run.font_size() * 0.5;
-                        let mut push = |v0: f32, v1: f32| out.decorations.push(DecorationRect { x0: -v1, y0: run_x0, x1: -v0, y1: run_x1, style: si });
+                        let mut push = |v0: f32, v1: f32| out.decorations.push(DecorationRect { x0: -v1, y0: run_x0, x1: -v0, y1: run_x1, style: si, round: false });
                         if gr.style().underline.is_some() {
                             let v1 = baseline - half;
                             push(v1 - rm.underline_size.max(1.0), v1);
@@ -1034,11 +1059,11 @@ impl Layouter {
                         }
                     } else if gr.style().underline.is_some() {
                         let y0 = baseline - rm.underline_offset - shift;
-                        out.decorations.push(DecorationRect { x0: run_x0, y0, x1: run_x1, y1: y0 + rm.underline_size.max(1.0), style: si });
+                        out.decorations.push(DecorationRect { x0: run_x0, y0, x1: run_x1, y1: y0 + rm.underline_size.max(1.0), style: si, round: false });
                     }
                     if !vertical && gr.style().strikethrough.is_some() {
                         let y0 = baseline - rm.strikethrough_offset - shift;
-                        out.decorations.push(DecorationRect { x0: run_x0, y0, x1: run_x1, y1: y0 + rm.strikethrough_size.max(1.0), style: si });
+                        out.decorations.push(DecorationRect { x0: run_x0, y0, x1: run_x1, y1: y0 + rm.strikethrough_size.max(1.0), style: si, round: false });
                     }
                 }
                 if vertical {
@@ -1065,7 +1090,7 @@ impl Layouter {
                     for (g, v) in out.glyphs[g0..].iter_mut().zip(&vinfo) {
                         let (u, cross) = (g.x, g.y);
                         if v.upright {
-                            g.x = -baseline - v.advance * 0.5;
+                            g.x = -baseline - v.centre_x;
                             g.y = u + v.origin;
                             g.orient = GlyphOrient::Upright;
                         } else {
@@ -1073,6 +1098,29 @@ impl Layouter {
                             g.y = u;
                             g.orient = GlyphOrient::Rotated;
                         }
+                    }
+                }
+                for cluster in &out.clusters[c0..] {
+                    let si = style_at(cluster.range.start);
+                    let st = &out.styles[si];
+                    if !st.emphasis { continue; }
+                    let count = text.get(cluster.range.clone()).map_or(0, |s| s.chars().filter(|c| c.is_alphanumeric()).count());
+                    if count == 0 {
+                        continue;
+                    }
+                    let size = st.size_pt * k;
+                    let radius = size * 0.075;
+                    let gap = size * 0.1;
+                    let shift = st.baseline_shift_pt * k;
+                    // A ligature may contain several letters but still needs one dot per letter.
+                    for i in 0..count {
+                        let middle = cluster.x + cluster.advance * (i as f32 + 0.5) / count as f32;
+                        let (x, y) = if vertical {
+                            (-baseline + size * st.horizontal_scale.max(0.01) * 0.5 + gap + radius + shift, middle)
+                        } else {
+                            (middle, baseline - ascent * st.vertical_scale.max(0.01) - gap - radius - shift)
+                        };
+                        out.decorations.push(DecorationRect { x0: x - radius, y0: y - radius, x1: x + radius, y1: y + radius, style: si as u32, round: true });
                     }
                 }
                 let x0 = dx + m.offset;
@@ -1200,8 +1248,8 @@ fn quote(s: &str) -> String {
 /// Placement data of one vertical-type glyph (before mapping to text space).
 struct VGlyph {
     upright: bool,
-    /// Advance along the column (px).
-    advance: f32,
+    /// Horizontal ink/advance centre of the upright glyph (px).
+    centre_x: f32,
     /// Upright: distance from the top of the glyph's cell down to its baseline (px).
     origin: f32,
     /// Rotated: distance from the column centre line to the glyph's baseline (px).
@@ -1240,6 +1288,18 @@ impl<'a> VMetrics<'a> {
     fn cmap(&self, c: char) -> Option<u32> {
         use skrifa::MetadataProvider;
         self.font.as_ref()?.charmap().map(c).map(|g| g.to_u32())
+    }
+
+    fn ink_center(&self, gid: u32, horizontal_scale: f32, skew: f32) -> Option<f32> {
+        use skrifa::MetadataProvider;
+        use crate::raster::{Bounds, Pen, Xform};
+        let f = self.font.as_ref()?;
+        let outline = f.outline_glyphs().get(skrifa::GlyphId::new(gid))?;
+        let mut bounds = Bounds::default();
+        let xf = Xform([f64::from(horizontal_scale * self.scale), 0.0, f64::from(skew * self.scale), -f64::from(self.scale), 0.0, 0.0]);
+        outline.draw(skrifa::outline::DrawSettings::unhinted(skrifa::instance::Size::unscaled(), skrifa::instance::LocationRef::new(&self.coords)), &mut Pen::new(&mut bounds, xf)).ok()?;
+        let [x0, _, x1, _] = bounds.rect?;
+        Some(((x0 + x1) * 0.5) as f32)
     }
 
     /// Distance from the top of an upright glyph's cell to its baseline (px).

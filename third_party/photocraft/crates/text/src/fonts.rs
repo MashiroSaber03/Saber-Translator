@@ -399,25 +399,28 @@ impl FontDb {
         self.fcx.collection.family_id(name).is_some()
     }
 
-    /// Whether the face selected for a character style exposes an OpenType GSUB feature.
+    /// The face selected for a character style.
     ///
     /// This deliberately checks the matched face, rather than every face in the family: a
-    /// regular face can lack a feature that its italic or bold sibling has (or vice versa).
-    pub(crate) fn selected_face_has_feature(&mut self, family: &str, weight: u16, italic: bool, feature: Tag) -> bool {
+    /// regular face can have different glyphs or features from its italic or bold sibling.
+    fn selected_face(&mut self, family: &str, weight: u16, italic: bool) -> Option<parley::FontData> {
         let family = if family.is_empty() || !self.has_family(family) { DEFAULT_FAMILY } else { family };
-        let Some(info) = self.fcx.collection.family_by_name(family) else {
-            return false;
-        };
+        let info = self.fcx.collection.family_by_name(family)?;
         let style = if italic { FontStyle::Italic } else { FontStyle::Normal };
-        let Some(font) = info.match_font(FontWidth::default(), style, FontWeight::new(weight.clamp(1, 1000) as f32), true) else {
-            return false;
-        };
-        let Some(blob) = font.load(Some(&mut self.fcx.source_cache)) else {
-            return false;
-        };
-        let Ok(font) = skrifa::FontRef::from_index(blob.as_ref(), font.index()) else {
-            return false;
-        };
+        let font = info.match_font(FontWidth::default(), style, FontWeight::new(weight.clamp(1, 1000) as f32), true)?;
+        Some(parley::FontData { data: font.load(Some(&mut self.fcx.source_cache))?, index: font.index() })
+    }
+
+    pub(crate) fn selected_face_has_character(&mut self, family: &str, weight: u16, italic: bool, c: char) -> bool {
+        self.selected_face(family, weight, italic)
+            .and_then(|data| skrifa::FontRef::from_index(data.data.as_ref(), data.index).ok()?.charmap().map(c))
+            .is_some()
+    }
+
+    /// Whether the selected face exposes an OpenType GSUB feature.
+    pub(crate) fn selected_face_has_feature(&mut self, family: &str, weight: u16, italic: bool, feature: Tag) -> bool {
+        let Some(data) = self.selected_face(family, weight, italic) else { return false };
+        let Ok(font) = skrifa::FontRef::from_index(data.data.as_ref(), data.index) else { return false };
         font.gsub()
             .ok()
             .and_then(|gsub| gsub.feature_list().ok())

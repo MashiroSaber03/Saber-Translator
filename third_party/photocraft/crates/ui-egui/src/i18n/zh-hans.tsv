@@ -2760,3 +2760,5 @@ curves	Smooth	平滑
 	Reset Panels	重置面板布局
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	保留图层与可编辑文字。请在 Photoshop 中安装相同字体；首次编辑时文字可能重新排版。
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	已保留当前画面与可编辑文字。新建文字的光学字距在 Photoshop 编辑时将使用“度量”字距。
+
+	Emphasis Marks	着重号

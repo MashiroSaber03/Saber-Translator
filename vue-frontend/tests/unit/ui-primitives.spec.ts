@@ -453,6 +453,8 @@ describe('UI primitives architecture contracts', () => {
     expect(buttons[1]!.attributes('disabled')).toBeDefined()
 
     await wrapper.get('input#worker-count').setValue('0')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([3])
+    await wrapper.get('input#worker-count').trigger('blur')
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([1])
   })
 

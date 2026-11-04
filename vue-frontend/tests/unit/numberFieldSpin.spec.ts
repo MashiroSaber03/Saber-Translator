@@ -1,8 +1,54 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
+import { ref } from 'vue'
 
 describe('decimal input with a separate arrow step', () => {
+  it('shows the consumer-rounded value after finishing a focused input', async () => {
+    const value = ref(1)
+    const wrapper = mount({
+      components: { UiNumberField }, setup: () => ({ value }),
+      template: '<UiNumberField :model-value="value" @update:model-value="value = Math.round($event)" />',
+    })
+    const input = wrapper.get('input')
+    await input.trigger('focus')
+    await input.setValue('1.2')
+    expect(input.element.value).toBe('1.2')
+    expect(value.value).toBe(1)
+    await input.trigger('blur')
+    expect(input.element.value).toBe('1')
+    wrapper.unmount()
+  })
+  it('keeps partial bounded input while typing 150 and validates only on completion', async () => {
+    const value = ref<number | null>(100)
+    const wrapper = mount({
+      components: { UiNumberField }, setup: () => ({ value }),
+      template: '<UiNumberField v-model="value" :min="10" :max="400" />',
+    })
+    const input = wrapper.get('input')
+    await input.trigger('focus')
+    await input.setValue('1')
+    expect(input.element.value).toBe('1')
+    expect(value.value).toBe(100)
+    await input.setValue('15')
+    expect(value.value).toBe(15)
+    await input.setValue('150')
+    await input.trigger('blur')
+    expect(input.element.value).toBe('150')
+    expect(value.value).toBe(150)
+    await input.trigger('focus')
+    await input.setValue('1050')
+    expect(input.element.value).toBe('1050')
+    expect(value.value).toBe(150)
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(input.element.value).toBe('400')
+    expect(value.value).toBe(400)
+    await input.setValue('1')
+    await input.trigger('blur')
+    expect(input.element.value).toBe('10')
+    expect(value.value).toBe(10)
+    wrapper.unmount()
+  })
   it('accepts decimals and increments without snapping to integers', async () => {
     const wrapper = mount(UiNumberField, { props: { modelValue: 2.5, min: 0, step: 0.1, spinStep: 1 } })
     await wrapper.get('input').setValue('1.2')

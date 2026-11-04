@@ -388,6 +388,7 @@ fn options_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, paragraph: bool, s
             (tl!("Faux Bold"), "faux_bold", "fauxBold", "bool"),
             (tl!("Faux Italic"), "faux_italic", "fauxItalic", "bool"),
             (tl!("Underline"), "underline", "underline", "bool"),
+            (tl!("Emphasis Marks"), "emphasis", "emphasis", "bool"),
             (tl!("Strikethrough"), "strikethrough", "strikethrough", "bool"),
         ];
         for &(label, key, panel, kind) in rows {

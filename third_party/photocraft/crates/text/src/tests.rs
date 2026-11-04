@@ -10,6 +10,34 @@ fn point(text: &str, size_pt: f32) -> TextLayer {
 }
 
 #[test]
+fn emphasis_marks_follow_character_styles_and_reserve_line_space() {
+    let mut engine = TextEngine::new();
+    for orientation in [Orientation::Horizontal, Orientation::Vertical] {
+        let mut text = TextLayer { orientation, ..point("office C\nDEF", 40.0) };
+        text.runs = vec![TextRun { len: text.text.len(), style: CharStyle {
+            font_family: "Inter".into(), size_pt: 40.0, leading_pt: Some(40.0), ..Default::default()
+        } }];
+        let plain = engine.layout(&text, 72.0);
+        assert!(plain.decorations.is_empty());
+        text.runs[0].style.emphasis = true;
+        let before = text.clone();
+        let (layout, pixels) = engine.render(&text, 72.0, PixelFormat::RGBA8);
+        assert_eq!(text, before, "rendering must not add dots to the stored text");
+        let dots: Vec<_> = layout.decorations.iter().filter(|d| d.round).collect();
+        assert_eq!(dots.len(), 10, "one dot per letter, including ligatures; none on spaces or breaks");
+        assert!(dots.iter().all(|d| (d.x1 - d.x0 - 6.0).abs() < 0.01));
+        assert!(layout.lines[1].baseline - layout.lines[0].baseline >= 52.0);
+        assert!(layout.lines[1].baseline - layout.lines[0].baseline > plain.lines[1].baseline - plain.lines[0].baseline);
+        assert!(!pixels.rect.is_empty());
+        text.runs = vec![
+            TextRun { len: 2, style: CharStyle { emphasis: true, ..text.runs[0].style.clone() } },
+            TextRun { len: text.text.len() - 2, style: CharStyle { emphasis: false, ..text.runs[0].style.clone() } },
+        ];
+        assert_eq!(engine.layout(&text, 72.0).decorations.iter().filter(|d| d.round).count(), 2);
+    }
+}
+
+#[test]
 fn block_alignment_moves_glyphs_and_carets_without_moving_the_frame() {
     use photocraft_doc::text::BlockAlign;
     let mut engine = TextEngine::new();
@@ -1212,7 +1240,7 @@ fn psd_text_fill_is_enabled_in_runs_and_new_default_styles() {
     let mut t = point("AB", 100.0);
     t.runs = vec![
         TextRun { len: 1, style: CharStyle { color: Color::rgb(0.2, 0.4, 0.6), ..Default::default() } },
-        TextRun { len: 1, style: CharStyle { faux_bold: true, size_pt: 100.0, ..Default::default() } },
+        TextRun { len: 1, style: CharStyle { faux_bold: true, emphasis: true, size_pt: 100.0, ..Default::default() } },
     ];
     for shape in [TextShape::Point, TextShape::Box { x: 0.0, y: 0.0, width: 300.0, height: 200.0 }] {
         t.shape = shape;
@@ -1234,6 +1262,7 @@ fn psd_text_fill_is_enabled_in_runs_and_new_default_styles() {
             assert_eq!(actual.style.color, expected.style.color);
             assert_eq!(actual.style.size_pt, expected.style.size_pt);
             assert_eq!(actual.style.faux_bold, expected.style.faux_bold);
+            assert_eq!(actual.style.emphasis, expected.style.emphasis);
         }
     }
 }

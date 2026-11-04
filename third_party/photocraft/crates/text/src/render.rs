@@ -8,7 +8,7 @@ use skrifa::instance::{LocationRef, NormalizedCoord, Size};
 use skrifa::outline::DrawSettings;
 use skrifa::{GlyphId, MetadataProvider};
 
-use crate::layout::{GlyphOrient, PlacedGlyph, TextLayout};
+use crate::layout::{DecorationRect, GlyphOrient, PlacedGlyph, TextLayout};
 use crate::raster::{Bounds, Coverage, LineSink, Pen, Xform, rect_to};
 use crate::warp::{Placement, Warp};
 
@@ -147,11 +147,24 @@ fn draw_pass(layout: &TextLayout, transform: &Xform, sink: &mut impl LineSink, o
         match warp {
             Some(w) => {
                 let mut ws = WarpSink { inner: &mut *sink, warp: w, post: *transform };
-                rect_to(&mut ws, &Xform::IDENTITY, d.x0 as f64, d.y0 as f64, d.x1 as f64, d.y1 as f64);
+                decoration_to(&mut ws, &Xform::IDENTITY, d);
             }
-            None => rect_to(sink, transform, d.x0 as f64, d.y0 as f64, d.x1 as f64, d.y1 as f64),
+            None => decoration_to(sink, transform, d),
         }
     }
+}
+
+fn decoration_to(sink: &mut impl LineSink, transform: &Xform, d: &DecorationRect) {
+    if !d.round {
+        return rect_to(sink, transform, d.x0 as f64, d.y0 as f64, d.x1 as f64, d.y1 as f64);
+    }
+    let (cx, cy) = (f64::from(d.x0 + d.x1) * 0.5, f64::from(d.y0 + d.y1) * 0.5);
+    let (rx, ry) = (f64::from(d.x1 - d.x0) * 0.5, f64::from(d.y1 - d.y0) * 0.5);
+    let point = |i: usize| {
+        let angle = i as f64 * std::f64::consts::TAU / 24.0;
+        transform.apply(cx + rx * angle.cos(), cy + ry * angle.sin())
+    };
+    for i in 0..24 { sink.line(point(i), point(i + 1)); }
 }
 
 /// Font units (scaled to px, y up) → text space for a placed glyph: scales, faux italic,

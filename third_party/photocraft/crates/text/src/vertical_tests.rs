@@ -39,8 +39,11 @@ fn cjk_engine() -> Option<(TextEngine, String)> {
 
 #[test]
 fn classes_follow_vertical_orientation() {
-    for c in ['縦', 'か', 'カ', '한', '、', '。', 'Ａ', '１', '!', '?', '！', '？', '¡', '¿', '؟', '‼', '⁇', '⁈', '⁉', '﹖', '﹗'] {
+    for c in ['縦', 'か', 'カ', '한', '、', '。', 'Ａ', '１'] {
         assert_eq!(vertical_class(c), VClass::Upright, "{c}");
+    }
+    for c in ['!', '?', '！', '？', '¡', '¿', '؟', '‼', '⁇', '⁈', '⁉', '﹖', '﹗', 'ǃ', '❢', '❕', '❗', '‽'] {
+        assert_eq!(vertical_class(c), VClass::Centered, "{c}");
     }
     for c in ['ー', '「', '」', '（', '）', '〜', '…', '—'] {
         assert_eq!(vertical_class(c), VClass::AlternateOrRotate, "{c}");
@@ -58,7 +61,7 @@ fn emphasis_punctuation_stays_upright_between_rotated_latin() {
     let l = e.layout(&t, 72.0);
     assert_eq!(l.glyphs.iter().map(|g| g.orient).collect::<Vec<_>>(), [GlyphOrient::Rotated, GlyphOrient::Upright, GlyphOrient::Upright, GlyphOrient::Rotated]);
     assert_eq!(t, before, "orientation must not rewrite the stored text or styles");
-    for mark in ["!", "?", "‼", "⁉"] {
+    for mark in ["!", "?", "‼", "⁉", "ǃ", "❢", "‽"] {
         let t = vertical(mark, "Inter", 40.0);
         let (l, v) = e.render(&t, 72.0, PixelFormat::RGBA8);
         let (_, h) = e.render(&TextLayer { orientation: Orientation::Horizontal, ..t }, 72.0, PixelFormat::RGBA8);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -59,7 +59,11 @@ const canDecrement = computed(() => !props.disabled && (
 const canIncrement = computed(() => !props.disabled && (
   stepValue.value === undefined || props.max === undefined || stepValue.value < props.max
 ))
-const inputValue = computed(() => props.modelValue ?? '')
+const inputValue = ref(String(props.modelValue ?? ''))
+const focused = ref(false)
+watch(() => props.modelValue, value => {
+  if (!focused.value) inputValue.value = String(value ?? '')
+})
 
 function clampValue(value: number): number {
   if (!Number.isFinite(value)) return props.min ?? 0
@@ -69,25 +73,44 @@ function clampValue(value: number): number {
 
 function commitValue(value: number): void {
   const nextValue = clampValue(value)
-  emit('update:modelValue', nextValue)
-  emit('change', nextValue)
+  inputValue.value = String(nextValue)
+  if (nextValue !== props.modelValue) {
+    emit('update:modelValue', nextValue)
+    emit('change', nextValue)
+  }
 }
 
-function handleInputValue(value: string | number): void {
+function handleInput(event: Event): void {
+  const value = (event.target as HTMLInputElement).value
+  inputValue.value = value
   if (props.nullable && value === '') {
     emit('update:modelValue', null)
     emit('change', null)
     return
   }
-  if (value === '') return
-  commitValue(Number(value))
+  const number = Number(value)
+  // Keep partial values such as the first "1" of "150" in the input. Only valid
+  // values reach live previews; bounds are applied when the user finishes typing.
+  if (value !== '' && Number.isFinite(number)
+    && (props.min === undefined || number >= props.min)
+    && (props.max === undefined || number <= props.max)) {
+    emit('update:modelValue', number)
+    emit('change', number)
+  }
 }
 
-function restoreEmptyInput(event: FocusEvent): void {
-  if (props.nullable) return
-  const target = event.target
-  if (!(target instanceof HTMLInputElement) || target.value !== '') return
-  target.value = String(props.modelValue ?? props.min ?? 0)
+function finishInput(): void {
+  if (inputValue.value === '') {
+    inputValue.value = String(props.modelValue ?? (props.nullable ? '' : props.emptyValue ?? props.min ?? 0))
+  } else commitValue(Number(inputValue.value))
+  // Consumers such as RGB fields may round an accepted value. Show their final
+  // value after committing, including when that rounding leaves the model unchanged.
+  void nextTick(() => { inputValue.value = String(props.modelValue ?? '') })
+}
+
+function handleBlur(): void {
+  focused.value = false
+  finishInput()
 }
 
 function stepBy(direction: -1 | 1): void {
@@ -99,6 +122,11 @@ function stepBy(direction: -1 | 1): void {
   commitValue(Number((stepValue.value + (props.spinStep ?? props.step) * direction).toPrecision(12)))
 }
 function handleArrow(event: KeyboardEvent): void {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    finishInput()
+    return
+  }
   if (props.spinStep === undefined || !['ArrowUp', 'ArrowDown'].includes(event.key)) return
   event.preventDefault()
   stepBy(event.key === 'ArrowUp' ? 1 : -1)
@@ -145,8 +173,9 @@ function handleWheel(event: WheelEvent): void {
       :disabled="disabled"
       :aria-label="ariaLabel"
       :title="title || undefined"
-      @update:model-value="handleInputValue"
-      @blur="restoreEmptyInput"
+      @input="handleInput"
+      @focus="focused = true"
+      @blur="handleBlur"
       @keydown="handleArrow"
       @wheel.passive="handleWheel"
     />

@@ -157,7 +157,7 @@ def test_rich_editor_catalog_matches_every_bundled_native_face(tmp_path):
 
 @pytest.mark.parametrize('font_name', ['msyh.ttc', 'Arial_Unicode.ttf'])
 def test_native_emphasis_marks_stay_upright_after_project_reopen(tmp_path, font_name):
-    marks = '!！?？¡¿؟‼⁇⁈⁉﹖﹗'
+    marks = '!！?？¡¿؟‼⁇⁈⁉﹖﹗ǃ❢❕❗'
     font = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts' / font_name
     fonts = [dict(id='font', path=str(font))]
     source = tmp_path / 'source.png'
@@ -186,6 +186,29 @@ def test_native_emphasis_marks_stay_upright_after_project_reopen(tmp_path, font_
             sizes.append((bbox[2] - bbox[0], bbox[3] - bbox[1]))
         # Vertical OpenType alternates can change a mark's width, but it stays upright.
         assert abs(sizes[0][1] - sizes[1][1]) <= 2, (font_name, mark, sizes)
+
+
+@pytest.mark.parametrize('font_name', ['msyh.ttc', 'simhei.ttf', 'STSONG.TTF', '思源黑体SourceHanSansK-Bold.TTF'])
+def test_vertical_punctuation_centres_visible_ink_and_missing_ornaments_keep_their_text(tmp_path, font_name):
+    font = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts' / font_name
+    source, output = tmp_path / 'source.png', tmp_path / 'text.png'
+    marks = '中！？❗❕'
+    Image.new('RGB', (len(marks) * 100, 200), 'white').save(source)
+    projection = NativeEditor.invoke(dict(pageId='centre', source=str(source), fonts=[dict(id='font', path=str(font))],
+        text=str(output), bubbles=[dict(bubbleId=str(i), fontId='font', payload=_bubble_fields(
+            translatedText=mark, coords=[i * 100, 10, (i + 1) * 100, 190], fontSize=56,
+            textDirection='vertical', rotationAngle=0, strokeEnabled=False, blockAlign='center')) for i, mark in enumerate(marks)]))
+    assert ''.join(b['payload']['translatedText'] for b in projection['bubbles']) == marks
+    with Image.open(output) as image:
+        alpha = image.getchannel('A')
+    bounds = [alpha.crop((i * 100, 0, (i + 1) * 100, 200)).getbbox() for i in range(len(marks))]
+    assert all(bounds)
+    centres = [(b[0] + b[2]) / 2 for b in bounds]
+    assert all(abs(c - centres[0]) <= 2 for c in centres[1:]), (font_name, centres)
+    # Bundled fonts lack these ornaments. Their visible fallback must be a real
+    # exclamation glyph, never a missing-glyph box; the Unicode text stays intact.
+    for i in (3, 4):
+        assert alpha.crop((i * 100, 0, (i + 1) * 100, 200)).crop(bounds[i]).tobytes() == alpha.crop((100, 0, 200, 200)).crop(bounds[1]).tobytes()
 
 
 @pytest.mark.parametrize('uploaded', [False, True])
@@ -559,7 +582,7 @@ def test_ordinary_character_metrics_share_native_style_and_reopen(content_platfo
         before = NativeEditor(storage).prepare(connection, page, render=True, text_only=True)
     rich = deepcopy(document['bubbles'][0]['payload']['richText'])
     for run in rich['runs']:
-        run['style'].update(tracking=150, horizontal_scale=0.65, vertical_scale=1.2)
+        run['style'].update(tracking=150, horizontal_scale=0.65, vertical_scale=1.2, emphasis=True)
     saved, _ = repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'],
         mutations=[dict(op='patch', clientMutationId='metrics', bubbleId=bubble_id,
             fields=dict(richText=rich, textDirection=direction))], idempotency_key='ordinary-metrics')
@@ -584,6 +607,7 @@ def test_ordinary_character_metrics_share_native_style_and_reopen(content_platfo
     for run in payload['richText']['runs']:
         assert run['style']['horizontal_scale'] == pytest.approx(0.65)
         assert run['style']['vertical_scale'] == pytest.approx(1.2)
+        assert run['style']['emphasis'] is True
         assert run['style']['size_pt'] == 36
     with engine.connect() as connection:
         result = NativeEditor(storage).prepare(connection, page, render=True, text_only=True)

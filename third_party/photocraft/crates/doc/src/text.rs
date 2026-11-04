@@ -80,6 +80,8 @@ pub struct CharStyle {
     pub horizontal_scale: f32,
     pub vertical_scale: f32,
     pub underline: bool,
+    /// One emphasis dot per typographic character, above horizontal or right of vertical type.
+    pub emphasis: bool,
     pub strikethrough: bool,
     pub faux_bold: bool,
     pub faux_italic: bool,
@@ -121,6 +123,7 @@ impl Default for CharStyle {
             horizontal_scale: 1.0,
             vertical_scale: 1.0,
             underline: false,
+            emphasis: false,
             strikethrough: false,
             faux_bold: false,
             faux_italic: false,
@@ -314,11 +317,14 @@ mod tests {
 
     #[test]
     fn styles_serialize() {
-        let s = CharStyle { features: vec![FontFeature { tag: "ss01".into(), value: 1 }], ..Default::default() };
+        let s = CharStyle { emphasis: true, features: vec![FontFeature { tag: "ss01".into(), value: 1 }], ..Default::default() };
         let v = serde_json::to_value(&s).unwrap();
         let back: CharStyle = serde_json::from_value(v).unwrap();
         assert_eq!(back, s);
         // Missing keys take defaults.
+        let old: CharStyle = serde_json::from_str(r#"{"size_pt":24}"#).unwrap();
+        assert!(!old.emphasis);
+        assert_eq!(old.size_pt, 24.0);
         let p: ParagraphStyle = serde_json::from_str(r#"{"align":"Center"}"#).unwrap();
         assert_eq!((p.align, p.auto_leading), (TextAlign::Center, 1.2));
     }

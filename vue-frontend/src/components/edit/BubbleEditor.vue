@@ -89,6 +89,7 @@
           <UiIconButton variant="soft" size="xs" label="加粗" title="加粗选中文字 (Ctrl+B)" :active="bold" :pressed="bold" @click="toggleTextStyle('faux_bold')"><strong>B</strong></UiIconButton>
           <UiIconButton variant="soft" size="xs" label="斜体" title="倾斜选中文字 (Ctrl+I)" :active="italic" :pressed="italic" @click="toggleTextStyle('faux_italic')"><i>I</i></UiIconButton>
           <UiIconButton variant="soft" size="xs" label="下划线" title="选中文字添加下划线 (Ctrl+U)" :active="underline" :pressed="underline" @click="toggleTextStyle('underline')"><u>U</u></UiIconButton>
+          <UiIconButton variant="soft" size="xs" label="着重号" title="为选中文字添加着重号；横排在上方，竖排在右侧" :active="emphasis" :pressed="emphasis" @click="toggleTextStyle('emphasis')"><span class="bubble-editor__emphasis-icon">A</span></UiIconButton>
           <UiIconButton variant="soft" size="xs" label="清除局部样式" title="恢复当前框的字体、字号和颜色，清除选字的局部修饰；保留文字和段落" @click="clearFormatting"><UiIcon name="eraser" size="15" /></UiIconButton>
           <UiButton variant="toolbar" class="bubble-editor__text-action bubble-editor__text-action--copy" @click="copyTranslatedText">
             <UiIcon name="copy" size="14" />
@@ -504,6 +505,7 @@ const {
   bold,
   italic,
   underline,
+  emphasis,
   characterMetrics,
   setCharacterMetric,
   handleRichSelection,
@@ -625,6 +627,7 @@ defineExpose({ focusText: () => translatedTextInput.value?.focus(), applyPickedC
 .bubble-editor__text-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 .bubble-editor__text-actions--format { justify-content: space-between; margin-top: 0; padding: 4px 0 12px; border-bottom: 1px solid var(--color-border-muted); }
 .bubble-editor__format-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+.bubble-editor__emphasis-icon { font-size: 13px; text-emphasis: filled dot; }
 .bubble-editor__text-scope { color: var(--color-text-secondary); font-size: 11px; line-height: 24px; white-space: nowrap; }
 .bubble-editor__text-action { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; font-size: 12px; }
 

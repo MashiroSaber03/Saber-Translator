@@ -104,8 +104,10 @@ describe('continuous color picker', () => {
   it('uses the number fields to clamp channels and rounds fractional input to an RGB byte', async () => {
     const { wrapper, hex } = picker('#123456')
     await wrapper.get('input[aria-label="红（R）"]').setValue('999')
+    await wrapper.get('input[aria-label="红（R）"]').trigger('blur')
     expect(hex()).toBe('#ff3456')
     await wrapper.get('input[aria-label="绿（G）"]').setValue('-10')
+    await wrapper.get('input[aria-label="绿（G）"]').trigger('blur')
     expect(hex()).toBe('#ff0056')
     await wrapper.get('input[aria-label="蓝（B）"]').setValue('20.6')
     expect(hex()).toBe('#ff0015')

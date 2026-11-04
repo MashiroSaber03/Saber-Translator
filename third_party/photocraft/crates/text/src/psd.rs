@@ -606,6 +606,7 @@ pub(crate) fn char_style(base: Option<&E>, d: &E, fonts: &[String], k: f32) -> C
     s.faux_bold = flag("FauxBold").unwrap_or(false);
     s.faux_italic = flag("FauxItalic").unwrap_or(false);
     s.underline = flag("Underline").unwrap_or(false);
+    s.emphasis = flag("SaberEmphasis").unwrap_or(false);
     s.strikethrough = flag("Strikethrough").unwrap_or(false);
     s.ligatures = flag("Ligatures").unwrap_or(true);
     s.discretionary_ligatures = flag("DLigatures").unwrap_or(false);
@@ -853,6 +854,7 @@ pub(crate) fn style_sheet_data(s: &CharStyle, font: usize, k: f32) -> E {
             }),
         ),
         ("Underline".into(), E::Bool(s.underline)),
+        ("SaberEmphasis".into(), E::Bool(s.emphasis)),
         ("Strikethrough".into(), E::Bool(s.strikethrough)),
         ("Ligatures".into(), E::Bool(s.ligatures)),
         ("DLigatures".into(), E::Bool(s.discretionary_ligatures)),

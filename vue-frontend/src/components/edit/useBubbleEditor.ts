@@ -103,6 +103,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const bold = computed(() => selectedStyles.value.length > 0 && selectedStyles.value.every(style => style.faux_bold))
   const italic = computed(() => selectedStyles.value.length > 0 && selectedStyles.value.every(style => style.faux_italic))
   const underline = computed(() => selectedStyles.value.length > 0 && selectedStyles.value.every(style => style.underline))
+  const emphasis = computed(() => selectedStyles.value.length > 0 && selectedStyles.value.every(style => style.emphasis))
   const characterMetrics = computed(() => [
     { field: 'tracking', label: '字距', initial: 0, factor: 10, min: -50, max: 200, title: '字间额外间距占字号的百分比，0% 为正常字距；横排和竖排均有效' },
     { field: 'horizontal_scale', label: '字宽', initial: 1, factor: 0.01, min: 10, max: 400, title: '文字宽度，100% 为正常字宽；调低可将文字压窄' },
@@ -172,7 +173,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     if (!textSelection.value.active && (props.selectedBubbles?.length ?? 0) > 1) emit('formatText', style)
     else translatedTextInput.value?.format?.(style)
   }
-  function toggleTextStyle(field: 'faux_bold' | 'faux_italic' | 'underline'): void {
+  function toggleTextStyle(field: 'faux_bold' | 'faux_italic' | 'underline' | 'emphasis'): void {
     formatText({ [field]: !selectedStyles.value.every(style => style[field]) })
   }
 
@@ -477,6 +478,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     bold,
     italic,
     underline,
+    emphasis,
     characterMetrics,
     setCharacterMetric,
     handleRichSelection,

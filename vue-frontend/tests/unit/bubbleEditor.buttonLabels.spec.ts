@@ -46,6 +46,27 @@ function makeBubble(): BubbleState {
 }
 
 describe('BubbleEditor button labels', () => {
+  it('toggles emphasis only on selected characters through the existing rich-text action', async () => {
+    const format = vi.fn()
+    const wrapper = mount(BubbleEditor, { props: { bubble: makeBubble(), bubbleIndex: 0 }, global: {
+      stubs: { RichTextInput: { name: 'RichTextInput', template: '<div />', methods: { format } } },
+    } })
+    const rich = wrapper.findComponent({ name: 'RichTextInput' })
+    rich.vm.$emit('selection', { active: true, count: 2, styles: [{ size_pt: 24 }, { size_pt: 24, emphasis: true }] })
+    await nextTick()
+    const button = wrapper.get('button[aria-label="着重号"]')
+    expect(button.attributes('aria-pressed')).toBe('false')
+    await button.trigger('click')
+    expect(format).toHaveBeenLastCalledWith({ emphasis: true })
+    rich.vm.$emit('selection', { active: true, count: 2, styles: [{ size_pt: 24, emphasis: true }] })
+    await nextTick()
+    expect(button.attributes('aria-pressed')).toBe('true')
+    await button.trigger('click')
+    expect(format).toHaveBeenLastCalledWith({ emphasis: false })
+    expect(wrapper.text()).toContain('已选 2 个字')
+    expect(wrapper.emitted('update')).toBeUndefined()
+    wrapper.unmount()
+  })
   it('shows mixed values for multiple frames and formats the selection through the shared batch action', async () => {
     const a = makeBubble(), b = { ...makeBubble(), fontSize: 36, translatedText: '另一个框' }
     const wrapper = mount(BubbleEditor, { props: { bubble: a, bubbleIndex: 0, selectedCount: 2, selectedBubbles: [a, b] } })
@@ -557,6 +578,7 @@ describe('BubbleEditor button labels', () => {
       '加粗',
       '斜体',
       '下划线',
+      '着重号',
       '清除局部样式',
       '适配字号',
       '竖向排版',

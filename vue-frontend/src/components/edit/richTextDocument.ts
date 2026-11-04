@@ -28,6 +28,7 @@ function runCss(style: RunStyle): string {
   return `font-family:"${family}",sans-serif;font-size:max(12px, calc(16px * ${size} / var(--rich-text-document-size)));`
     + `font-weight:${style.faux_bold ? 900 : Number(style.weight) || 400};font-style:${style.faux_italic || style.italic ? 'italic' : 'normal'};`
     + `text-decoration:${[style.underline && 'underline', style.strikethrough && 'line-through'].filter(Boolean).join(' ') || 'none'};`
+    + `text-emphasis:${style.emphasis ? 'filled dot' : 'none'};text-emphasis-position:over right;`
     + `letter-spacing:${(Number(style.tracking) || 0) / 1000}em;`
     + (color ? `color:${color};` : '')
     // Display-only contrast for white/light lettering; native styles remain unchanged.
