@@ -95,6 +95,7 @@ const isTextStyleExpanded = ref(true)
           control-id="fontFamily"
         >
           <UiCombobox
+            dropdown-fit-content
             input-id="fontFamily"
             aria-label="文本字体"
             :model-value="textStyle.fontFamily"

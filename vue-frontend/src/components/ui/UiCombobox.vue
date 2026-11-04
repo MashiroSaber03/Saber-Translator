@@ -37,6 +37,7 @@
         :id="dropdownId"
         ref="dropdownRef"
         class="ui-combobox-dropdown"
+        :class="{ 'ui-combobox-dropdown--fit-content': dropdownFitContent }"
         role="listbox"
         :style="dropdownStyle"
       >
@@ -60,6 +61,7 @@
                   'ui-combobox-option--active': entry.index === activeIndex,
                 }"
                 role="option"
+                :title="dropdownFitContent ? entry.option.label : undefined"
                 :aria-selected="entry.option.value === modelValue ? 'true' : 'false'"
                 :aria-disabled="entry.option.disabled ? 'true' : undefined"
                 @mouseenter="setActiveOption(entry)"
@@ -81,6 +83,7 @@
                 'ui-combobox-option--active': entry.index === activeIndex,
               }"
               role="option"
+              :title="dropdownFitContent ? entry.option.label : undefined"
               :aria-selected="entry.option.value === modelValue ? 'true' : 'false'"
               :aria-disabled="entry.option.disabled ? 'true' : undefined"
               @mouseenter="setActiveOption(entry)"
@@ -111,6 +114,7 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   title?: string
   fit?: boolean
+  dropdownFitContent?: boolean
 }>(), {
   inputId: undefined,
   ariaLabel: '',
@@ -119,7 +123,8 @@ const props = withDefaults(defineProps<{
   placeholder: '请选择',
   disabled: false,
   title: '',
-  fit: false
+  fit: false,
+  dropdownFitContent: false
 })
 
 const emit = defineEmits<{
@@ -303,6 +308,18 @@ function updatePosition() {
   const rect = selectRef.value.getBoundingClientRect()
   const viewportWidth = window.innerWidth
   const viewportHeight = window.innerHeight
+  const availableWidth = Math.max(0, viewportWidth - VIEWPORT_PADDING * 2)
+  const minWidth = Math.min(Math.max(rect.width, 160), availableWidth)
+  const maxWidth = `calc(100vw - ${VIEWPORT_PADDING * 2}px)`
+  if (props.dropdownFitContent && dropdownRef.value) {
+    // Apply the current anchor/viewport limits before measuring the content width.
+    dropdownRef.value.style.minWidth = `${minWidth}px`
+    dropdownRef.value.style.maxWidth = maxWidth
+  }
+  const contentWidth = props.dropdownFitContent
+    ? dropdownRef.value?.getBoundingClientRect().width ?? 0
+    : 0
+  const width = Math.min(Math.max(minWidth, contentWidth), availableWidth)
   const fallbackHeight = Math.min(MAX_DROPDOWN_HEIGHT, Math.max(44, getOptionCount() * 40))
   const renderedHeight = dropdownRef.value?.scrollHeight ?? fallbackHeight
   const desiredHeight = Math.min(MAX_DROPDOWN_HEIGHT, Math.max(44, renderedHeight))
@@ -313,7 +330,6 @@ function updatePosition() {
 
   const availableHeight = shouldOpenAbove ? spaceAbove : spaceBelow
   const maxHeight = Math.min(desiredHeight, Math.max(availableHeight - DROPDOWN_GAP, 44))
-  const width = Math.min(rect.width, viewportWidth - VIEWPORT_PADDING * 2)
   const left = Math.min(
     Math.max(rect.left, VIEWPORT_PADDING),
     viewportWidth - VIEWPORT_PADDING - width
@@ -330,8 +346,9 @@ function updatePosition() {
   dropdownStyle.value = {
     top: `${Math.round(top)}px`,
     left: `${Math.round(left)}px`,
-    width: `${Math.round(width)}px`,
-    minWidth: '160px',
+    ...(props.dropdownFitContent ? {} : { width: `${Math.round(width)}px` }),
+    minWidth: `${minWidth}px`,
+    maxWidth,
     maxHeight: `${Math.round(maxHeight)}px`
   }
 }
@@ -379,7 +396,10 @@ watch(() => props.disabled, (disabled) => {
 })
 
 watch([() => props.options, () => props.groups, () => props.modelValue], () => {
-  if (isOpen.value) resetActiveIndex()
+  if (isOpen.value) {
+    resetActiveIndex()
+    void nextTick(updatePosition)
+  }
 })
 
 watch(activeIndex, (index) => {
@@ -469,6 +489,18 @@ watch(activeIndex, (index) => {
   padding: 6px 0;
   background: var(--ui-selector-dropdown-background, var(--color-surface-base, Canvas));
   color: var(--ui-selector-control-text, var(--color-text-default, CanvasText));
+}
+
+.ui-combobox-dropdown--fit-content {
+  width: max-content;
+  overflow-x: hidden;
+}
+
+.ui-combobox-dropdown--fit-content .ui-combobox-option,
+.ui-combobox-dropdown--fit-content .ui-combobox-group-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ui-combobox-group {

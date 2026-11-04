@@ -29,6 +29,7 @@
 
       <UiField variant="settings" label="文本字体" :control-id="id('FontFamily')">
         <UiCombobox
+          dropdown-fit-content
           :input-id="id('FontFamily')"
           aria-label="文本字体"
           :model-value="draftDefaults.fontFamily"

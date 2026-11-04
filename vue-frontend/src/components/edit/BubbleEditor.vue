@@ -106,6 +106,7 @@
           <UiField class="bubble-editor__toolbar-field" variant="editor" label="字体" control-id="bubbleFontFamily">
             <UiCombobox
               fit
+              dropdown-fit-content
               input-id="bubbleFontFamily"
               aria-label="字体"
               v-model="localFontFamily"
