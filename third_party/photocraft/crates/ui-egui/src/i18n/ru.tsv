@@ -3112,3 +3112,4 @@ curves	Smooth	Сгладить
 	Length	Длина
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Слои и текст остаются редактируемыми. Установите те же шрифты в Photoshop. При первом редактировании расположение текста может измениться.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	Сохранённый вид и редактируемый текст сохраняются. При редактировании нового текста в Photoshop оптический кернинг заменяется метрическим.
+	Emphasis Marks	Знаки выделения

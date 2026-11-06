@@ -42,13 +42,13 @@ fn classes_follow_vertical_orientation() {
     for c in ['縦', 'か', 'カ', '한', '、', '。', 'Ａ', '１'] {
         assert_eq!(vertical_class(c), VClass::Upright, "{c}");
     }
-    for c in ['!', '?', '！', '？', '¡', '¿', '؟', '‼', '⁇', '⁈', '⁉', '﹖', '﹗', 'ǃ', '❢', '❕', '❗', '‽'] {
+    for c in ['0', '1', '9', '!', '?', '！', '？', '¡', '¿', '؟', '‼', '⁇', '⁈', '⁉', '﹖', '﹗', 'ǃ', '❢', '❕', '❗', '‽'] {
         assert_eq!(vertical_class(c), VClass::Centered, "{c}");
     }
     for c in ['ー', '「', '」', '（', '）', '〜', '…', '—'] {
         assert_eq!(vertical_class(c), VClass::AlternateOrRotate, "{c}");
     }
-    for c in ['A', 'z', '1', ' ', '-', 'ｶ', 'é'] {
+    for c in ['A', 'z', ' ', '-', 'ｶ', 'é'] {
         assert_eq!(vertical_class(c), VClass::Rotate, "{c}");
     }
 }
@@ -78,16 +78,11 @@ fn emphasis_punctuation_stays_upright_between_rotated_latin() {
 #[test]
 fn narrow_upright_marks_have_full_cells_and_wrap_with_their_carets() {
     let mut engine = TextEngine::new();
-    let text = vertical("!!??", "Inter", 40.0);
+    let text = vertical("! ! ?", "Inter", 40.0);
     let layout = engine.layout(&text, 72.0);
-    assert_eq!(layout.glyphs.len(), 4);
-    for (index, pair) in layout.glyphs.windows(2).enumerate() {
-        assert!((pair[1].y - pair[0].y - 40.0).abs() < 0.01, "{pair:?}");
-        if index != 1 {
-            assert!((pair[1].x - pair[0].x).abs() < 0.01, "equal marks stay centred: {pair:?}");
-        }
+    for c in layout.clusters.iter().filter(|c| text.text.get(c.range.clone()).is_some_and(|s| s != " ")) {
+        assert!((c.advance - 40.0).abs() < 0.01, "{c:?}");
     }
-    assert!(layout.clusters.iter().all(|c| (c.advance - 40.0).abs() < 0.01));
     let text = TextLayer { shape: TextShape::Box { x: 0.0, y: 0.0, width: 300.0, height: 100.0 }, ..vertical("! ! ! !", "Inter", 40.0) };
     let layout = engine.layout(&text, 72.0);
     assert!(layout.lines.len() > 1);
@@ -99,6 +94,75 @@ fn narrow_upright_marks_have_full_cells_and_wrap_with_their_carets() {
         let index = layout.hit_test((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5);
         assert_eq!(index, i, "caret {i}");
     }
+}
+
+#[test]
+fn comic_digits_are_upright_without_changing_latin_or_source_styles() {
+    let mut engine = TextEngine::new();
+    let text = vertical("A019B", "Inter", 40.0);
+    let before = text.clone();
+    let layout = engine.layout(&text, 72.0);
+    assert_eq!(layout.glyphs.iter().map(|g| g.orient).collect::<Vec<_>>(),
+        [GlyphOrient::Rotated, GlyphOrient::Upright, GlyphOrient::Upright, GlyphOrient::Upright, GlyphOrient::Rotated]);
+    for c in layout.clusters.iter().filter(|c| c.range.start > 0 && c.range.end < text.text.len()) {
+        assert!((c.advance - 40.0).abs() < 0.01, "{c:?}");
+    }
+    assert_eq!(text, before);
+}
+
+#[test]
+fn comic_punctuation_shares_one_cell_with_individual_carets_and_wrapping() {
+    let mut engine = TextEngine::new();
+    for source in ["!!", "!?", "?!", "??", "!!!", "！！", "！？"] {
+        let text = TextLayer { shape: TextShape::Box { x: 0.0, y: 0.0, width: 200.0, height: 40.1 }, ..vertical(source, "Inter", 40.0) };
+        let before = text.clone();
+        let layout = engine.layout(&text, 72.0);
+        assert_eq!(layout.lines.len(), 1, "{source}: {:?}", layout.lines);
+        assert!((layout.lines[0].x1 - layout.lines[0].x0 - 40.0).abs() < 0.02, "{source}: {:?}", layout.lines);
+        assert!(layout.glyphs.windows(2).all(|g| (g[0].y - g[1].y).abs() < 0.01 && g[0].x < g[1].x), "{source}: {:?}", layout.glyphs);
+        for (byte, _) in source.char_indices() {
+            let [a, b] = layout.caret_segment(byte);
+            assert!((a.0 - b.0).abs() < 0.01 && a.1 < b.1, "{source}: caret {byte}: {a:?} {b:?}");
+            assert_eq!(layout.hit_test(a.0, (a.1 + b.1) * 0.5), byte, "{source}: caret {byte}");
+        }
+        assert_eq!(text, before);
+        let horizontal = TextLayer { orientation: Orientation::Horizontal, ..text };
+        assert!(engine.layout(&horizontal, 72.0).clusters.iter().all(|c| c.combined.is_none()));
+    }
+    let text = TextLayer { shape: TextShape::Box { x: 0.0, y: 0.0, width: 200.0, height: 40.1 }, ..vertical("!!??!!", "Inter", 40.0) };
+    let layout = engine.layout(&text, 72.0);
+    assert_eq!(layout.lines.len(), 2);
+    assert_eq!(layout.lines[0].range, 0..3);
+    assert_eq!(layout.lines[1].range, 3..6);
+    let text = vertical("A!?B", "Inter", 40.0);
+    let layout = engine.layout(&text, 72.0);
+    for byte in 0..=text.text.len() {
+        let [a, b] = layout.caret_segment(byte);
+        assert_eq!(layout.hit_test((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5), byte, "boundary {byte}");
+    }
+}
+
+#[test]
+fn combined_punctuation_preserves_mixed_character_styles_and_block_alignment() {
+    let mut engine = TextEngine::new();
+    let text = TextLayer {
+        shape: TextShape::Box { x: 0.0, y: 0.0, width: 200.0, height: 100.0 },
+        block_align: photocraft_doc::text::BlockAlign::Center,
+        runs: vec![
+            TextRun { len: 1, style: CharStyle { font_family: "Inter".into(), size_pt: 40.0, underline: true, ..Default::default() } },
+            TextRun { len: 1, style: CharStyle { font_family: "Inter".into(), size_pt: 60.0, faux_bold: true, ..Default::default() } },
+        ],
+        ..vertical("!?", "Inter", 40.0)
+    };
+    let before = text.clone();
+    let layout = engine.layout(&text, 72.0);
+    assert_ne!(layout.glyphs[0].style, layout.glyphs[1].style);
+    assert!((layout.glyphs[0].y - layout.glyphs[1].y).abs() < 0.01);
+    for (byte, _) in text.text.char_indices() {
+        let [a, b] = layout.caret_segment(byte);
+        assert_eq!(layout.hit_test(a.0, (a.1 + b.1) * 0.5), byte);
+    }
+    assert_eq!(text, before);
 }
 
 #[test]
@@ -332,8 +396,8 @@ fn punctuation_squeeze_removes_half_em_between_marks() {
     let mut glyphs = Vec::new();
     let mut x = 0.0;
     for (i, (b, c)) in text.char_indices().enumerate() {
-        clusters.push(ClusterInfo { range: b..b + c.len_utf8(), x, advance: 40.0, line: 0, rtl: false });
-        glyphs.push(crate::PlacedGlyph { face: 0, id: i as u32 + 1, x, y: 0.0, style: 0, orient: GlyphOrient::Horizontal });
+        clusters.push(ClusterInfo { range: b..b + c.len_utf8(), x, advance: 40.0, line: 0, rtl: false, combined: None });
+        glyphs.push(crate::PlacedGlyph { face: 0, id: i as u32 + 1, x, y: 0.0, style: 0, orient: GlyphOrient::Horizontal, scale_x: 1.0 });
         x += 40.0;
     }
     let cut = squeeze_punctuation(text, &mut clusters, &mut glyphs);
@@ -347,14 +411,14 @@ fn punctuation_squeeze_removes_half_em_between_marks() {
     let mut cl: Vec<ClusterInfo> = text
         .char_indices()
         .enumerate()
-        .map(|(i, (b, c))| ClusterInfo { range: b..b + c.len_utf8(), x: 40.0 * i as f32, advance: 40.0, line: 0, rtl: false })
+        .map(|(i, (b, c))| ClusterInfo { range: b..b + c.len_utf8(), x: 40.0 * i as f32, advance: 40.0, line: 0, rtl: false, combined: None })
         .collect();
     assert_eq!(squeeze_punctuation(text, &mut cl, &mut []), 20.0);
     assert_eq!(cl.iter().map(|c| c.x).collect::<Vec<_>>(), vec![0.0, 20.0, 60.0]);
     // Nothing to squeeze, and no panic on empty input or ranges outside the text.
-    let mut none = vec![ClusterInfo { range: 0..3, x: 0.0, advance: 40.0, line: 0, rtl: false }];
+    let mut none = vec![ClusterInfo { range: 0..3, x: 0.0, advance: 40.0, line: 0, rtl: false, combined: None }];
     assert_eq!(squeeze_punctuation("東京", &mut none, &mut []), 0.0);
-    let mut bad = vec![ClusterInfo { range: 50..60, x: 0.0, advance: 1.0, line: 0, rtl: false }; 3];
+    let mut bad = vec![ClusterInfo { range: 50..60, x: 0.0, advance: 1.0, line: 0, rtl: false, combined: None }; 3];
     assert_eq!(squeeze_punctuation("", &mut bad, &mut []), 0.0);
     assert_eq!(squeeze_punctuation("", &mut [], &mut []), 0.0);
 }

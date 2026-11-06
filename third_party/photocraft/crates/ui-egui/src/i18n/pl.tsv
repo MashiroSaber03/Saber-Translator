@@ -3744,3 +3744,4 @@ curves	Smooth	Wygładź
 	ICO is limited to 256 × 256 pixels	ICO jest ograniczony do 256 × 256 pikseli
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Zachowuje warstwy i edytowalny tekst. Zainstaluj te same czcionki w Photoshopie. Przy pierwszej edycji układ tekstu może się zmienić.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	Zapisany wygląd i edytowalny tekst zostają zachowane. Nowy tekst z kerningiem optycznym podczas edycji w Photoshopie używa kerningu metrycznego.
+	Emphasis Marks	Znaki wyróżnienia

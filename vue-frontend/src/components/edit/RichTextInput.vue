@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EditorState, TextSelection, type Selection } from 'prosemirror-state'
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view'
-import { baseKeymap, joinBackward, selectAll, splitBlockKeepMarks } from 'prosemirror-commands'
+import { baseKeymap, joinBackward, splitBlockKeepMarks } from 'prosemirror-commands'
 import { keymap } from 'prosemirror-keymap'
 import { history, undo, redo } from 'prosemirror-history'
 import type { BubbleState } from '@/types/bubble'
@@ -26,9 +26,10 @@ const plugins = () => [history(), keymap({
   // Reapply the DOM selection even if the logical range is unchanged: Chrome's
   // caret can move on refocus before ProseMirror observes that click.
   'Mod-a': (state, dispatch, inputView) => {
-    const handled = selectAll(state, dispatch)
+    // Select the text, keeping its paragraph and insertion marks on replacement.
+    dispatch?.(state.tr.setSelection(TextSelection.create(state.doc, 1, state.doc.content.size - 1)))
     inputView?.focus()
-    return handled
+    return true
   },
   'Mod-b': () => toggle('faux_bold'), 'Mod-i': () => toggle('faux_italic'), 'Mod-u': () => toggle('underline'),
   Enter: splitBlockKeepMarks, 'Shift-Enter': splitBlockKeepMarks,
@@ -40,16 +41,22 @@ function inputState(doc: ReturnType<typeof toTextDocument>, selection?: Selectio
   })
 }
 
+function stylesInScope(): RunStyle[] {
+  if (!view) return []
+  const { from, to, empty, $from } = view.state.selection
+  const styles: RunStyle[] = []
+  view.state.doc.nodesBetween(active && !empty ? from : 0, active && !empty ? to : view.state.doc.content.size,
+    node => { if (node.isText) styles.push(node.marks[0]?.attrs.style ?? fallback()) })
+  if (!styles.length) styles.push((view.state.storedMarks ?? $from.marks())[0]?.attrs.style ?? fallback())
+  return styles
+}
+
 function selection(): void {
   if (!view) return
-  const { from, to, empty, $from } = view.state.selection
-  container.value?.toggleAttribute('data-selection-active', active && !empty)
-  const styles: RunStyle[] = []
-  if (!active) view.state.doc.descendants(node => { if (node.isText) styles.push(node.marks[0]?.attrs.style ?? fallback()) })
-  else if (empty) styles.push((view.state.storedMarks ?? $from.marks())[0]?.attrs.style ?? fallback())
-  else view.state.doc.nodesBetween(from, to, node => { if (node.isText) styles.push(node.marks[0]?.attrs.style ?? fallback()) })
-  if (!styles.length) styles.push((view.state.storedMarks ?? $from.marks())[0]?.attrs.style ?? fallback())
-  emit('selection', { active, count: empty || !active ? 0 : Array.from(view.state.doc.textBetween(from, to, '\n')).length, styles })
+  const { from, to, empty } = view.state.selection
+  const selected = active && !empty
+  container.value?.toggleAttribute('data-selection-active', selected)
+  emit('selection', { active: selected, count: selected ? Array.from(view.state.doc.textBetween(from, to, '\n')).length : 0, styles: stylesInScope() })
 }
 
 function sync(): void {
@@ -106,26 +113,22 @@ async function loadFonts(): Promise<void> {
 function format(patch: RunStyle, replace = false): void {
   if (!view || props.disabled || view.composing) return
   const { state } = view
-  const { from, to, empty, $from } = state.selection
+  const { from, to, empty } = state.selection
+  const selected = active && !empty
   const apply = (style: RunStyle) => replace ? patch : patchRunStyle(style, patch)
   const transaction = state.tr
-  if (active && empty && state.doc.textContent) {
-    const style = (state.storedMarks ?? $from.marks())[0]?.attrs.style ?? fallback()
-    transaction.setStoredMarks([textSchema.marks.run!.create({ style: apply(style) })])
-  } else {
-    const start = active ? from : 0
-    const end = active ? to : state.doc.content.size
-    state.doc.nodesBetween(start, end, (node, position) => {
-      if (node.isText) transaction.addMark(Math.max(start, position), Math.min(end, position + node.nodeSize),
-        textSchema.marks.run!.create({ style: apply(node.marks[0]?.attrs.style ?? fallback()) }))
-      else if (node.type.name === 'paragraph' && (!active || (start <= position + node.nodeSize - 1 && end > position + node.nodeSize - 1)))
-        transaction.setNodeMarkup(position, undefined, { ...node.attrs, breakStyle: apply(node.attrs.breakStyle ?? fallback()) })
-    })
-    if (!state.doc.textContent) {
-      const style = apply(state.storedMarks?.[0]?.attrs.style ?? state.doc.firstChild?.attrs.breakStyle ?? fallback())
-      transaction.setNodeMarkup(0, undefined, { ...state.doc.firstChild?.attrs, breakStyle: style })
-      transaction.setStoredMarks([textSchema.marks.run!.create({ style })])
-    }
+  const start = selected ? from : 0
+  const end = selected ? to : state.doc.content.size
+  state.doc.nodesBetween(start, end, (node, position) => {
+    if (node.isText) transaction.addMark(Math.max(start, position), Math.min(end, position + node.nodeSize),
+      textSchema.marks.run!.create({ style: apply(node.marks[0]?.attrs.style ?? fallback()) }))
+    else if (node.type.name === 'paragraph' && (!selected || (start <= position + node.nodeSize - 1 && end > position + node.nodeSize - 1)))
+      transaction.setNodeMarkup(position, undefined, { ...node.attrs, breakStyle: apply(node.attrs.breakStyle ?? fallback()) })
+  })
+  if (!state.doc.textContent) {
+    const style = apply(state.storedMarks?.[0]?.attrs.style ?? state.doc.firstChild?.attrs.breakStyle ?? fallback())
+    transaction.setNodeMarkup(0, undefined, { ...state.doc.firstChild?.attrs, breakStyle: style })
+    transaction.setStoredMarks([textSchema.marks.run!.create({ style })])
   }
   view.dispatch(transaction)
 }
@@ -137,10 +140,7 @@ function clearScope(event: PointerEvent): void {
 function publish(): void { if (view && !disposed) emit('update', fromTextDocument(view.state.doc, fallback())) }
 function toggle(field: string): boolean {
   if (!view) return false
-  const styles: RunStyle[] = []
-  view.state.doc.nodesBetween(view.state.selection.from, view.state.selection.to, node => { if (node.isText) styles.push(node.marks[0]?.attrs.style ?? fallback()) })
-  if (!styles.length) styles.push((view.state.storedMarks ?? view.state.selection.$from.marks())[0]?.attrs.style ?? fallback())
-  format({ [field]: !styles.every(style => style[field]) })
+  format({ [field]: !stylesInScope().every(style => style[field]) })
   return true
 }
 onMounted(() => {
@@ -156,6 +156,22 @@ onMounted(() => {
     ]),
     dispatchTransaction(transaction) {
       if (!view) return
+      if (transaction.docChanged) {
+        const style = (view.state.storedMarks ?? view.state.selection.$from.marks())[0]?.attrs.style
+          ?? view.state.selection.$from.parent.attrs.breakStyle ?? stylesInScope()[0] ?? fallback()
+        // Plain input/paste into an empty paragraph has no run mark to inherit.
+        transaction.doc.descendants((node, position) => {
+          if (node.isText && !node.marks.length)
+            transaction.addMark(position, position + node.nodeSize, textSchema.marks.run!.create({ style }))
+        })
+      }
+      // An empty frame has one style shared by saving and the next insertion,
+      // including when the selection started in an empty paragraph.
+      if (transaction.docChanged && !transaction.doc.textContent) {
+        const style = transaction.storedMarks?.[0]?.attrs.style ?? transaction.doc.firstChild?.attrs.breakStyle ?? stylesInScope()[0] ?? fallback()
+        transaction.setNodeMarkup(0, undefined, { ...transaction.doc.firstChild?.attrs, breakStyle: style })
+        transaction.setStoredMarks([textSchema.marks.run!.create({ style })])
+      }
       view.updateState(view.state.apply(transaction))
       if (transaction.docChanged && !view.composing) publish()
       selection()

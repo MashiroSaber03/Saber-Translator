@@ -4109,3 +4109,4 @@ navigator	Zoom	Zoom
 	ICO is limited to 256 × 256 pixels	ICO è limitato a 256 × 256 pixel
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Mantiene i livelli e il testo modificabile. Installa gli stessi font in Photoshop. La disposizione del testo può cambiare alla prima modifica.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	L’aspetto salvato e il testo modificabile vengono mantenuti. Il nuovo testo con crenatura ottica usa la crenatura metrica durante la modifica in Photoshop.
+	Emphasis Marks	Segni di enfasi

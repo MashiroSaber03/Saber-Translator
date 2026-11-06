@@ -3878,3 +3878,4 @@ cameraData	Lens	Lens
 	Redrawing	Yeniden çiziliyor
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Katmanları ve düzenlenebilir metni korur. Photoshop’a aynı yazı tiplerini yükleyin. İlk düzenlemede metin düzeni değişebilir.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	Kaydedilmiş görünüm ve düzenlenebilir metin korunur. Yeni optik metin, Photoshop’ta düzenlenirken metrik karakter aralığını kullanır.
+	Emphasis Marks	Vurgu işaretleri

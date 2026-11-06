@@ -39,7 +39,7 @@ export const textSchema = new Schema({
   nodes: {
     doc: { content: 'paragraph+' },
     paragraph: {
-      content: 'text*', group: 'block', attrs: { style: { default: {} }, breakStyle: { default: {} } },
+      content: 'text*', group: 'block', attrs: { style: { default: {} }, breakStyle: { default: null } },
       toDOM: node => ['p', { style: 'margin:0;min-height:1.6em', 'data-saber-paragraph': JSON.stringify(node.attrs) }, 0],
       parseDOM: [{ tag: 'p[data-saber-paragraph]', getAttrs: element => {
         try {

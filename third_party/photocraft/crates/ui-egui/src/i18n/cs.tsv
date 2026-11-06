@@ -3754,3 +3754,4 @@ navigator	Zoom	Zvětšení
 	ICO is limited to 256 × 256 pixels	ICO je omezen na 256 × 256 pixelů
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Zachová vrstvy a upravitelný text. Nainstalujte do Photoshopu stejné fonty. Při první úpravě se může změnit rozvržení textu.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	Uložený vzhled i upravitelný text jsou zachovány. Nový text s optickým kerningem při úpravě ve Photoshopu používá metrický kerning.
+	Emphasis Marks	Zvýrazňovací značky

@@ -3936,3 +3936,4 @@ layerLabel	No Color	Sem cor
 	ICO is limited to 256 × 256 pixels	ICO é limitado a 256 × 256 pixels
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Mantém as camadas e o texto editável. Instale as mesmas fontes no Photoshop. O texto pode mudar de disposição na primeira edição.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	A aparência salva e o texto editável são preservados. O novo texto com kerning óptico usa kerning métrico ao ser editado no Photoshop.
+	Emphasis Marks	Marcas de ênfase

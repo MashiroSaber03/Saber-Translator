@@ -189,6 +189,39 @@ def test_native_emphasis_marks_stay_upright_after_project_reopen(tmp_path, font_
 
 
 @pytest.mark.parametrize('font_name', ['msyh.ttc', 'simhei.ttf', 'STSONG.TTF', '思源黑体SourceHanSansK-Bold.TTF'])
+def test_vertical_comic_digits_and_punctuation_keep_text_and_reload_pixels(tmp_path, font_name):
+    font = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts' / font_name
+    source, output, project = tmp_path / 'source.png', tmp_path / 'text.png', tmp_path / 'comic.pcraft'
+    samples = ['9', '19', '!!', '!?', '?!', '??', '!!!', '！！', '！？']
+    Image.new('RGB', (len(samples) * 120, 240), 'white').save(source)
+    fonts = [dict(id='font', path=str(font))]
+    rendered = {}
+    for direction in ('horizontal', 'vertical'):
+        inputs = [dict(bubbleId=str(i), fontId='font', payload=_bubble_fields(
+            translatedText=text, coords=[i * 120 + 5, 20, (i + 1) * 120 - 5, 220],
+            fontSize=56, textDirection=direction, rotationAngle=0, strokeEnabled=False, blockAlign='center'))
+            for i, text in enumerate(samples)]
+        result = NativeEditor.invoke(dict(pageId='comic', source=str(source), fonts=fonts,
+            bubbles=inputs, output=str(project), text=str(output)))
+        assert [b['payload']['translatedText'] for b in result['bubbles']] == samples
+        assert [b['payload']['coords'] for b in result['bubbles']] == [b['payload']['coords'] for b in inputs]
+        with Image.open(output) as image:
+            rendered[direction] = image.getchannel('A')
+        reopened = NativeEditor.invoke(dict(pageId='comic', project=str(project), fonts=fonts, text=str(output)))
+        assert reopened['bubbles'] == result['bubbles']
+        with Image.open(output) as image:
+            assert image.getchannel('A').tobytes() == rendered[direction].tobytes()
+    for i, text in enumerate(samples):
+        horizontal = rendered['horizontal'].crop((i * 120, 0, (i + 1) * 120, 240)).getbbox()
+        vertical = rendered['vertical'].crop((i * 120, 0, (i + 1) * 120, 240)).getbbox()
+        assert horizontal and vertical, (font_name, text)
+        if text == '9':
+            assert abs((horizontal[2] - horizontal[0]) - (vertical[2] - vertical[0])) <= 2
+        if text != '19':
+            assert abs((horizontal[3] - horizontal[1]) - (vertical[3] - vertical[1])) <= 2, (font_name, text)
+
+
+@pytest.mark.parametrize('font_name', ['msyh.ttc', 'simhei.ttf', 'STSONG.TTF', '思源黑体SourceHanSansK-Bold.TTF'])
 def test_vertical_punctuation_centres_visible_ink_and_missing_ornaments_keep_their_text(tmp_path, font_name):
     font = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts' / font_name
     source, output = tmp_path / 'source.png', tmp_path / 'text.png'

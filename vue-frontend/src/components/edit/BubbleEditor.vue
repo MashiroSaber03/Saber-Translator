@@ -84,7 +84,7 @@
         @selection="handleRichSelection"
       />
       <div class="bubble-editor__text-actions bubble-editor__text-actions--format">
-        <span class="bubble-editor__text-scope" title="选中文字可修改局部样式；点击画布后修改整框文字">{{ textScope }}</span>
+        <span class="bubble-editor__text-scope" title="选中文字时修改局部样式；未选字时修改整框文字">{{ textScope }}</span>
         <div class="bubble-editor__format-actions">
           <UiIconButton variant="soft" size="xs" label="加粗" title="加粗选中文字 (Ctrl+B)" :active="bold" :pressed="bold" @click="toggleTextStyle('faux_bold')"><strong>B</strong></UiIconButton>
           <UiIconButton variant="soft" size="xs" label="斜体" title="倾斜选中文字 (Ctrl+I)" :active="italic" :pressed="italic" @click="toggleTextStyle('faux_italic')"><i>I</i></UiIconButton>

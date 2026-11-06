@@ -3321,3 +3321,4 @@ curves	Smooth	매끄럽게
 	ICO is limited to 256 × 256 pixels	ICO는 256 × 256픽셀로 제한됩니다
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	레이어와 편집 가능한 텍스트를 유지합니다. Photoshop에도 같은 글꼴을 설치하세요. 처음 편집할 때 텍스트 배치가 달라질 수 있습니다.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	저장된 모양과 편집 가능한 텍스트가 유지됩니다. 새 텍스트의 광학 커닝은 Photoshop에서 편집할 때 메트릭 커닝을 사용합니다.
+	Emphasis Marks	강조 표시

@@ -3823,3 +3823,4 @@ curves	Smooth	スムーズ
 	ICO is limited to 256 × 256 pixels	ICO は 256 × 256 ピクセルまでです
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	レイヤーと編集可能なテキストを保持します。Photoshop にも同じフォントをインストールしてください。初回編集時に文字組みが変わる場合があります。
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	現在の表示と編集可能なテキストは保持されます。新規テキストのオプティカルカーニングは、Photoshop での編集時にメトリクスになります。
+	Emphasis Marks	傍点

@@ -1007,11 +1007,15 @@ pub fn draw_overlay(app: &mut PhotocraftApp, painter: &egui::Painter, xf: &ViewX
         let (x, y) = l.to_text(x, y);
         scr_t(x, y)
     };
+    let caret_segment = |byte| {
+        if l.lines.is_empty() {
+            [scr(0.0, -(12.0 * l.px_per_pt.max(1.0))), scr(0.0, 3.0)]
+        } else { l.caret_segment(byte).map(|(x, y)| scr_t(x, y)) }
+    };
     // Tell the OS where the caret is: this is what enables the IME and places its candidate window.
     {
-        let (x, top, bot) = l.caret(byte_of(&text, ed.caret));
-        let (x, top, bot) = if l.lines.is_empty() { (0.0, -(12.0 * l.px_per_pt.max(1.0)), 3.0) } else { (x, top, bot) };
-        let r = egui::Rect::from_two_pos(scr(x, top), scr(x, bot)).expand(1.0);
+        let [a, b] = caret_segment(byte_of(&text, ed.caret));
+        let r = egui::Rect::from_two_pos(a, b).expand(1.0);
         painter.ctx().output_mut(|o| {
             o.ime = Some(egui::output::IMEOutput { purpose: egui::IMEPurpose::Normal, rect: r, cursor_rect: r, should_interrupt_composition: false });
         });
@@ -1059,9 +1063,13 @@ pub fn draw_overlay(app: &mut PhotocraftApp, painter: &egui::Painter, xf: &ViewX
     let (a, b) = (byte_of(&text, ed.caret.min(ed.anchor)), byte_of(&text, ed.caret.max(ed.anchor)));
     if a < b {
         let fill = Color32::from_rgba_unmultiplied(t.accent.r(), t.accent.g(), t.accent.b(), 110);
+        for bounds in l.clusters.iter().filter(|c| c.range.start >= a && c.range.end <= b).filter_map(|c| c.combined) {
+            let [x0, y0, x1, y1] = bounds;
+            painter.add(egui::Shape::convex_polygon(vec![scr_t(x0, y0), scr_t(x1, y0), scr_t(x1, y1), scr_t(x0, y1)], fill, Stroke::NONE));
+        }
         for (li, ln) in l.lines.iter().enumerate() {
             let xs: Vec<(f32, f32)> =
-                l.clusters.iter().filter(|c| c.line == li && c.range.start >= a && c.range.end <= b).map(|c| (c.x, c.x + c.advance)).collect();
+                l.clusters.iter().filter(|c| c.line == li && c.combined.is_none() && c.range.start >= a && c.range.end <= b).map(|c| (c.x, c.x + c.advance)).collect();
             let (mut x0, mut x1) = xs.iter().fold((f32::MAX, f32::MIN), |(lo, hi), (p, q)| (lo.min(*p), hi.max(*q)));
             // A selected line break shows as a small sliver past the line end.
             if b > ln.range.end && a <= ln.range.end {
@@ -1077,11 +1085,10 @@ pub fn draw_overlay(app: &mut PhotocraftApp, painter: &egui::Painter, xf: &ViewX
         // Blinking caret (Photoshop's ~0.53 s rhythm), solid while dragging.
         let time = painter.ctx().input(|i| i.time);
         if ed.dragging || (time * 1000.0 / 530.0) as i64 % 2 == 0 {
-            let (x, top, bot) = l.caret(a);
-            let (x, top, bot) = if l.lines.is_empty() { (0.0, -(12.0 * l.px_per_pt.max(1.0)), 3.0) } else { (x, top, bot) };
+            let segment = caret_segment(a);
             let c = if crate::theme::Tokens::get(painter.ctx()).pro { Color32::WHITE } else { Color32::BLACK };
-            painter.line_segment([scr(x, top), scr(x, bot)], Stroke::new(1.5, c));
-            painter.line_segment([scr(x, top), scr(x, bot)], Stroke::new(0.75, Color32::BLACK));
+            painter.line_segment(segment, Stroke::new(1.5, c));
+            painter.line_segment(segment, Stroke::new(0.75, Color32::BLACK));
         }
     }
 }

@@ -3845,3 +3845,4 @@ curves	Smooth	Згладити
 	ICO is limited to 256 × 256 pixels	ICO обмежено розміром 256 × 256 пікселів
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Шари й текст залишаються редагованими. Установіть ті самі шрифти у Photoshop. Під час першого редагування розташування тексту може змінитися.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	Збережений вигляд і редагований текст зберігаються. Під час редагування нового тексту у Photoshop оптичний кернінг замінюється метричним.
+	Emphasis Marks	Знаки виділення

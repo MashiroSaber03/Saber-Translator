@@ -3633,3 +3633,4 @@ curves	Smooth	Làm mượt
 	ICO is limited to 256 × 256 pixels	ICO giới hạn ở 256 × 256 pixel
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Giữ nguyên các lớp và văn bản có thể chỉnh sửa. Cài cùng phông chữ trong Photoshop. Bố cục văn bản có thể đổi khi chỉnh sửa lần đầu.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	Giữ nguyên hình thức đã lưu và văn bản có thể chỉnh sửa. Văn bản mới có giãn cách quang học sẽ dùng giãn cách theo số đo khi chỉnh sửa trong Photoshop.
+	Emphasis Marks	Dấu nhấn mạnh

@@ -3844,3 +3844,4 @@ curves	Smooth	Εξομάλυνση
 	ICO is limited to 256 × 256 pixels	Το ICO περιορίζεται σε 256 × 256 εικονοστοιχεία
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Διατηρεί τα επίπεδα και το επεξεργάσιμο κείμενο. Εγκαταστήστε τις ίδιες γραμματοσειρές στο Photoshop. Η διάταξη μπορεί να αλλάξει στην πρώτη επεξεργασία.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	Η αποθηκευμένη εμφάνιση και το επεξεργάσιμο κείμενο διατηρούνται. Το νέο κείμενο με οπτική διαγραμμάτωση χρησιμοποιεί μετρική διαγραμμάτωση κατά την επεξεργασία στο Photoshop.
+	Emphasis Marks	Σημάδια έμφασης

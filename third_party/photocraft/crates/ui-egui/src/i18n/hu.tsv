@@ -4067,3 +4067,4 @@ cameraRaw	Yellow	Sárga
 	Redrawing	Újrarajzolás
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Megőrzi a rétegeket és a szerkeszthető szöveget. Telepítse ugyanazokat a betűtípusokat a Photoshopba. Az első szerkesztéskor változhat a szöveg tördelése.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	A mentett megjelenés és a szerkeszthető szöveg megmarad. Az új, optikai alávágású szöveg a Photoshopban történő szerkesztéskor metrikus alávágást használ.
+	Emphasis Marks	Kiemelő jelek

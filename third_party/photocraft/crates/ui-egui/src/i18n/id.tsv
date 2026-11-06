@@ -3135,3 +3135,4 @@ curves	Smooth	Haluskan
 	ICO is limited to 256 × 256 pixels	ICO dibatasi hingga 256 × 256 piksel
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Mempertahankan lapisan dan teks yang dapat diedit. Instal font yang sama di Photoshop. Tata letak teks dapat berubah saat pertama diedit.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	Tampilan tersimpan dan teks yang dapat diedit dipertahankan. Teks optik baru menggunakan kerning Metrik saat diedit di Photoshop.
+	Emphasis Marks	Tanda penekanan

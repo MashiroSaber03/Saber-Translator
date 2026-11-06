@@ -2831,3 +2831,4 @@ curves	Smooth	Suavizar
 	ICO is limited to 256 × 256 pixels	ICO está limitado a 256 × 256 píxeles
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Conserva las capas y el texto editable. Instala las mismas fuentes en Photoshop. El texto puede redistribuirse al editarlo por primera vez.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	Se conservan la apariencia guardada y el texto editable. El texto óptico nuevo usa interletraje métrico al editarse en Photoshop.
+	Emphasis Marks	Marcas de énfasis

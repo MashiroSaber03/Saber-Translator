@@ -90,10 +90,10 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const editorFonts = ref<EditorFont[]>([])
   const textSelection = ref<{ active: boolean; count: number; styles: RunStyle[] }>({ active: false, count: 0, styles: [] })
   const textScope = computed(() => textSelection.value.active
-    ? textSelection.value.count ? `已选 ${textSelection.value.count} 个字` : '输入位置'
+    ? `已选 ${textSelection.value.count} 个字`
     : (props.selectedBubbles?.length ?? 0) > 1 ? `已选 ${props.selectedBubbles!.length} 个框` : '整框文字')
   const pasteLabel = computed(() => textSelection.value.active
-    ? textSelection.value.count ? '粘贴到选字' : '粘贴到输入位置'
+    ? '粘贴到选字'
     : (props.selectedCount ?? 1) > 1 ? `粘贴到 ${props.selectedCount} 个框` : '粘贴样式')
   const copyLabel = computed(() => textSelection.value.active && textSelection.value.count ? '复制选中' : '复制整框')
   const selectedStyles = computed(() => !textSelection.value.active && (props.selectedBubbles?.length ?? 0) > 1

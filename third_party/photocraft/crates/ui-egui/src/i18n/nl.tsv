@@ -3906,3 +3906,4 @@ curves	Smooth	Vloeiend maken
 	ICO is limited to 256 × 256 pixels	ICO is beperkt tot 256 × 256 pixels
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Behoudt lagen en bewerkbare tekst. Installeer dezelfde lettertypen in Photoshop. Bij de eerste bewerking kan de tekst opnieuw worden ingedeeld.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	De opgeslagen weergave en bewerkbare tekst blijven behouden. Nieuwe tekst met optische kerning gebruikt metrische kerning bij bewerking in Photoshop.
+	Emphasis Marks	Nadruktekens

@@ -3148,3 +3148,4 @@ curves	Smooth	Lisser
 	ICO is limited to 256 × 256 pixels	Le format ICO est limité à 256 × 256 pixels
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Conserve les calques et le texte modifiable. Installez les mêmes polices dans Photoshop. Le texte peut se réagencer à la première modification.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	L’apparence enregistrée et le texte modifiable sont conservés. Le nouveau texte à crénage optique utilise le crénage métrique lors de la modification dans Photoshop.
+	Emphasis Marks	Marques d’emphase

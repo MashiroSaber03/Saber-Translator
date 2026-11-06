@@ -4221,3 +4221,4 @@ shape	Appearance	Izgled
 	Redrawing	Ponovno iscrtavanje
 	Keeps layers and editable text. Install the same fonts in Photoshop. Text may reflow on first edit.	Čuva slojeve i tekst koji se može uređivati. Instalirajte iste fontove u Photoshopu. Raspored teksta se može promeniti pri prvom uređivanju.
 	New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.	Sačuvani izgled i tekst koji se može uređivati ostaju očuvani. Novi tekst sa optičkim razmakom koristi metrički razmak pri uređivanju u Photoshopu.
+	Emphasis Marks	Znaci naglašavanja

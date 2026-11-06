@@ -15,6 +15,83 @@ function editor(text = '中文😀') {
 }
 
 describe('ordinary rich text input', () => {
+  it('formats existing text immediately after typing without reselecting its canvas frame', async () => {
+    const { wrapper, vm } = editor('')
+    await wrapper.get('[role=textbox]').trigger('focus')
+    vm.insertText('新建😀')
+    vm.format({ size_pt: 70, font_family: 'Test', horizontal_scale: 1.5 })
+    const value = wrapper.emitted('update')!.at(-1)![0] as { translatedText: string; richText: { runs: { len: number; style: object }[] } }
+    expect(value.translatedText).toBe('新建😀')
+    expect(value.richText.runs).toEqual([{ len: 10, style: expect.objectContaining({ size_pt: 70, font_family: 'Test', horizontal_scale: 1.5 }) }])
+    expect(wrapper.emitted('selection')?.at(-1)?.[0]).toMatchObject({ active: false, count: 0 })
+    vm.insertText('字')
+    expect((wrapper.emitted('update')!.at(-1)![0] as typeof value).richText.runs)
+      .toEqual([{ len: 13, style: expect.objectContaining({ size_pt: 70, font_family: 'Test', horizontal_scale: 1.5 }) }])
+  })
+
+  it('keeps character and paragraph styles when deleting all and immediately retyping', async () => {
+    const { wrapper, vm, bubble } = editor('保留字号\n第二行')
+    const style = { size_pt: 60, font_family: 'Test', tracking: 85, vertical_scale: 1.2, emphasis: true }
+    const paragraph = { align: 'Center', space_before_pt: 5 }
+    await wrapper.setProps({ bubble: { ...bubble, richText: {
+      runs: [{ len: 22, style }], paragraphs: [{ len: 13, style: paragraph }, { len: 9, style: paragraph }],
+    } } })
+    const input = wrapper.get('[role=textbox]')
+    await input.trigger('focus')
+    await input.trigger('keydown', { key: 'a', ctrlKey: true })
+    vm.deleteBackward()
+    const empty = wrapper.emitted('update')!.at(-1)![0] as { translatedText: string; richText: { runs: { len: number; style: object }[]; paragraphs: { len: number; style: object }[] } }
+    expect(empty).toEqual({ translatedText: '', richText: {
+      runs: [{ len: 0, style }], paragraphs: [{ len: 0, style: paragraph }],
+    } })
+    vm.insertText('重输😀')
+    expect((wrapper.emitted('update')!.at(-1)![0] as typeof empty).richText.runs).toEqual([{ len: 10, style }])
+    vm.format({ size_pt: 80 })
+    expect((wrapper.emitted('update')!.at(-1)![0] as typeof empty).richText.runs)
+      .toEqual([{ len: 10, style: { ...style, size_pt: 80 } }])
+  })
+
+  it.each(['原文字', '\n原文字', '\n\n原文字'])('keeps the selected character style when replacing all text in %j directly', async text => {
+    const { wrapper, vm } = editor(text)
+    vm.format({ size_pt: 60, font_family: 'Test', tracking: 125, faux_bold: true })
+    const input = wrapper.get('[role=textbox]')
+    await input.trigger('focus')
+    await input.trigger('keydown', { key: 'a', ctrlKey: true })
+    vm.insertText('直接替换')
+    const value = wrapper.emitted('update')!.at(-1)![0] as { richText: { runs: { style: object }[] } }
+    expect(value.richText.runs[0]!.style).toMatchObject({ size_pt: 60, font_family: 'Test', tracking: 125, faux_bold: true })
+  })
+
+  it.each(['\n文字', '文字\n', '\n\n文字'])('preserves the empty style when clearing paragraphs in %j', async text => {
+    const { wrapper, vm, bubble } = editor(text)
+    const style = { size_pt: 60, font_family: 'Test', tracking: 125, faux_bold: true }
+    await wrapper.setProps({ bubble: { ...bubble, fontSize: 60, richText: {
+      runs: [{ len: new TextEncoder().encode(text).length, style }], paragraphs: [],
+    } } })
+    const input = wrapper.get('[role=textbox]')
+    await input.trigger('focus')
+    await input.trigger('keydown', { key: 'a', ctrlKey: true })
+    vm.deleteBackward()
+    vm.insertText('重输')
+    const value = wrapper.emitted('update')!.at(-1)![0] as { richText: { runs: { style: object }[] } }
+    expect(value.richText.runs[0]!.style).toMatchObject(style)
+  })
+
+  it('uses whole-frame mixed styles for controls and keyboard shortcuts when no text is selected', async () => {
+    const { wrapper, bubble } = editor('AB')
+    await wrapper.setProps({ bubble: { ...bubble, richText: {
+      runs: [{ len: 1, style: { size_pt: 30, faux_bold: true } }, { len: 1, style: { size_pt: 60 } }],
+      paragraphs: [{ len: 2, style: {} }],
+    } } })
+    const input = wrapper.get('[role=textbox]')
+    await input.trigger('focus')
+    expect(wrapper.emitted('selection')?.at(-1)?.[0]).toMatchObject({ active: false, count: 0, styles: [{ size_pt: 30, faux_bold: true }, { size_pt: 60 }] })
+    await input.trigger('keydown', { key: 'b', ctrlKey: true })
+    const value = wrapper.emitted('update')!.at(-1)![0] as { richText: { runs: { style: { size_pt: number; faux_bold: boolean } }[] } }
+    expect(value.richText.runs.map(run => run.style.size_pt)).toEqual([30, 60])
+    expect(value.richText.runs.every(run => run.style.faux_bold)).toBe(true)
+  })
+
   it('reselects all after the browser caret moves while the previous logical selection is still all', async () => {
     const { wrapper } = editor('中文😀')
     const input = wrapper.get('[role=textbox]')

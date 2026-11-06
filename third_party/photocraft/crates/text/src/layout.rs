@@ -11,7 +11,8 @@
 //! right to left. Within a column, CJK characters stay upright (centred on the column, placed with
 //! the font's vertical metrics: `VORG`, `vhea`/`vmtx`, else the ideographic em box) and use the
 //! font's vertical alternates (`vert`) for punctuation, brackets and the long-vowel mark; other
-//! text (Latin, digits) runs rotated 90° clockwise, Photoshop's default. Lines, clusters, carets
+//! Latin text runs rotated 90° clockwise; comic digits stay upright and short sequences of
+//! exclamation/question marks share one cell. Lines, clusters, carets
 //! and hit tests stay in line space; [`TextLayout::to_text`] / [`TextLayout::to_line`] convert.
 
 use std::borrow::Cow;
@@ -79,7 +80,7 @@ pub struct RunBrush(pub u32, pub u8);
 /// `Vertical_Orientation`, UAX #50).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VClass {
-    /// Rotated 90° clockwise (Latin, digits, most symbols).
+    /// Rotated 90° clockwise (Latin and most symbols).
     Rotate = 0,
     /// Upright (ideographs, kana, Hangul, full-width forms, CJK punctuation such as 、。),
     /// using a vertical alternate when the font has one.
@@ -87,7 +88,7 @@ pub enum VClass {
     /// Upright through its vertical alternate (brackets, the long-vowel mark, dashes); rotated
     /// when the font has none.
     AlternateOrRotate = 2,
-    /// Comic exclamation/question marks stay upright and centre their visible ink.
+    /// Comic digits and exclamation/question marks stay upright and centre their visible ink.
     Centered = 3,
 }
 
@@ -96,9 +97,41 @@ fn emphasis_override(c: char) -> bool {
     matches!(c, '!' | '?' | '！' | '？' | '¡' | '¿' | '؟' | '‼' | '⁇' | '⁈' | '⁉' | '﹖' | '﹗' | '︕' | '︖' | 'ǃ' | '❕' | '❗' | '❢' | '❣' | '‽')
 }
 
+fn combine_mark(c: char) -> bool { matches!(c, '!' | '?' | '！' | '？') }
+
+/// Short comic punctuation sequences share a cell without rewriting text or run offsets.
+fn combined_ranges(text: &str) -> Vec<Range<usize>> {
+    let mut groups = Vec::new();
+    let mut start = 0;
+    let mut count = 0;
+    for (at, c) in text.char_indices().chain(std::iter::once((text.len(), '\n'))) {
+        if combine_mark(c) {
+            if count == 0 { start = at; }
+            count += 1;
+            if count == 3 {
+                groups.push(start..at + c.len_utf8());
+                count = 0;
+            }
+        } else {
+            if count > 1 { groups.push(start..at); }
+            count = 0;
+        }
+    }
+    groups
+}
+
+fn combined_at(groups: &[Range<usize>], at: usize) -> Option<usize> {
+    let index = groups.partition_point(|r| r.end <= at);
+    groups.get(index).filter(|r| r.contains(&at)).map(|_| index)
+}
+
+fn comic_break(cx: parley::LineBreakContext) -> Option<bool> {
+    (combine_mark(cx.before) && combine_mark(cx.after)).then_some(true)
+}
+
 /// The vertical-type class of a character.
 pub fn vertical_class(c: char) -> VClass {
-    if emphasis_override(c) {
+    if c.is_ascii_digit() || emphasis_override(c) {
         return VClass::Centered;
     }
     let u = c as u32;
@@ -174,6 +207,8 @@ pub struct PlacedGlyph {
     pub style: u32,
     /// Orientation of the outline (vertical type).
     pub orient: GlyphOrient,
+    /// Layout-only compression for a combined upright cell; never changes the character style.
+    pub scale_x: f32,
 }
 
 /// Character decoration bounds (text space px).
@@ -212,6 +247,8 @@ pub struct ClusterInfo {
     pub advance: f32,
     pub line: usize,
     pub rtl: bool,
+    /// Character bounds in text space for side-by-side marks within a vertical cell.
+    pub combined: Option<[f32; 4]>,
 }
 
 /// Result of laying out a text layer.
@@ -289,6 +326,15 @@ impl TextLayout {
         let Some((li, _)) = self.closest_line(y) else {
             return 0;
         };
+        let (tx, ty) = self.to_text(x, y);
+        if let Some((cluster, bounds)) = self.clusters.iter().filter(|c| c.line == li).filter_map(|c| {
+            c.combined.filter(|b| ty >= b[1] && ty < b[3]).map(|b| (c, b))
+        }).min_by(|(_, a), (_, b)| {
+            let distance = |r: &[f32; 4]| (r[0] - tx).max(0.0).max(tx - r[2]);
+            distance(a).total_cmp(&distance(b))
+        }) {
+            return if tx < (bounds[0] + bounds[2]) * 0.5 { cluster.range.start } else { cluster.range.end };
+        }
         self.hit_test_x_on_line(li, x)
     }
 
@@ -308,6 +354,15 @@ impl TextLayout {
 
     /// The caret for a byte offset as a text-space segment (its two end points).
     pub fn caret_segment(&self, offset: usize) -> [(f32, f32); 2] {
+        let next = self.clusters.iter().find(|c| c.range.start == offset);
+        if let Some(b) = next.and_then(|c| c.combined) {
+            return [(b[0], b[1]), (b[0], b[3])];
+        }
+        if next.is_none()
+            && let Some(b) = self.clusters.iter().find(|c| c.range.end == offset && c.combined.is_some()).and_then(|c| c.combined)
+        {
+            return [(b[2], b[1]), (b[2], b[3])];
+        }
         let (x, top, bottom) = self.caret(offset);
         [self.to_text(x, top), self.to_text(x, bottom)]
     }
@@ -460,6 +515,8 @@ struct KernSlot {
     tab: bool,
     /// Vertical type, upright glyph (its outline doesn't run along the column).
     upright: bool,
+    /// Corresponding output cluster, assigned when emitting the line.
+    cluster: Option<usize>,
 }
 
 impl Layouter {
@@ -593,6 +650,7 @@ impl Layouter {
                 ptext.push(ch);
             }
             let first_style = &out.styles[style_at(prange.start)];
+            let combined = if vertical { combined_ranges(&ptext) } else { Vec::new() };
             let first_px = first_style.size_pt * k;
             // Scripts the loaded fonts may lack (Arabic, Japanese, …): a host serving a font for them
             // fetches it (`served`); it joins the fallback stack once it arrives.
@@ -605,6 +663,9 @@ impl Layouter {
                          vertical_padding: &[(Range<usize>, f32)]|
              -> Layout<RunBrush> {
                 let mut b = lcx.ranged_builder(fcx, &ptext, 1.0, false);
+                if vertical {
+                    b.set_line_break_override(Some(&comic_break));
+                }
                 // Paragraph-start style as the default (covers the direction mark and empty
                 // paragraphs), then every run piece intersecting this paragraph.
                 let si0 = style_at(prange.start);
@@ -654,6 +715,13 @@ impl Layouter {
                 for (range, size) in &synthetic_small_caps {
                     b.push(StyleProperty::FontSize(*size), range.clone());
                 }
+                for range in &combined {
+                    // Parley uses the preceding character's wrap mode at a boundary.
+                    // Allow wrapping before/after a cell, never between its members.
+                    if let Some((last, _)) = ptext.get(range.clone()).and_then(|s| s.char_indices().next_back()) {
+                        b.push(StyleProperty::TextWrapMode(parley::TextWrapMode::NoWrap), range.start..range.start + last);
+                    }
+                }
                 for (range, padding) in vertical_padding {
                     let st = &out.styles[style_at(prange.start + range.start.saturating_sub(prefix.len()))];
                     b.push(StyleProperty::LetterSpacing(st.tracking / 1000.0 * st.size_pt * k + padding), range.clone());
@@ -686,18 +754,26 @@ impl Layouter {
             // Upright marks such as ! need an em down the column, not their narrow horizontal
             // advance. Feed that padding back through shaping so wrapping and carets agree too.
             let mut vertical_padding = Vec::new();
-            if vertical && ptext.chars().any(emphasis_override) {
+            if vertical && ptext.chars().any(|c| vertical_class(c) == VClass::Centered) {
                 for line in layout.lines() {
                     for run in line.runs() {
                         for cluster in run.visual_clusters() {
                             let style = cluster.first_style();
                             let mark = ptext.get(cluster.text_range()).and_then(|text| text.chars().next());
-                            if !mark.is_some_and(emphasis_override) || cluster.glyphs().count() != 1 {
+                            if !mark.is_some_and(|c| vertical_class(c) == VClass::Centered) || cluster.glyphs().count() != 1 {
                                 continue;
                             }
                             let tracking = out.styles[style.brush.0 as usize].tracking / 1000.0 * run.font_size();
-                            let padding = run.font_size() + tracking - cluster.advance();
-                            if padding > 0.01 {
+                            let range = cluster.text_range();
+                            let target = combined_at(&combined, range.start).and_then(|i| combined.get(i))
+                                .and_then(|group| ptext.get(group.clone()).map(|s| (group, s)))
+                                .map_or(run.font_size() + tracking, |(group, s)| {
+                                    let size = s.char_indices().map(|(i, _)| out.styles[style_at(prange.start + (group.start + i).saturating_sub(prefix.len()))].size_pt * k).fold(0.0f32, f32::max);
+                                    let members = ptext.get(range.clone()).map_or(1, |s| s.chars().count());
+                                    (size * members as f32 + tracking) / s.chars().count().max(1) as f32
+                                });
+                            let padding = target - cluster.advance();
+                            if padding.abs() > 0.01 {
                                 vertical_padding.push((cluster.text_range(), padding));
                             }
                         }
@@ -837,6 +913,7 @@ impl Layouter {
                             upright: vertical && c.first_style().brush.1 != VClass::Rotate as u8,
                             advance: c.advance() * hs,
                             tab: tabs.binary_search(&c.text_range().start).is_ok(),
+                            cluster: None,
                         });
                     }
                 }
@@ -973,7 +1050,8 @@ impl Layouter {
                             let a = c.advance() * hs + kern_px.get(base + ci).copied().unwrap_or(0.0);
                             let r = c.text_range();
                             if r.end > prefix.len() || prefix.is_empty() {
-                                out.clusters.push(ClusterInfo { range: map(r.start)..map(r.end), x: cx, advance: a, line: line_index, rtl: c.is_rtl() });
+                                if let Some(slot) = slots.get_mut(base + ci) { slot.cluster = Some(out.clusters.len()); }
+                                out.clusters.push(ClusterInfo { range: map(r.start)..map(r.end), x: cx, advance: a, line: line_index, rtl: c.is_rtl(), combined: None });
                             }
                             cx += a;
                         }
@@ -994,6 +1072,9 @@ impl Layouter {
                     let mut pen = gr.offset();
                     let mut cursor = cursors.iter_mut().find(|c| c.0 == run.index());
                     for g in gr.glyphs() {
+                        let slot = cursor.as_deref().and_then(|c| c.1.get(c.2)).and_then(|&i| slots.get(i));
+                        let group = slot.and_then(|s| combined_at(&combined, s.start));
+                        let cluster = slot.and_then(|s| s.cluster);
                         // Kerning of the clusters before this glyph's cluster.
                         if let Some(c) = cursor.as_deref_mut() {
                             if let Some(&slot) = c.1.get(c.2) {
@@ -1011,14 +1092,14 @@ impl Layouter {
                             y: baseline + g.y,
                             style: si,
                             orient: GlyphOrient::Horizontal,
+                            scale_x: 1.0,
                         });
                         if let Some(v) = &vm {
                             let upright = class == VClass::Upright as u8 || class == VClass::Centered as u8 || (class == 2 && !plain.contains(&g.id));
                             let advance = (g.advance - padding).max(0.0);
                             let skew = (if st.faux_italic { crate::render::FAUX_ITALIC_DEG } else { 0.0 } + synth.skew().unwrap_or(0.0)).to_radians().tan() * st.vertical_scale;
-                            let centre_x = if class == VClass::Centered as u8 {
-                                v.ink_center(g.id, hs, skew).unwrap_or(advance * hs * 0.5)
-                            } else { advance * hs * 0.5 };
+                            let ink = if class == VClass::Centered as u8 { v.ink_bounds(g.id, hs, skew) } else { None };
+                            let centre_x = ink.map_or(advance * hs * 0.5, |b| (b[0] + b[2]) * 0.5);
                             vinfo.push(VGlyph {
                                 upright,
                                 // Padding separates glyphs along the column, not across it.
@@ -1027,6 +1108,10 @@ impl Layouter {
                                 // Rotated text is centred on the column: its baseline sits
                                 // (ascent − descent) / 2 from the centre line.
                                 centre: (rm.ascent - rm.descent) * 0.5,
+                                group,
+                                cluster,
+                                ink_width: ink.map_or(advance * hs, |b| b[2] - b[0]),
+                                size: run.font_size() * hs,
                             });
                         }
                         extra += g.advance * (hs - 1.0);
@@ -1099,6 +1184,7 @@ impl Layouter {
                             g.orient = GlyphOrient::Rotated;
                         }
                     }
+                    combine_glyphs(&mut out.glyphs[g0..], &vinfo, &mut out.clusters, baseline);
                 }
                 for cluster in &out.clusters[c0..] {
                     let si = style_at(cluster.range.start);
@@ -1156,6 +1242,12 @@ impl Layouter {
             }
             for line in &mut out.lines {
                 line.baseline += offset;
+            }
+            for cluster in &mut out.clusters {
+                if let Some(b) = &mut cluster.combined {
+                    b[0] += dx; b[2] += dx;
+                    b[1] += dy; b[3] += dy;
+                }
             }
             out.block_offset = offset;
         }
@@ -1254,6 +1346,53 @@ struct VGlyph {
     origin: f32,
     /// Rotated: distance from the column centre line to the glyph's baseline (px).
     centre: f32,
+    group: Option<usize>,
+    cluster: Option<usize>,
+    ink_width: f32,
+    size: f32,
+}
+
+/// Pack visible ink side by side; each member retains its own style, selection and caret.
+/// Only layout geometry is changed. The shared cell was already measured by line breaking.
+fn combine_glyphs(glyphs: &mut [PlacedGlyph], info: &[VGlyph], clusters: &mut [ClusterInfo], baseline: f32) {
+    let mut start = 0;
+    while let Some(first) = info.get(start) {
+        let Some(group) = first.group else { start += 1; continue };
+        let end = start + info.iter().skip(start).take_while(|v| v.group == Some(group)).count();
+        let Some(members) = info.get(start..end) else { break };
+        let Some(placed) = glyphs.get_mut(start..end) else { break };
+        let mut top = f32::INFINITY;
+        let mut bottom = f32::NEG_INFINITY;
+        let mut size = 0.0f32;
+        let mut origin = 0.0f32;
+        let mut width = 0.0f32;
+        for v in members {
+            if let Some(c) = v.cluster.and_then(|i| clusters.get(i)) {
+                top = top.min(c.x);
+                bottom = bottom.max(c.x + c.advance);
+            }
+            size = size.max(v.size);
+            origin = origin.max(v.origin);
+            width += v.ink_width.max(0.01);
+        }
+        if !top.is_finite() || !bottom.is_finite() || size <= 0.0 { start = end; continue; }
+        let gap = size * 0.08;
+        width += gap * members.len().saturating_sub(1) as f32;
+        let scale = (size / width).min(1.0);
+        let mut left = -baseline - width * scale * 0.5;
+        for (g, v) in placed.iter_mut().zip(members) {
+            let right = left + v.ink_width.max(0.01) * scale;
+            g.scale_x = scale;
+            g.x = (left + right) * 0.5 - v.centre_x * scale;
+            g.y = top + origin;
+            if let Some(c) = v.cluster.and_then(|i| clusters.get_mut(i)) {
+                let b = [left - gap * scale * 0.5, top, right + gap * scale * 0.5, bottom];
+                c.combined = Some(c.combined.map_or(b, |a| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])]));
+            }
+            left = right + gap * scale;
+        }
+        start = end;
+    }
 }
 
 /// Vertical metrics of a font instance: `VORG`, `vhea`/`vmtx`, else the ideographic em box.
@@ -1290,7 +1429,7 @@ impl<'a> VMetrics<'a> {
         self.font.as_ref()?.charmap().map(c).map(|g| g.to_u32())
     }
 
-    fn ink_center(&self, gid: u32, horizontal_scale: f32, skew: f32) -> Option<f32> {
+    fn ink_bounds(&self, gid: u32, horizontal_scale: f32, skew: f32) -> Option<[f32; 4]> {
         use skrifa::MetadataProvider;
         use crate::raster::{Bounds, Pen, Xform};
         let f = self.font.as_ref()?;
@@ -1298,8 +1437,7 @@ impl<'a> VMetrics<'a> {
         let mut bounds = Bounds::default();
         let xf = Xform([f64::from(horizontal_scale * self.scale), 0.0, f64::from(skew * self.scale), -f64::from(self.scale), 0.0, 0.0]);
         outline.draw(skrifa::outline::DrawSettings::unhinted(skrifa::instance::Size::unscaled(), skrifa::instance::LocationRef::new(&self.coords)), &mut Pen::new(&mut bounds, xf)).ok()?;
-        let [x0, _, x1, _] = bounds.rect?;
-        Some(((x0 + x1) * 0.5) as f32)
+        Some(bounds.rect?.map(|v| v as f32))
     }
 
     /// Distance from the top of an upright glyph's cell to its baseline (px).
