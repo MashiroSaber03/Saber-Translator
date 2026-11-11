@@ -28,7 +28,7 @@ DEFAULT_TEXT_STYLE: dict[str, object] = {
     "strokeEnabled": True,
     "strokeColor": "#FFFFFF",
     "strokeWidth": 3,
-    "lineSpacing": 1.0,
+    "lineSpacing": 1.2,
     "inlineAlign": "start",
     "blockAlign": "start",
 }

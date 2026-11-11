@@ -7,6 +7,7 @@ are resolved by the existing storage/ownership services before invoking Rust.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from copy import deepcopy
 import json
 import base64
 import hashlib
@@ -20,7 +21,7 @@ from zipfile import ZipFile
 from sqlalchemy import insert, or_, select, update
 
 from src.backend_v2.auth.ownership import effective_owner_id
-from src.backend_v2.rendering.fonts import resolve_font_path
+from src.backend_v2.rendering.fonts import character_font_style, resolve_font_path
 from src.backend_v2.serialization import canonical_json
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.schema import assets, bubbles, fonts, page_assets, pages
@@ -149,12 +150,14 @@ class NativeEditor:
                 fitText=[item["bubbleId"] for item in documents], minFontSize=minimum, maxFontSize=maximum))
             return {item["bubbleId"]: item["fontSize"] for item in result["fontFits"]}
 
-    def fit_text(self, connection, page_id, ids):
+    def fit_text(self, connection, page_id, ids, *, documents=None, fields=None):
         temporary_root = self.storage.data_root / "temp" / "editing"
         temporary_root.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=temporary_root) as directory:
             path = Path(directory) / "page.pcraft"
-            path.write_bytes(self.read_document(connection, page_id))
+            document = (self.prepare(connection, page_id, documents=documents, fields=fields).document
+                        if documents is not None else self.read_document(connection, page_id))
+            path.write_bytes(document)
             return self.invoke(dict(pageId=page_id, project=str(path),
                 fonts=self.font_files(connection), fitText=ids))["fontFits"]
 
@@ -188,6 +191,36 @@ class NativeEditor:
                              fonts=self.font_files(connection), psd=str(root / "page.psd")))
             return (root / "page.psd").read_bytes()
 
+    def _legacy_typography(self, connection, item, previous, default_font, fields):
+        """Materialize pre-native spacing once as ordinary paragraph data."""
+        old = previous.get(item["bubbleId"], {}).get("payload", {})
+        if old.get("richText") is not None or not old.get("translatedText"):
+            return item
+        item = deepcopy(item)
+        payload = item["payload"]
+        size = max(float(old["fontSize"]), 1)
+        # The Python renderer used +3 px between columns and +5 px between rows.
+        spacing = (int(size * old["lineSpacing"]) + (3 if old["textDirection"] == "vertical" else 5)) / size
+        if "lineSpacing" in fields or payload["lineSpacing"] != old["lineSpacing"]:
+            spacing = payload["lineSpacing"]
+        rich = payload.get("richText")
+        length = len(payload["translatedText"].encode("utf-8"))
+        if rich is None:
+            face = character_font_style(resolve_font_path(connection, self.storage, item["fontId"] or default_font))
+            color = payload["textColor"]
+            rich = {"runs": [{"len": length, "style": {**face, "size_pt": payload["fontSize"],
+                "color": {"mode": "Rgb", "c": [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)] + [0], "alpha": 1}}}],
+                "paragraphs": []}
+            payload["richText"] = rich
+        if not rich.get("paragraphs"):
+            rich["paragraphs"] = [{"len": length, "style": {
+                "align": {"start": "Left", "center": "Center", "end": "Right"}[payload["inlineAlign"]]}}]
+        for paragraph in rich["paragraphs"]:
+            style = paragraph["style"]
+            if "lineSpacing" in fields or style.get("auto_leading", old["lineSpacing"]) == old["lineSpacing"]:
+                style["auto_leading"] = spacing
+        return item
+
     def prepare(self, connection, page_id: str, *, documents=None, uploaded: bytes | None = None,
                 render: bool = False, repair: bytes | None = None, text_only: bool = False,
                 mask_override: bytes | None = None, background: bytes | None = None, fields=None) -> EditingResult:
@@ -202,9 +235,13 @@ class NativeEditor:
         legacy = self._legacy_document(current) if current is not None else None
         writing = (documents is not None or uploaded is not None or repair is not None
                    or mask_override is not None or background is not None or current is None or legacy is not None)
-        stored = self.page_bubbles(connection, page_id) if documents is None and (writing or not render and not text_only) else []
+        stored = self.page_bubbles(connection, page_id) if current is None or documents is None and (writing or not render and not text_only) else []
         if documents is None and uploaded is None and (current is None or legacy == "text"):
             documents = stored
+        if current is None and documents is not None:
+            previous = {item["bubbleId"]: item for item in stored}
+            documents = [self._legacy_typography(connection, item, previous, page["default_font_id"],
+                         (fields or {}).get(item["bubbleId"], ())) for item in documents]
         business = {item["bubbleId"]: item["payload"] for item in (documents if documents is not None else stored)}
         temporary_root = self.storage.data_root / "temp" / "editing"
         temporary_root.mkdir(parents=True, exist_ok=True)

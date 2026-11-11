@@ -315,6 +315,20 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
             }
         }
         if style.as_object().is_some_and(|s| s.len() > 1) {
+            if let Some(size) = style.get("size").and_then(Value::as_f64) {
+                // Ordinary size edits retain the spacing multiplier shown in the host UI.
+                // Native type.setStyle keeps its PS-style absolute leading semantics.
+                session.edit("行间距", |doc, _| {
+                    if let Some(Layer { content: LayerContent::Text(t), .. }) = doc.layer_mut(LayerId(layer)) {
+                        t.runs = t.char_runs();
+                        for run in &mut t.runs {
+                            run.style.leading_pt = run.style.leading_pt.map(|leading| leading * size as f32 / run.style.size_pt.max(0.001));
+                        }
+                        t.cache = None;
+                    }
+                    Ok(())
+                }).map_err(|e| e.to_string())?;
+            }
             session.execute("type.setStyle", style).map_err(|e| e.to_string())?;
         }
         let geometry_changed = ["coords", "position", "rotationAngle"].iter().any(|key| changed(key)) || existing.is_none();
@@ -379,14 +393,18 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
             };
             session.execute("type.setStyle", json!({"layer":layer,"align":align})).map_err(|e| e.to_string())?;
         }
-        if (changed("lineSpacing") || changed("fontSize")) && (existing.is_some() || rich.is_none()) {
+        if changed("lineSpacing") && (existing.is_some() || rich.is_none()) {
             let spacing = number(payload, "lineSpacing", 1.0) as f32;
             session
                 .edit("行间距", |doc, _| {
                     if let Some(Layer { content: LayerContent::Text(t), .. }) = doc.layer_mut(LayerId(layer)) {
                         t.runs = t.char_runs();
                         for run in &mut t.runs {
-                            run.style.leading_pt = Some(run.style.size_pt * spacing);
+                            run.style.leading_pt = None;
+                        }
+                        t.paragraphs = t.paragraph_runs();
+                        for paragraph in &mut t.paragraphs {
+                            paragraph.style.auto_leading = spacing;
                         }
                         t.cache = None;
                     }
@@ -753,8 +771,8 @@ mod tests {
             initial["payload"]["translatedText"] = json!("WW\nWW");
             initial["payload"]["textDirection"] = json!(direction);
             initial["payload"]["richText"] = json!({"runs":[
-                {"len":2,"style":{"font_family":"Inter","size_pt":18,"horizontal_scale":4,"tracking":250}},
-                {"len":3,"style":{"font_family":"Inter","size_pt":36,"horizontal_scale":2,"vertical_scale":2}}
+                {"len":2,"style":{"font_family":"Inter","size_pt":18,"leading_pt":27,"horizontal_scale":4,"tracking":250}},
+                {"len":3,"style":{"font_family":"Inter","size_pt":36,"leading_pt":72,"horizontal_scale":2,"vertical_scale":2}}
             ],"paragraphs":[]});
             set_bubbles(&mut session, &[initial], &fonts()).unwrap();
             let before = snapshot(&session).unwrap();
@@ -767,6 +785,7 @@ mod tests {
             let factor = size / projected["payload"]["fontSize"].as_f64().unwrap();
             for run in projected["payload"]["richText"]["runs"].as_array_mut().unwrap() {
                 run["style"]["size_pt"] = json!(run["style"]["size_pt"].as_f64().unwrap() * factor);
+                run["style"]["leading_pt"] = json!(run["style"]["leading_pt"].as_f64().unwrap() * factor);
             }
             set_bubbles(&mut session, &[projected], &fonts()).unwrap();
             let projected = project(&session).unwrap();
@@ -780,6 +799,9 @@ mod tests {
             assert!((logical[2] - logical[0]).max(ink.width() as f32) <= 100.5);
             assert!((logical[3] - logical[1]).max(ink.height() as f32) <= 100.5);
             assert_eq!(text.char_runs()[1].style.size_pt / text.char_runs()[0].style.size_pt, 2.0);
+            for (run, ratio) in text.char_runs().iter().zip([1.5, 2.0]) {
+                assert!((run.style.leading_pt.unwrap() / run.style.size_pt - ratio).abs() < 0.00001);
+            }
         }
     }
 
@@ -813,14 +835,72 @@ mod tests {
                     let photocraft_doc::text::TextShape::Box { x, y, width, height } = text.shape else { panic!("box") };
                     let extent = if layout.vertical { width } else { height };
                     let origin = if layout.vertical { -(x + width) } else { y };
-                    let expected = origin + (extent - (bounds[3] - bounds[1])).max(0.0) * if align == "center" { 0.5 } else { 1.0 };
-                    assert!((bounds[1] - expected).abs() < 0.001, "{direction}/{align}/{field}: actual lines must align");
+                    if align == "center" {
+                        let ink = photocraft_text::render::ink_rect(&layout, &Default::default());
+                        let center = if layout.vertical { -(ink.x0 + ink.x1) } else { ink.y0 + ink.y1 } as f32 * 0.5;
+                        assert!((center - (origin + extent * 0.5)).abs() <= 0.51, "{direction}/{align}/{field}: {ink:?}");
+                    } else {
+                        let expected = origin + (extent - (bounds[3] - bounds[1])).max(0.0);
+                        assert!((bounds[1] - expected).abs() < 0.001, "{direction}/{align}/{field}: actual lines must align");
+                    }
                     assert!(
                         text.paragraph_runs().iter().all(|p| p.style.space_before_pt == 0.0),
                         "{direction}/{align}/{field}: block alignment must not become paragraph spacing"
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn ordinary_line_spacing_tracks_scaled_columns() {
+        let mut session = session();
+        let mut initial = bubble();
+        initial["payload"]["translatedText"] = json!("1\n2");
+        initial["payload"]["coords"] = json!([10, 10, 170, 150]);
+        initial["payload"]["textDirection"] = json!("vertical");
+        initial["payload"]["lineSpacing"] = json!(1);
+        initial["payload"]["fontSize"] = json!(40);
+        set_bubbles(&mut session, &[initial], &fonts()).unwrap();
+        let layer = project(&session).unwrap()["bubbles"][0]["layer"].as_u64().unwrap();
+        session.execute("type.setStyle", json!({"layer":layer,"horizontalScale":150})).unwrap();
+        let doc = active(&session).unwrap();
+        let LayerContent::Text(text) = &doc.layer(LayerId(layer)).unwrap().content else { panic!("text") };
+        let layout = photocraft_text::shared().lock().unwrap_or_else(|e| e.into_inner()).layout(text, doc.resolution_dpi);
+        assert_eq!(layout.lines.len(), 2);
+        assert!((layout.lines[1].baseline - layout.lines[0].baseline - 60.0).abs() < 0.01);
+        assert_eq!(project(&session).unwrap()["bubbles"][0]["payload"]["lineSpacing"], json!(1.0));
+    }
+
+    #[test]
+    fn ordinary_size_edits_keep_spacing_relative_while_native_edits_keep_fixed_leading() {
+        for direction in ["horizontal", "vertical"] {
+            let mut session = session();
+            let mut initial = bubble();
+            initial["payload"]["textDirection"] = json!(direction);
+            set_bubbles(&mut session, &[initial], &fonts()).unwrap();
+            let layer = project(&session).unwrap()["bubbles"][0]["layer"].as_u64().unwrap();
+            session.execute("type.setStyle", json!({"layer":layer,"leading":60,"size":32})).unwrap();
+            assert_eq!(project(&session).unwrap()["bubbles"][0]["payload"]["richText"]["runs"][0]["style"]["leading_pt"], json!(60.0));
+            let mut updated = project(&session).unwrap()["bubbles"][0].clone();
+            updated["payload"]["fontSize"] = json!(48);
+            updated["fields"] = json!(["fontSize"]);
+            set_bubbles(&mut session, &[updated], &fonts()).unwrap();
+            let projected = project(&session).unwrap();
+            let payload = &projected["bubbles"][0]["payload"];
+            assert_eq!(payload["richText"]["runs"][0]["style"]["leading_pt"], json!(90.0));
+            assert_eq!(payload["lineSpacing"], json!(1.875));
+            let bytes = snapshot(&session).unwrap();
+            open(&mut session, &bytes, "p").unwrap();
+            assert_eq!(project(&session).unwrap()["bubbles"], projected["bubbles"]);
+            let mut updated = projected["bubbles"][0].clone();
+            updated["payload"]["lineSpacing"] = json!(1.4);
+            updated["fields"] = json!(["lineSpacing"]);
+            set_bubbles(&mut session, &[updated], &fonts()).unwrap();
+            let result = project(&session).unwrap();
+            assert!(result["bubbles"][0]["payload"]["richText"]["runs"][0]["style"]["leading_pt"].is_null());
+            let relative = result["bubbles"][0]["payload"]["richText"]["paragraphs"][0]["style"]["auto_leading"].as_f64().unwrap();
+            assert!((relative - 1.4).abs() < 0.00001);
         }
     }
 

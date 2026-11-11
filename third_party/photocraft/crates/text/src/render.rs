@@ -171,8 +171,8 @@ fn decoration_to(sink: &mut impl LineSink, transform: &Xform, d: &DecorationRect
 /// baseline shift, and the vertical-type orientation.
 fn glyph_xform(layout: &TextLayout, g: &PlacedGlyph, face_skew_deg: f32) -> Xform {
     let Some(st) = layout.styles.get(g.style as usize) else { return Xform([1.0, 0.0, 0.0, -1.0, g.x as f64, g.y as f64]) };
-    let hs = f64::from(if st.horizontal_scale > 0.0 { st.horizontal_scale } else { 1.0 }) * f64::from(g.scale_x);
-    let vs = if st.vertical_scale > 0.0 { st.vertical_scale } else { 1.0 } as f64;
+    let hs = f64::from(crate::layout::glyph_scale(st.horizontal_scale)) * f64::from(g.scale_x);
+    let vs = f64::from(crate::layout::glyph_scale(st.vertical_scale));
     let skew_deg = if st.faux_italic { FAUX_ITALIC_DEG } else { 0.0 } + face_skew_deg;
     let skew = (skew_deg as f64).to_radians().tan() * vs * f64::from(g.scale_x);
     let shift = (st.baseline_shift_pt * layout.px_per_pt) as f64;
@@ -188,7 +188,7 @@ fn glyph_xform(layout: &TextLayout, g: &PlacedGlyph, face_skew_deg: f32) -> Xfor
 
 /// The horizontal centre (text space) of a placed glyph: the pen position plus half its advance.
 fn glyph_center(layout: &TextLayout, g: &PlacedGlyph, font: &skrifa::FontRef, size_px: f32, coords: &[NormalizedCoord]) -> f64 {
-    let hs = layout.styles.get(g.style as usize).map_or(1.0, |st| if st.horizontal_scale > 0.0 { st.horizontal_scale } else { 1.0 });
+    let hs = layout.styles.get(g.style as usize).map_or(1.0, |st| crate::layout::glyph_scale(st.horizontal_scale));
     let advance = match g.orient {
         GlyphOrient::Horizontal => font.glyph_metrics(Size::new(size_px), LocationRef::new(coords)).advance_width(GlyphId::new(g.id)).unwrap_or(0.0),
         _ => 0.0,
@@ -241,11 +241,15 @@ fn rect_from_bounds([x0, y0, x1, y1]: [f64; 4]) -> Rect {
     Rect::new(x0 as i32, y0 as i32, x1 as i32, y1 as i32)
 }
 
-/// [`ink_rect`] of warped text.
-pub fn ink_rect_warped(layout: &TextLayout, transform: &Affine, warp: Option<&Warp>) -> Rect {
+pub(crate) fn ink_bounds(layout: &TextLayout, transform: &Affine, warp: Option<&Warp>) -> Option<[f64; 4]> {
     let mut b = Bounds::default();
     draw(layout, &Xform(transform.m), &mut b, None, warp);
-    b.rect.map(rect_from_bounds).unwrap_or(Rect::EMPTY)
+    b.rect.filter(|bounds| bounds.iter().all(|v| v.is_finite()))
+}
+
+/// [`ink_rect`] of warped text.
+pub fn ink_rect_warped(layout: &TextLayout, transform: &Affine, warp: Option<&Warp>) -> Rect {
+    ink_bounds(layout, transform, warp).map(rect_from_bounds).unwrap_or(Rect::EMPTY)
 }
 
 /// Rasterizes `layout` through `transform` (text space → document pixels). The result always

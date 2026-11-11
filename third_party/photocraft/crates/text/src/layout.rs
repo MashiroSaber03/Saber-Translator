@@ -9,10 +9,9 @@
 //! **Vertical type** (tategaki) is laid out in the same *line space* and then turned 90° clockwise
 //! into text space: a line becomes a column running top to bottom, and successive columns advance
 //! right to left. Within a column, CJK characters stay upright (centred on the column, placed with
-//! the font's vertical metrics: `VORG`, `vhea`/`vmtx`, else the ideographic em box) and use the
-//! font's vertical alternates (`vert`) for punctuation, brackets and the long-vowel mark; other
-//! Latin text runs rotated 90° clockwise; comic digits stay upright and short sequences of
-//! exclamation/question marks share one cell. Lines, clusters, carets
+//! the font's vertical metrics: `VORG`, `vhea`/`vmtx`, else the ideographic em box).
+//! Brackets and the long-vowel mark can use vertical alternates. Comic digits and sentence
+//! marks stay upright, while linear punctuation and Latin text run sideways. Lines, clusters, carets
 //! and hit tests stay in line space; [`TextLayout::to_text`] / [`TextLayout::to_line`] convert.
 
 use std::borrow::Cow;
@@ -71,25 +70,37 @@ fn small_caps_mode(caps: Caps, face_has_smcp: bool) -> SmallCapsMode {
     }
 }
 
-/// Index of the character run whose style a glyph uses, plus the vertical-type class of its
-/// characters ([`VClass`] as `u8`; always 0 in horizontal type).
+/// Character style index and the orientation of the characters shaped with it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct RunBrush(pub u32, pub u8);
+struct RunBrush(u32, VClass);
 
 /// How a character is set in vertical type (a simplification of Unicode's
 /// `Vertical_Orientation`, UAX #50).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum VClass {
     /// Rotated 90° clockwise (Latin and most symbols).
-    Rotate = 0,
-    /// Upright (ideographs, kana, Hangul, full-width forms, CJK punctuation such as 、。),
-    /// using a vertical alternate when the font has one.
-    Upright = 1,
-    /// Upright through its vertical alternate (brackets, the long-vowel mark, dashes); rotated
-    /// when the font has none.
-    AlternateOrRotate = 2,
-    /// Comic digits and exclamation/question marks stay upright and centre their visible ink.
-    Centered = 3,
+    #[default]
+    Rotate,
+    /// Upright CJK, using a vertical alternate when the font has one.
+    Upright,
+    /// Use the font's vertical alternate if supplied, otherwise rotate the glyph.
+    AlternateOrRotate,
+    /// Upright in an em cell, centred across the column.
+    Centered,
+    /// Low sentence marks are also centred along the cell.
+    LowMark,
+    /// Rotated once, with the visible ink centred across the column.
+    Linear,
+}
+
+impl VClass {
+    fn uses_cell(self) -> bool {
+        matches!(self, Self::Centered | Self::LowMark)
+    }
+
+    fn is_upright(self, glyph: u32, plain: Option<u32>) -> bool {
+        self.uses_cell() || self == Self::Upright || (self == Self::AlternateOrRotate && plain.is_some_and(|id| id != glyph))
+    }
 }
 
 // Comic emphasis marks that override the usual rotation of half-width text.
@@ -99,7 +110,17 @@ fn emphasis_override(c: char) -> bool {
 
 fn combine_mark(c: char) -> bool { matches!(c, '!' | '?' | '！' | '？') }
 
-/// Short comic punctuation sequences share a cell without rewriting text or run offsets.
+fn compound_mark(c: char) -> Option<&'static str> {
+    match c {
+        '‼' => Some("!!"),
+        '⁉' => Some("!?"),
+        '⁇' => Some("??"),
+        '⁈' => Some("?!"),
+        _ => None,
+    }
+}
+
+/// Short comic punctuation sequences share a cell. A literal compound has its own cell.
 fn combined_ranges(text: &str) -> Vec<Range<usize>> {
     let mut groups = Vec::new();
     let mut start = 0;
@@ -115,6 +136,7 @@ fn combined_ranges(text: &str) -> Vec<Range<usize>> {
         } else {
             if count > 1 { groups.push(start..at); }
             count = 0;
+            if compound_mark(c).is_some() { groups.push(at..at + c.len_utf8()); }
         }
     }
     groups
@@ -129,35 +151,113 @@ fn comic_break(cx: parley::LineBreakContext) -> Option<bool> {
     (combine_mark(cx.before) && combine_mark(cx.after)).then_some(true)
 }
 
+fn linear_family(c: char) -> Option<u8> {
+    match c {
+        '.' | '…' | '⋯' => Some(0),
+        '-' | '‐' | '‑' | '‒' | '–' | '—' | '―' | '─' | '−' | '－' => Some(1),
+        '~' | '～' | '〜' | '〰' => Some(2),
+        _ => None,
+    }
+}
+
+fn linear_ranges(text: &str) -> Vec<Range<usize>> {
+    let mut groups = Vec::new();
+    let mut start = 0;
+    let mut family = None;
+    for (at, c) in text.char_indices().chain(std::iter::once((text.len(), '\n'))) {
+        let next = linear_family(c);
+        if next != family {
+            if family.is_some() && text[start..at].chars().count() > 1 { groups.push(start..at); }
+            start = at;
+            family = next;
+        }
+    }
+    groups
+}
+
+/// Prefer equivalent punctuation from the chosen face before asking font fallback for a glyph.
+fn local_mark(fonts: &mut FontDb, style: &CharStyle, mark: char) -> char {
+    let equivalents = match mark {
+        '!' => "！", '！' | '﹗' | '❕' | '❗' => "！!",
+        '?' => "？", '？' | '﹖' => "?？",
+        '.' => "．", '．' => ".", ',' => "，", '，' => ",",
+        ':' => "：", '：' => ":", ';' => "；", '；' => ";",
+        '·' => "・", '・' => "·", '⋯' => "…", '…' => "⋯",
+        '—' | '―' | '─' | '−' | '－' => "—–-",
+        '～' | '〜' | '〰' => "～〜~",
+        '(' => "（", '（' => "(", ')' => "）", '）' => ")",
+        '[' => "［", '［' => "[", ']' => "］", '］' => "]",
+        '{' => "｛", '｛' => "{", '}' => "｝", '｝' => "}",
+        _ => return mark,
+    };
+    let mut has = |c| fonts.selected_face_has_character(&style.font_family, style.weight, style.italic, c);
+    if has(mark) { mark } else { equivalents.chars().filter(|&c| c != mark).find(|&c| has(c)).unwrap_or(mark) }
+}
+
+/// Only substitutions with different byte lengths need an entry. Parley sees the displayed text,
+/// while styles and carets keep addressing the document's original UTF-8 ranges.
+struct Substitution {
+    source: Range<usize>,
+    display: Range<usize>,
+}
+
+fn display_offset(changes: &[Substitution], offset: usize, prefix_len: usize) -> usize {
+    let i = changes.partition_point(|c| c.source.end <= offset);
+    if let Some(c) = changes.get(i).filter(|c| c.source.contains(&offset)) {
+        c.display.start
+    } else {
+        changes[..i].last().map_or(offset + prefix_len, |c| c.display.end + (offset - c.source.end))
+    }
+}
+
+fn source_offset(changes: &[Substitution], offset: usize, prefix_len: usize, end: bool) -> usize {
+    let i = changes.partition_point(|c| c.display.end <= offset);
+    if let Some(c) = changes.get(i).filter(|c| c.display.contains(&offset)) {
+        if end && offset > c.display.start { c.source.end } else { c.source.start }
+    } else {
+        changes[..i].last().map_or(offset.saturating_sub(prefix_len), |c| c.source.end + (offset - c.display.end))
+    }
+}
+
+pub(crate) fn glyph_scale(scale: f32) -> f32 {
+    if scale.is_finite() && scale > 0.0 { scale } else { 1.0 }
+}
+
+fn shaping_scale(style: &CharStyle, vertical: bool) -> f32 {
+    if vertical { 1.0 } else { glyph_scale(style.horizontal_scale) }
+}
+
 /// The vertical-type class of a character.
 pub fn vertical_class(c: char) -> VClass {
-    if c.is_ascii_digit() || emphasis_override(c) {
+    if c.is_ascii_digit() || emphasis_override(c) || matches!(c, '|' | '⋮' | '\u{fe10}'..='\u{fe1f}' | '\u{fe30}'..='\u{fe4f}') {
         return VClass::Centered;
+    }
+    if matches!(c, '.' | '．' | '。' | ',' | '，' | '、' | '·' | '・' | '‥') {
+        return VClass::LowMark;
+    }
+    if linear_family(c).is_some() || matches!(c, ':' | ';' | '：' | '；') {
+        return VClass::Linear;
     }
     let u = c as u32;
     let alt = matches!(
         u,
-        0x2014..=0x2016
-            | 0x2025
-            | 0x2026
+        0x2016
             | 0x2329
             | 0x232A
             | 0x3008..=0x3011
             | 0x3014..=0x301F
-            | 0x3030
             | 0x30A0
             | 0x30FC
             | 0xFE59..=0xFE5E
             | 0xFF08
             | 0xFF09
-            | 0xFF0D
-            | 0xFF1A..=0xFF1E
+            | 0xFF1C..=0xFF1E
             | 0xFF3B
             | 0xFF3D
             | 0xFF3F
             | 0xFF5B..=0xFF60
             | 0xFFE3
-    );
+    ) || matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '“' | '”' | '‘' | '’' | '«' | '»');
     if alt {
         return VClass::AlternateOrRotate;
     }
@@ -166,7 +266,7 @@ pub fn vertical_class(c: char) -> VClass {
         return VClass::Rotate;
     }
     let upright = crate::cjk::classify(c).is_some()
-        || matches!(u, 0xA7 | 0xA9 | 0xAE | 0xB1 | 0xBC..=0xBE | 0xD7 | 0xF7 | 0x2E80..=0x2EFF | 0xFE10..=0xFE1F | 0xFE30..=0xFE4F | 0x1F000..=0x1FAFF);
+        || matches!(u, 0xA7 | 0xA9 | 0xAE | 0xB1 | 0xBC..=0xBE | 0xD7 | 0xF7 | 0x2E80..=0x2EFF | 0x1F000..=0x1FAFF);
     if upright { VClass::Upright } else { VClass::Rotate }
 }
 
@@ -577,6 +677,7 @@ impl Layouter {
             TextShape::Point | TextShape::Path { .. } => ((0.0, 0.0, 0.0, 0.0), false),
         };
         let mut prev_baseline: Option<f32> = None;
+        let mut prev_auto_column: Option<f32> = None;
         let mut pending_space = 0.0f32;
         let mut stop = false;
         // Fixed for the whole layout, and the font probe only matters for styles that use small
@@ -611,7 +712,9 @@ impl Layouter {
             // Offsets in `ptext` of the spaces standing in for tabs.
             let mut tabs: Vec<usize> = Vec::new();
             let tab_px = DEFAULT_TAB_STOP_PT * k;
-            for (i, ch) in content.char_indices() {
+            let mut changes = Vec::new();
+            let mut chars = content.char_indices().peekable();
+            while let Some((i, ch)) = chars.next() {
                 // A forced line break ends the line but not the paragraph. The line breaker knows
                 // it as a newline, which has the same length, so text offsets don't move.
                 if ch == FORCED_LINE_BREAK {
@@ -627,30 +730,59 @@ impl Layouter {
                     ptext.push(' ');
                     continue;
                 }
-                let style = &out.styles[style_at(prange.start + i)];
-                // These ornaments are often supplied by the browser's emoji font but absent
-                // from an offline font set. Fall back only the displayed glyph, preserving
-                // native text and the same three-byte UTF-8 offsets used by runs/carets.
-                if matches!(ch, '❕' | '❗') && !fonts.selected_face_has_character(&style.font_family, style.weight, style.italic, ch) {
+                let si = style_at(prange.start + i);
+                let style = &out.styles[si];
+                let start = ptext.len();
+                let mut end = i + ch.len_utf8();
+                if vertical {
+                    if let Some(marks) = compound_mark(ch) {
+                        ptext.extend(marks.chars().map(|c| local_mark(fonts, style, c)));
+                    } else if ch == '.' && chars.peek().is_some_and(|&(j, c)| c == '.' && style_at(prange.start + j) == si) {
+                        // Use the font's ellipsis for two or three dots of the same style.
+                        let mark = local_mark(fonts, style, '…');
+                        if fonts.selected_face_has_character(&style.font_family, style.weight, style.italic, mark) {
+                            chars.next();
+                            end += 1;
+                            if chars.peek().is_some_and(|&(j, c)| c == '.' && style_at(prange.start + j) == si) {
+                                chars.next();
+                                end += 1;
+                            }
+                            ptext.push(mark);
+                        }
+                    } else {
+                        let mark = local_mark(fonts, style, ch);
+                        if mark != ch { ptext.push(mark); }
+                    }
+                    if ptext.len() > start {
+                        if ptext.len() - start != end - i || compound_mark(ch).is_some() || end > i + ch.len_utf8() {
+                            changes.push(Substitution { source: i..end, display: start..ptext.len() });
+                        }
+                        continue;
+                    }
+                } else if matches!(ch, '❕' | '❗') && !fonts.selected_face_has_character(&style.font_family, style.weight, style.italic, ch) {
                     ptext.push('！');
                     continue;
                 }
                 let caps = style.caps;
-                if caps == Caps::AllCaps || small_caps[style_at(prange.start + i)] == SmallCapsMode::Synthetic {
+                if caps == Caps::AllCaps || small_caps[si] == SmallCapsMode::Synthetic {
                     let up: String = ch.to_uppercase().collect();
                     if up.len() == ch.len_utf8() {
                         ptext.push_str(&up);
                         if caps == Caps::SmallCaps && ch.is_lowercase() {
                             let end = ptext.len();
-                            synthetic_small_caps.push((end - up.len()..end, style.size_pt * k * SYNTHETIC_SMALL_CAPS_SCALE));
+                            synthetic_small_caps.push((end - up.len()..end, style.size_pt * k * SYNTHETIC_SMALL_CAPS_SCALE * shaping_scale(style, vertical)));
                         }
                         continue;
                     }
                 }
                 ptext.push(ch);
             }
+            let display = |off| display_offset(&changes, off, prefix.len());
+            let map = |off| prange.start + source_offset(&changes, off, prefix.len(), false);
+            let map_end = |off| prange.start + source_offset(&changes, off, prefix.len(), true);
             let first_style = &out.styles[style_at(prange.start)];
-            let combined = if vertical { combined_ranges(&ptext) } else { Vec::new() };
+            let combined: Vec<_> = if vertical { combined_ranges(content).into_iter().map(|r| display(r.start)..display(r.end)).collect() } else { Vec::new() };
+            let linear = if vertical { linear_ranges(&ptext) } else { Vec::new() };
             let first_px = first_style.size_pt * k;
             // Scripts the loaded fonts may lack (Arabic, Japanese, …): a host serving a font for them
             // fetches it (`served`); it joins the fallback stack once it arrives.
@@ -660,7 +792,7 @@ impl Layouter {
             let build = |lcx: &mut LayoutContext<RunBrush>,
                          fcx: &mut parley::FontContext,
                          tab_spacing: &[f32],
-                         vertical_padding: &[(Range<usize>, f32)]|
+                         advances: &[(Range<usize>, f32)]|
              -> Layout<RunBrush> {
                 let mut b = lcx.ranged_builder(fcx, &ptext, 1.0, false);
                 if vertical {
@@ -669,7 +801,7 @@ impl Layouter {
                 // Paragraph-start style as the default (covers the direction mark and empty
                 // paragraphs), then every run piece intersecting this paragraph.
                 let si0 = style_at(prange.start);
-                for p in style_props(&out.styles[si0], k, &fallback, si0 as u32, small_caps[si0]) {
+                for p in style_props(&out.styles[si0], k * shaping_scale(&out.styles[si0], vertical), &fallback, si0 as u32, small_caps[si0]) {
                     b.push_default(p);
                 }
                 for (ri, st) in out.styles.iter().enumerate() {
@@ -678,26 +810,31 @@ impl Layouter {
                     if a >= z {
                         continue;
                     }
-                    let range = (a - prange.start + prefix.len())..(z - prange.start + prefix.len());
-                    for p in style_props(st, k, &fallback, ri as u32, small_caps[ri]) {
+                    let range = display(a - prange.start)..display(z - prange.start);
+                    // Shape at the drawn inline width so wrapping, bidi and kerning see it too.
+                    for p in style_props(st, k * shaping_scale(st, vertical), &fallback, ri as u32, small_caps[ri]) {
                         b.push(p, range.clone());
                     }
                     if vertical {
-                        // Upright pieces get the vertical alternates and their class in the brush.
+                        // Only faces drawn in a vertical form receive vertical substitutions.
                         let piece = ptext.get(range.clone()).unwrap_or("");
                         let mut seg: Option<(usize, VClass)> = None;
                         let flush = |b: &mut parley::RangedBuilder<'_, RunBrush>, from: usize, to: usize, cls: VClass| {
                             if cls == VClass::Rotate || from >= to {
                                 return;
                             }
-                            let mut feats = feature_list(st, small_caps[ri]);
-                            feats.push("\"vert\" 1".into());
                             let r = (range.start + from)..(range.start + to);
+                            let mut feats = feature_list(st, small_caps[ri]);
+                            if matches!(cls, VClass::Upright | VClass::AlternateOrRotate) {
+                                feats.push("\"vert\" 1".into());
+                            } else {
+                                feats.extend(["\"vert\" 0".into(), "\"vrt2\" 0".into()]);
+                            }
                             b.push(StyleProperty::FontFeatures(FontFeatures::Source(Cow::Owned(feats.join(", ")))), r.clone());
-                            b.push(StyleProperty::Brush(RunBrush(ri as u32, cls as u8)), r);
+                            b.push(StyleProperty::Brush(RunBrush(ri as u32, cls)), r);
                         };
                         for (i, ch) in piece.char_indices() {
-                            let cls = vertical_class(ch);
+                            let cls = if ch == '.' && combined_at(&linear, range.start + i).is_some() { VClass::Linear } else { vertical_class(ch) };
                             match seg {
                                 Some((_, c)) if c == cls => {}
                                 Some((from, c)) => {
@@ -715,16 +852,15 @@ impl Layouter {
                 for (range, size) in &synthetic_small_caps {
                     b.push(StyleProperty::FontSize(*size), range.clone());
                 }
-                for range in &combined {
+                for range in combined.iter().chain(&linear) {
                     // Parley uses the preceding character's wrap mode at a boundary.
                     // Allow wrapping before/after a cell, never between its members.
                     if let Some((last, _)) = ptext.get(range.clone()).and_then(|s| s.char_indices().next_back()) {
                         b.push(StyleProperty::TextWrapMode(parley::TextWrapMode::NoWrap), range.start..range.start + last);
                     }
                 }
-                for (range, padding) in vertical_padding {
-                    let st = &out.styles[style_at(prange.start + range.start.saturating_sub(prefix.len()))];
-                    b.push(StyleProperty::LetterSpacing(st.tracking / 1000.0 * st.size_pt * k + padding), range.clone());
+                for (range, spacing) in advances {
+                    b.push(StyleProperty::LetterSpacing(*spacing), range.clone());
                 }
                 for (&at, &spacing) in tabs.iter().zip(tab_spacing) {
                     b.push(StyleProperty::LetterSpacing(spacing), at..at + 1);
@@ -750,49 +886,66 @@ impl Layouter {
             let wide = if is_box { tab_px } else { 0.0 };
             let tab_spacing = vec![wide; tabs.len()];
             let mut layout = build(&mut self.lcx, &mut fonts.fcx, &tab_spacing, &[]);
-            break_lines(&mut layout);
-            // Upright marks such as ! need an em down the column, not their narrow horizontal
-            // advance. Feed that padding back through shaping so wrapping and carets agree too.
-            let mut vertical_padding = Vec::new();
-            if vertical && ptext.chars().any(|c| vertical_class(c) == VClass::Centered) {
+            // The column consumes height for an upright glyph and width for a sideways one.
+            // Use the same advances to wrap, align and position glyphs/carets.
+            let mut advances = Vec::new();
+            if vertical && (ptext.chars().any(|c| vertical_class(c).uses_cell())
+                || out.styles.iter().any(|s| glyph_scale(s.horizontal_scale) != 1.0 || glyph_scale(s.vertical_scale) != 1.0))
+            {
+                layout.break_all_lines(None);
+                let cells: Vec<_> = combined.iter().map(|range| {
+                    let group = &ptext[range.clone()];
+                    let height = group.char_indices().map(|(at, _)| {
+                        let st = &out.styles[style_at(map(range.start + at))];
+                        st.size_pt * k * glyph_scale(st.vertical_scale)
+                    }).fold(0.0f32, f32::max);
+                    (height, group.chars().count() as f32)
+                }).collect();
                 for line in layout.lines() {
                     for run in line.runs() {
+                        let vm = VMetrics::new(run.font(), run.normalized_coords(), run.font_size());
                         for cluster in run.visual_clusters() {
-                            let style = cluster.first_style();
-                            let mark = ptext.get(cluster.text_range()).and_then(|text| text.chars().next());
-                            if !mark.is_some_and(|c| vertical_class(c) == VClass::Centered) || cluster.glyphs().count() != 1 {
+                            let RunBrush(si, class) = cluster.first_style().brush;
+                            let range = cluster.text_range();
+                            if range.start < prefix.len() || tabs.binary_search(&range.start).is_ok() {
                                 continue;
                             }
-                            let tracking = out.styles[style.brush.0 as usize].tracking / 1000.0 * run.font_size();
-                            let range = cluster.text_range();
-                            let target = combined_at(&combined, range.start).and_then(|i| combined.get(i))
-                                .and_then(|group| ptext.get(group.clone()).map(|s| (group, s)))
-                                .map_or(run.font_size() + tracking, |(group, s)| {
-                                    let size = s.char_indices().map(|(i, _)| out.styles[style_at(prange.start + (group.start + i).saturating_sub(prefix.len()))].size_pt * k).fold(0.0f32, f32::max);
-                                    let members = ptext.get(range.clone()).map_or(1, |s| s.chars().count());
-                                    (size * members as f32 + tracking) / s.chars().count().max(1) as f32
-                                });
-                            let padding = target - cluster.advance();
-                            if padding.abs() > 0.01 {
-                                vertical_padding.push((cluster.text_range(), padding));
+                            let st = &out.styles[si as usize];
+                            let tracking = st.tracking / 1000.0 * st.size_pt * k;
+                            let glyph = cluster.glyphs().next();
+                            let mark = ptext.get(range.clone()).and_then(|s| s.chars().next());
+                            let plain = if class == VClass::AlternateOrRotate { mark.and_then(|c| vm.cmap(c)) } else { None };
+                            let upright = cluster.is_space_or_nbsp() || glyph.is_some_and(|g| class.is_upright(g.id, plain));
+                            let scale = glyph_scale(if upright { st.vertical_scale } else { st.horizontal_scale });
+                            let advance = if let Some(i) = combined_at(&combined, range.start) {
+                                let (height, count) = cells[i];
+                                (height + tracking) / count
+                            } else if class.uses_cell() {
+                                run.font_size() * scale + tracking
+                            } else {
+                                (cluster.advance() - tracking) * scale + tracking
+                            };
+                            let delta = advance - cluster.advance();
+                            if delta.abs() > 0.01 {
+                                advances.push((range, tracking + delta));
                             }
                         }
                     }
                 }
-                if !vertical_padding.is_empty() {
-                    vertical_padding.sort_by_key(|(range, _)| range.start);
-                    layout = build(&mut self.lcx, &mut fonts.fcx, &tab_spacing, &vertical_padding);
-                    break_lines(&mut layout);
+                if !advances.is_empty() {
+                    advances.sort_by_key(|(range, _)| range.start);
+                    layout = build(&mut self.lcx, &mut fonts.fcx, &tab_spacing, &advances);
                 }
             }
+            break_lines(&mut layout);
             if is_box && !tabs.is_empty() {
-                let first = tab_widths(&layout, &tabs, &out.styles, indent_start, first_indent, tab_px);
+                let first = tab_widths(&layout, &tabs, indent_start, first_indent, tab_px);
                 let mut want: Vec<f32> = first.iter().map(|t| t.width).collect();
                 for _ in 0..4 {
-                    let spacing: Vec<f32> = first.iter().zip(&want).map(|(t, w)| w / t.scale - (t.advance - tab_px)).collect();
-                    let mut next = build(&mut self.lcx, &mut fonts.fcx, &spacing, &vertical_padding);
+                    let spacing: Vec<f32> = first.iter().zip(&want).map(|(t, w)| w - (t.advance - tab_px)).collect();
+                    let mut next = build(&mut self.lcx, &mut fonts.fcx, &spacing, &advances);
                     break_lines(&mut next);
-                    let got: Vec<f32> = tab_widths(&next, &tabs, &out.styles, indent_start, first_indent, tab_px).iter().map(|t| t.width).collect();
+                    let got: Vec<f32> = tab_widths(&next, &tabs, indent_start, first_indent, tab_px).iter().map(|t| t.width).collect();
                     if got.iter().zip(&want).all(|(a, b)| (a - b).abs() < 0.01) {
                         layout = next;
                         break;
@@ -819,50 +972,62 @@ impl Layouter {
             let nlines = layout.len();
             for (li, line) in layout.lines().enumerate() {
                 let m = *line.metrics();
-                // Largest leading among the glyph runs of the line.
+                // Automatic spacing follows the drawn cross-axis size.
                 let mut leading = 0.0f32;
                 let mut emphasis_leading = 0.0f32;
+                let mut col_half = 0.0f32;
+                let (mut line_ascent, mut line_descent) = (0.0f32, 0.0f32);
+                let mut auto_column = vertical;
                 for item in line.items() {
                     if let PositionedLayoutItem::GlyphRun(gr) = item {
                         let st = &out.styles[gr.style().brush.0 as usize];
-                        let px = gr.run().font_size();
-                        leading = leading.max(st.leading_pt.map_or(ps.auto_leading * px, |l| l * k));
+                        let run = gr.run();
+                        let font_scale = shaping_scale(st, vertical);
+                        let px = run.font_size() / font_scale;
+                        let cell = px * if vertical { cross_scale(run, gr.style().brush.1, st, &ptext) } else { glyph_scale(st.vertical_scale) };
+                        col_half = col_half.max(cell * 0.5);
+                        let cross = glyph_scale(st.vertical_scale) / font_scale;
+                        line_ascent = line_ascent.max(run.metrics().ascent * cross);
+                        line_descent = line_descent.max(run.metrics().descent * cross);
+                        leading = leading.max(st.leading_pt.map_or(ps.auto_leading * cell, |l| l * k));
+                        auto_column &= st.leading_pt.is_none();
                         if st.emphasis {
-                            let scale = if vertical { st.horizontal_scale } else { st.vertical_scale };
-                            emphasis_leading = emphasis_leading.max(px * scale.max(0.01) * 1.3);
+                            let space = if vertical { cell * 1.3 } else { st.size_pt * k * 0.25 };
+                            emphasis_leading = emphasis_leading.max(space);
                         }
                     }
                 }
                 if leading == 0.0 {
                     let st = &out.styles[style_at(prange.start)];
                     leading = st.leading_pt.map_or(ps.auto_leading * st.size_pt * k, |l| l * k);
+                    auto_column &= st.leading_pt.is_none();
                 }
                 // Preserve the requested spacing whenever it already has room for the dots.
+                if !vertical && emphasis_leading > 0.0 {
+                    emphasis_leading += line_ascent + line_descent;
+                }
                 leading = leading.max(emphasis_leading);
-                // Vertical type: half the column width (the largest em on the column).
-                let col_half = line
-                    .items()
-                    .filter_map(|it| match it {
-                        PositionedLayoutItem::GlyphRun(gr) => Some(gr.run().font_size() * 0.5),
-                        _ => None,
-                    })
-                    .fold(0.0f32, f32::max);
                 let col_half = if col_half > 0.0 { col_half } else { first_px * 0.5 };
                 let (ascent, descent) = if vertical {
                     (col_half, col_half)
-                } else if m.ascent > 0.0 || m.descent > 0.0 {
-                    (m.ascent, m.descent)
+                } else if line_ascent > 0.0 || line_descent > 0.0 {
+                    (line_ascent, line_descent)
                 } else {
                     (first_px * 0.8, first_px * 0.2)
                 };
+                let step = if auto_column {
+                    prev_auto_column.map_or(leading, |previous| (previous + leading) * 0.5)
+                } else {
+                    leading
+                };
                 let baseline = match prev_baseline {
                     // Photoshop offsets the first vertical baseline by half the capital height.
-                    None if is_box && vertical => -(box_rect.0 + box_rect.2) + first_ascent(&line, 'H').map(|h| h * 0.5).unwrap_or(col_half),
+                    None if is_box && vertical => -(box_rect.0 + box_rect.2) + first_ascent(&line, 'H', &out.styles, true).map(|h| h * 0.5).unwrap_or(col_half),
                     // Photoshop's "first baseline: ascent": the top of the tallest ascender
                     // (height of 'd') touches the box top, not the font's hhea ascent.
-                    None if is_box => box_rect.1 + first_ascent(&line, 'd').unwrap_or(ascent),
+                    None if is_box => box_rect.1 + first_ascent(&line, 'd', &out.styles, false).unwrap_or(ascent),
                     None => 0.0,
-                    Some(b) => b + leading + pending_space,
+                    Some(b) => b + step + pending_space,
                 };
                 pending_space = 0.0;
                 // Photoshop keeps a horizontal line whose baseline is inside the box and lets
@@ -875,13 +1040,13 @@ impl Layouter {
                     break;
                 }
                 prev_baseline = Some(baseline);
+                prev_auto_column = auto_column.then_some(leading);
                 let last_line = li + 1 == nlines;
                 let adv = m.advance - m.trailing_whitespace;
-                let map = |o: usize| (prange.start + o.saturating_sub(prefix.len())).min(content_end);
 
                 // Kerning after each cluster (px), per run in visual cluster order: manual
-                // kerning plus optical pair kerning. Applied after shaping (like horizontal
-                // scale) in line space, so it moves the following glyphs, carets and the line
+                // kerning plus optical pair kerning. Applied in line space after shaping,
+                // so it moves the following glyphs, carets and the line
                 // extent; in vertical type that is along the column. Optical kerning measures
                 // horizontal outlines, so it applies to rotated (Latin) glyphs only there.
                 let mut slots: Vec<KernSlot> = Vec::new();
@@ -895,7 +1060,7 @@ impl Layouter {
                         continue;
                     }
                     line_runs.push(run.index());
-                    let hs = out.styles.get(gr.style().brush.0 as usize).map_or(1.0, |st| if st.horizontal_scale > 0.0 { st.horizontal_scale } else { 1.0 });
+                    let st = &out.styles[gr.style().brush.0 as usize];
                     for c in run.visual_clusters() {
                         let mut gl = c.glyphs();
                         let first = gl.next().map(|g| g.id);
@@ -907,11 +1072,11 @@ impl Layouter {
                             last,
                             font: run.font().clone(),
                             coords: run.normalized_coords().to_vec(),
-                            size: run.font_size(),
+                            size: run.font_size() / shaping_scale(st, vertical),
                             rtl: c.is_rtl(),
                             blank: first.is_none() || c.is_space_or_nbsp() || c.text_range().end <= prefix.len(),
-                            upright: vertical && c.first_style().brush.1 != VClass::Rotate as u8,
-                            advance: c.advance() * hs,
+                            upright: vertical && c.first_style().brush.1 != VClass::Rotate,
+                            advance: c.advance(),
                             tab: tabs.binary_search(&c.text_range().start).is_ok(),
                             cluster: None,
                         });
@@ -920,7 +1085,7 @@ impl Layouter {
                 let mut kern_px: Vec<f32> = vec![0.0; slots.len()];
                 for j in 0..slots.len().saturating_sub(1) {
                     let (a, b) = (&slots[j], &slots[j + 1]);
-                    if a.start < prefix.len() {
+                    if a.start < prefix.len() || map(a.start) == map(b.start) {
                         continue;
                     }
                     let st = &out.styles[style_at(map(a.start))];
@@ -1021,8 +1186,9 @@ impl Layouter {
                 let lr = line.text_range();
                 let g0 = out.glyphs.len();
                 let c0 = out.clusters.len();
+                let d0 = out.decorations.len();
                 let mut vinfo: Vec<VGlyph> = Vec::new();
-                let mut extra = 0.0f32; // horizontal-scale growth and kerning along the line
+                let mut extra = 0.0f32;
                 let mut seen_runs: Vec<usize> = Vec::new();
                 for item in line.items() {
                     let PositionedLayoutItem::GlyphRun(gr) = item else {
@@ -1031,13 +1197,16 @@ impl Layouter {
                     let run = gr.run();
                     let si = gr.style().brush.0;
                     let st = &out.styles[si as usize];
-                    let hs = if st.horizontal_scale > 0.0 { st.horizontal_scale } else { 1.0 };
+                    let hs = glyph_scale(st.horizontal_scale);
+                    let vs = glyph_scale(st.vertical_scale);
+                    let font_scale = shaping_scale(st, vertical);
+                    let metric_scale = if vertical { 1.0 } else { vs / font_scale };
                     let synth = run.synthesis();
                     let face = out.faces.len() as u32;
                     out.faces.push(GlyphFace {
                         font: run.font().clone(),
                         coords: run.normalized_coords().to_vec(),
-                        size_px: run.font_size(),
+                        size_px: run.font_size() / font_scale,
                         embolden: synthetic_bold(synth.embolden(), st.weight, run.font_attrs().weight.value()),
                         skew_deg: synth.skew().unwrap_or(0.0),
                     });
@@ -1047,11 +1216,27 @@ impl Layouter {
                         let mut cx = run_x0;
                         let base = slots.iter().position(|s| s.run == run.index()).unwrap_or(0);
                         for (ci, c) in run.visual_clusters().enumerate() {
-                            let a = c.advance() * hs + kern_px.get(base + ci).copied().unwrap_or(0.0);
+                            let a = c.advance() + kern_px.get(base + ci).copied().unwrap_or(0.0);
                             let r = c.text_range();
                             if r.end > prefix.len() || prefix.is_empty() {
-                                if let Some(slot) = slots.get_mut(base + ci) { slot.cluster = Some(out.clusters.len()); }
-                                out.clusters.push(ClusterInfo { range: map(r.start)..map(r.end), x: cx, advance: a, line: line_index, rtl: c.is_rtl(), combined: None });
+                                let source = map(r.start)..map_end(r.end);
+                                let index = if let Some(previous) = out.clusters.last_mut().filter(|last| last.line == line_index && last.range == source) {
+                                    // Both glyphs of a literal compound belong to one character.
+                                    previous.advance += a;
+                                    out.clusters.len() - 1
+                                } else {
+                                    let index = out.clusters.len();
+                                    let dots = ptext.get(r).is_some_and(|s| matches!(s, "…" | "⋯"))
+                                        && text.get(source.clone()).is_some_and(|s| s.starts_with(".."));
+                                    let count = if dots { source.len() } else { 1 };
+                                    let advance = a / count as f32;
+                                    for i in 0..count {
+                                        let range = if dots { source.start + i..source.start + i + 1 } else { source.clone() };
+                                        out.clusters.push(ClusterInfo { range, x: cx + i as f32 * advance, advance, line: line_index, rtl: c.is_rtl(), combined: None });
+                                    }
+                                    index
+                                };
+                                if let Some(slot) = slots.get_mut(base + ci) { slot.cluster = Some(index); }
                             }
                             cx += a;
                         }
@@ -1059,16 +1244,6 @@ impl Layouter {
                     let rm = run.metrics();
                     let vm = if vertical { Some(VMetrics::new(run.font(), run.normalized_coords(), run.font_size())) } else { None };
                     let class = gr.style().brush.1;
-                    let padding = vertical_padding
-                        .binary_search_by_key(&run.text_range().start, |(range, _)| range.start)
-                        .ok()
-                        .and_then(|i| vertical_padding.get(i))
-                        .map_or(0.0, |(_, padding)| *padding);
-                    // Glyphs of the run's own characters (not substituted by `vert`).
-                    let plain: Vec<u32> = match (&vm, class) {
-                        (Some(v), 2) => ptext.get(run.text_range()).unwrap_or("").chars().filter_map(|c| v.cmap(c)).collect(),
-                        _ => Vec::new(),
-                    };
                     let mut pen = gr.offset();
                     let mut cursor = cursors.iter_mut().find(|c| c.0 == run.index());
                     for g in gr.glyphs() {
@@ -1089,32 +1264,37 @@ impl Layouter {
                             face,
                             id: g.id,
                             x: dx + pen + g.x + extra,
-                            y: baseline + g.y,
+                            y: baseline + g.y * metric_scale,
                             style: si,
                             orient: GlyphOrient::Horizontal,
                             scale_x: 1.0,
                         });
                         if let Some(v) = &vm {
-                            let upright = class == VClass::Upright as u8 || class == VClass::Centered as u8 || (class == 2 && !plain.contains(&g.id));
-                            let advance = (g.advance - padding).max(0.0);
-                            let skew = (if st.faux_italic { crate::render::FAUX_ITALIC_DEG } else { 0.0 } + synth.skew().unwrap_or(0.0)).to_radians().tan() * st.vertical_scale;
-                            let ink = if class == VClass::Centered as u8 { v.ink_bounds(g.id, hs, skew) } else { None };
-                            let centre_x = ink.map_or(advance * hs * 0.5, |b| (b[0] + b[2]) * 0.5);
+                            let plain = if class == VClass::AlternateOrRotate {
+                                slot.and_then(|s| ptext.get(s.start..)?.chars().next()).and_then(|c| v.cmap(c))
+                            } else { None };
+                            let upright = class.is_upright(g.id, plain);
+                            let width = v.advance_width(g.id).unwrap_or(run.font_size()) * hs;
+                            let skew = (if st.faux_italic { crate::render::FAUX_ITALIC_DEG } else { 0.0 } + synth.skew().unwrap_or(0.0)).to_radians().tan() * vs;
+                            let ink = if class.uses_cell() || class == VClass::Linear { v.ink_bounds(g.id, hs, vs, skew) } else { None };
+                            let origin = if class == VClass::LowMark {
+                                ink.map_or(v.origin(g.id) * vs, |b| (run.font_size() * vs - b[1] - b[3]) * 0.5)
+                            } else if upright {
+                                v.origin(g.id) * vs
+                            } else {
+                                0.0
+                            };
                             vinfo.push(VGlyph {
                                 upright,
-                                // Padding separates glyphs along the column, not across it.
-                                centre_x,
-                                origin: if upright { v.origin(g.id) } else { 0.0 },
-                                // Rotated text is centred on the column: its baseline sits
-                                // (ascent − descent) / 2 from the centre line.
-                                centre: (rm.ascent - rm.descent) * 0.5,
+                                centre_x: ink.map_or(width * 0.5, |b| (b[0] + b[2]) * 0.5),
+                                origin,
+                                centre: ink.map_or((rm.ascent - rm.descent) * vs * 0.5, |b| -(b[1] + b[3]) * 0.5),
                                 group,
                                 cluster,
-                                ink_width: ink.map_or(advance * hs, |b| b[2] - b[0]),
+                                ink_width: ink.map_or(width, |b| b[2] - b[0]),
                                 size: run.font_size() * hs,
                             });
                         }
-                        extra += g.advance * (hs - 1.0);
                         pen += g.advance;
                     }
                     // The run's last glyph: its remaining clusters' kerning follows it.
@@ -1143,16 +1323,31 @@ impl Layouter {
                             push(baseline - sz * 0.5, baseline + sz * 0.5);
                         }
                     } else if gr.style().underline.is_some() {
-                        let y0 = baseline - rm.underline_offset - shift;
-                        out.decorations.push(DecorationRect { x0: run_x0, y0, x1: run_x1, y1: y0 + rm.underline_size.max(1.0), style: si, round: false });
+                        let y0 = baseline - rm.underline_offset * metric_scale - shift;
+                        out.decorations.push(DecorationRect { x0: run_x0, y0, x1: run_x1, y1: y0 + (rm.underline_size * metric_scale).max(1.0), style: si, round: false });
                     }
                     if !vertical && gr.style().strikethrough.is_some() {
-                        let y0 = baseline - rm.strikethrough_offset - shift;
-                        out.decorations.push(DecorationRect { x0: run_x0, y0, x1: run_x1, y1: y0 + rm.strikethrough_size.max(1.0), style: si, round: false });
+                        let y0 = baseline - rm.strikethrough_offset * metric_scale - shift;
+                        out.decorations.push(DecorationRect { x0: run_x0, y0, x1: run_x1, y1: y0 + (rm.strikethrough_size * metric_scale).max(1.0), style: si, round: false });
                     }
                 }
+                let mut alignment_shift = 0.0;
                 if vertical {
-                    extra -= squeeze_punctuation(text, &mut out.clusters[c0..], &mut out.glyphs[g0..]);
+                    let cut = squeeze_punctuation(text, &mut out.clusters[c0..], &mut out.glyphs[g0..]);
+                    alignment_shift = match ps.align {
+                        TextAlign::Center => cut * 0.5,
+                        TextAlign::Right => cut,
+                        TextAlign::JustifyCenter if last_line => cut * 0.5,
+                        TextAlign::JustifyRight if last_line => cut,
+                        _ => 0.0,
+                    };
+                    extra -= cut;
+                    for cluster in &mut out.clusters[c0..] { cluster.x += alignment_shift; }
+                    for glyph in &mut out.glyphs[g0..] { glyph.x += alignment_shift; }
+                    for d in &mut out.decorations[d0..] {
+                        d.y0 += alignment_shift;
+                        d.y1 += alignment_shift;
+                    }
                 }
                 if justify_all {
                     let slack = avail.unwrap_or(0.0) - (adv + extra);
@@ -1204,14 +1399,14 @@ impl Layouter {
                         let (x, y) = if vertical {
                             (-baseline + size * st.horizontal_scale.max(0.01) * 0.5 + gap + radius + shift, middle)
                         } else {
-                            (middle, baseline - ascent * st.vertical_scale.max(0.01) - gap - radius - shift)
+                            (middle, baseline - ascent - gap - radius - shift)
                         };
                         out.decorations.push(DecorationRect { x0: x - radius, y0: y - radius, x1: x + radius, y1: y + radius, style: si as u32, round: true });
                     }
                 }
-                let x0 = dx + m.offset;
+                let x0 = dx + m.offset + alignment_shift;
                 out.lines.push(LineInfo {
-                    range: map(lr.start)..map(lr.end).min(content_end),
+                    range: map(lr.start)..map_end(lr.end).min(content_end),
                     baseline,
                     x0,
                     x1: x0 + adv + extra - trailing_tabs,
@@ -1226,9 +1421,17 @@ impl Layouter {
             && t.block_align != photocraft_doc::text::BlockAlign::Start
             && let Some(bounds) = out.line_bounds()
         {
-            let factor = if t.block_align == photocraft_doc::text::BlockAlign::Center { 0.5 } else { 1.0 };
             let (origin, extent) = if vertical { (-(box_rect.0 + box_rect.2), box_rect.2) } else { (box_rect.1, box_rect.3) };
-            let offset = origin + (extent - (bounds[3] - bounds[1])).max(0.0) * factor - bounds[1];
+            let offset = if t.block_align == photocraft_doc::text::BlockAlign::Center {
+                // Move the whole block by its visible centre, even when its ink exceeds the frame.
+                let center = crate::render::ink_bounds(&out, &photocraft_geom::Affine::IDENTITY, None).map_or(
+                    (bounds[1] + bounds[3]) * 0.5,
+                    |[x0, y0, x1, y1]| if vertical { (-(x0 + x1) * 0.5) as f32 } else { ((y0 + y1) * 0.5) as f32 },
+                );
+                origin + extent * 0.5 - center
+            } else {
+                origin + (extent - (bounds[3] - bounds[1])).max(0.0) - bounds[1]
+            };
             let (dx, dy) = out.to_text(0.0, offset);
             for glyph in &mut out.glyphs {
                 glyph.x += dx;
@@ -1255,23 +1458,36 @@ impl Layouter {
     }
 }
 
+fn cross_scale(run: &parley::Run<'_, RunBrush>, class: VClass, st: &CharStyle, text: &str) -> f32 {
+    let (width, height) = (glyph_scale(st.horizontal_scale), glyph_scale(st.vertical_scale));
+    match class {
+        VClass::Rotate | VClass::Linear => height,
+        VClass::AlternateOrRotate if width != height => {
+            let metrics = VMetrics::new(run.font(), run.normalized_coords(), run.font_size());
+            run.visual_clusters().map(|cluster| {
+                let plain = text.get(cluster.text_range()).and_then(|s| s.chars().next()).and_then(|c| metrics.cmap(c));
+                if cluster.glyphs().any(|g| class.is_upright(g.id, plain)) { width } else { height }
+            }).reduce(f32::max).unwrap_or(width)
+        }
+        _ => width,
+    }
+}
+
 /// The first tab stop after `pos` (px from the anchor or box edge); stops are `interval` apart.
 fn next_tab_stop(pos: f32, interval: f32) -> f32 {
     if interval > 0.0 && pos.is_finite() { ((pos + 1e-3) / interval).floor() * interval + interval } else { pos }
 }
 
-/// A tab as line breaking saw it: its shaped advance (before horizontal scale), the horizontal
-/// scale, and the width that takes it to its tab stop on its line.
+/// A tab's measured advance and the width that takes it to its stop on its line.
 struct TabWidth {
     advance: f32,
-    scale: f32,
     width: f32,
 }
 
 /// The width of each tab (offsets `tabs` in the paragraph text) on the broken lines of `layout`,
 /// before kerning and alignment.
-fn tab_widths(layout: &Layout<RunBrush>, tabs: &[usize], styles: &[CharStyle], indent: f32, first_indent: f32, interval: f32) -> Vec<TabWidth> {
-    let mut out: Vec<TabWidth> = tabs.iter().map(|_| TabWidth { advance: interval, scale: 1.0, width: interval }).collect();
+fn tab_widths(layout: &Layout<RunBrush>, tabs: &[usize], indent: f32, first_indent: f32, interval: f32) -> Vec<TabWidth> {
+    let mut out: Vec<TabWidth> = tabs.iter().map(|_| TabWidth { advance: interval, width: interval }).collect();
     for (li, line) in layout.lines().enumerate() {
         let mut pos = indent + if li == 0 { first_indent } else { 0.0 };
         let mut seen: Vec<usize> = Vec::new();
@@ -1284,16 +1500,15 @@ fn tab_widths(layout: &Layout<RunBrush>, tabs: &[usize], styles: &[CharStyle], i
                 continue;
             }
             seen.push(run.index());
-            let scale = styles.get(gr.style().brush.0 as usize).map_or(1.0, |st| if st.horizontal_scale > 0.0 { st.horizontal_scale } else { 1.0 });
             for c in run.visual_clusters() {
                 let advance = c.advance();
                 match tabs.binary_search(&c.text_range().start).ok().and_then(|i| out.get_mut(i)) {
                     Some(t) => {
                         let stop = next_tab_stop(pos, interval);
-                        *t = TabWidth { advance, scale, width: stop - pos };
+                        *t = TabWidth { advance, width: stop - pos };
                         pos = stop;
                     }
-                    None => pos += advance * scale,
+                    None => pos += advance,
                 }
             }
         }
@@ -1429,13 +1644,19 @@ impl<'a> VMetrics<'a> {
         self.font.as_ref()?.charmap().map(c).map(|g| g.to_u32())
     }
 
-    fn ink_bounds(&self, gid: u32, horizontal_scale: f32, skew: f32) -> Option<[f32; 4]> {
+    fn advance_width(&self, gid: u32) -> Option<f32> {
+        use skrifa::MetadataProvider;
+        self.font.as_ref()?.glyph_metrics(skrifa::instance::Size::unscaled(), skrifa::instance::LocationRef::new(&self.coords))
+            .advance_width(skrifa::GlyphId::new(gid)).map(|width| width * self.scale)
+    }
+
+    fn ink_bounds(&self, gid: u32, horizontal_scale: f32, vertical_scale: f32, skew: f32) -> Option<[f32; 4]> {
         use skrifa::MetadataProvider;
         use crate::raster::{Bounds, Pen, Xform};
         let f = self.font.as_ref()?;
         let outline = f.outline_glyphs().get(skrifa::GlyphId::new(gid))?;
         let mut bounds = Bounds::default();
-        let xf = Xform([f64::from(horizontal_scale * self.scale), 0.0, f64::from(skew * self.scale), -f64::from(self.scale), 0.0, 0.0]);
+        let xf = Xform([f64::from(horizontal_scale * self.scale), 0.0, f64::from(skew * self.scale), -f64::from(vertical_scale * self.scale), 0.0, 0.0]);
         outline.draw(skrifa::outline::DrawSettings::unhinted(skrifa::instance::Size::unscaled(), skrifa::instance::LocationRef::new(&self.coords)), &mut Pen::new(&mut bounds, xf)).ok()?;
         Some(bounds.rect?.map(|v| v as f32))
     }
@@ -1554,7 +1775,7 @@ fn style_props(st: &CharStyle, k: f32, fallback: &[String], idx: u32, small_caps
         StyleProperty::LetterSpacing(st.tracking / 1000.0 * px),
         StyleProperty::Underline(st.underline),
         StyleProperty::Strikethrough(st.strikethrough),
-        StyleProperty::Brush(RunBrush(idx, 0)),
+        StyleProperty::Brush(RunBrush(idx, VClass::Rotate)),
         StyleProperty::Locale(st.language.as_deref().and_then(|l| parley::fontique::Language::parse(l).ok())),
     ]
 }
@@ -1623,7 +1844,7 @@ pub(crate) fn synthetic_bold(matcher_says: bool, requested: u16, face_weight: f3
 }
 
 /// Tallest run's ascender: lowercase 'd' horizontally, uppercase 'H' vertically.
-fn first_ascent(line: &parley::Line<'_, RunBrush>, ascender: char) -> Option<f32> {
+fn first_ascent(line: &parley::Line<'_, RunBrush>, ascender: char, styles: &[CharStyle], vertical: bool) -> Option<f32> {
     use skrifa::MetadataProvider;
     let mut best: Option<f32> = None;
     for run in line.runs() {
@@ -1633,7 +1854,9 @@ fn first_ascent(line: &parley::Line<'_, RunBrush>, ascender: char) -> Option<f32
         };
         let coords: Vec<skrifa::instance::NormalizedCoord> = run.normalized_coords().iter().map(|&c| skrifa::instance::NormalizedCoord::from_bits(c)).collect();
         let loc = skrifa::instance::LocationRef::new(&coords);
-        let size = skrifa::instance::Size::new(run.font_size());
+        let scale = run.clusters().next().and_then(|c| styles.get(c.first_style().brush.0 as usize))
+            .map_or(1.0, |st| if vertical { 1.0 } else { glyph_scale(st.vertical_scale) / shaping_scale(st, false) });
+        let size = skrifa::instance::Size::new(run.font_size() * scale);
         let h = font.charmap().map(ascender).and_then(|g| font.glyph_metrics(size, loc).bounds(g)).map(|b| b.y_max).or_else(|| {
             let m = font.metrics(size, loc);
             m.cap_height.or(Some(m.ascent * 0.75))

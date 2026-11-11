@@ -39,16 +39,22 @@ fn cjk_engine() -> Option<(TextEngine, String)> {
 
 #[test]
 fn classes_follow_vertical_orientation() {
-    for c in ['縦', 'か', 'カ', '한', '、', '。', 'Ａ', '１'] {
+    for c in ['縦', 'か', 'カ', '한', 'Ａ', '１'] {
         assert_eq!(vertical_class(c), VClass::Upright, "{c}");
     }
     for c in ['0', '1', '9', '!', '?', '！', '？', '¡', '¿', '؟', '‼', '⁇', '⁈', '⁉', '﹖', '﹗', 'ǃ', '❢', '❕', '❗', '‽'] {
         assert_eq!(vertical_class(c), VClass::Centered, "{c}");
     }
-    for c in ['ー', '「', '」', '（', '）', '〜', '…', '—'] {
+    for c in ['.', '。', '，', '、', '·', '・', '‥'] {
+        assert_eq!(vertical_class(c), VClass::LowMark, "{c}");
+    }
+    for c in ['〜', '…', '⋯', '—', '−', '：', ';', '-'] {
+        assert_eq!(vertical_class(c), VClass::Linear, "{c}");
+    }
+    for c in ['ー', '「', '」', '（', '）', '('] {
         assert_eq!(vertical_class(c), VClass::AlternateOrRotate, "{c}");
     }
-    for c in ['A', 'z', ' ', '-', 'ｶ', 'é'] {
+    for c in ['A', 'z', ' ', 'ｶ', 'é'] {
         assert_eq!(vertical_class(c), VClass::Rotate, "{c}");
     }
 }
@@ -61,7 +67,7 @@ fn emphasis_punctuation_stays_upright_between_rotated_latin() {
     let l = e.layout(&t, 72.0);
     assert_eq!(l.glyphs.iter().map(|g| g.orient).collect::<Vec<_>>(), [GlyphOrient::Rotated, GlyphOrient::Upright, GlyphOrient::Upright, GlyphOrient::Rotated]);
     assert_eq!(t, before, "orientation must not rewrite the stored text or styles");
-    for mark in ["!", "?", "‼", "⁉", "ǃ", "❢", "‽"] {
+    for mark in ["!", "?", "ǃ", "❢", "‽"] {
         let t = vertical(mark, "Inter", 40.0);
         let (l, v) = e.render(&t, 72.0, PixelFormat::RGBA8);
         let (_, h) = e.render(&TextLayer { orientation: Orientation::Horizontal, ..t }, 72.0, PixelFormat::RGBA8);
@@ -139,6 +145,59 @@ fn comic_punctuation_shares_one_cell_with_individual_carets_and_wrapping() {
     for byte in 0..=text.text.len() {
         let [a, b] = layout.caret_segment(byte);
         assert_eq!(layout.hit_test((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5), byte, "boundary {byte}");
+    }
+}
+
+#[test]
+fn punctuation_substitutions_keep_source_characters_and_styles() {
+    let mut engine = TextEngine::new();
+    for (source, display) in [("..", "…"), ("...", "…"), ("‼", "!!"), ("⁉", "!?"), ("⁇", "??"), ("⁈", "?!")] {
+        let text = vertical(source, "Inter", 40.0);
+        let (layout, raster) = engine.render(&text, 72.0, PixelFormat::RGBA8);
+        let (_, reference) = engine.render(&vertical(display, "Inter", 40.0), 72.0, PixelFormat::RGBA8);
+        assert_eq!(raster.rect, reference.rect, "{source}");
+        assert_eq!(layout.clusters.len(), source.chars().count(), "{source}");
+        for (byte, _) in source.char_indices() {
+            let [a, b] = layout.caret_segment(byte);
+            assert_eq!(layout.hit_test((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5), byte, "{source}: caret {byte}");
+        }
+    }
+    let mut text = vertical("...⁇。A", "Inter", 40.0);
+    let base = text.runs[0].style.clone();
+    text.runs = vec![
+        TextRun { len: "...".len(), style: base.clone() },
+        TextRun { len: "⁇".len(), style: CharStyle { size_pt: 55.0, ..base.clone() } },
+        TextRun { len: "。A".len(), style: CharStyle { size_pt: 30.0, ..base } },
+    ];
+    let layout = engine.layout(&text, 72.0);
+    assert_eq!(layout.glyphs.iter().map(|g| g.style).collect::<Vec<_>>(), [0, 1, 1, 2, 2]);
+    assert_eq!(layout.clusters.iter().map(|c| c.range.start).collect::<Vec<_>>(), [0, 1, 2, 3, 6, 9]);
+}
+
+#[test]
+fn vertical_scaling_wraps_at_the_final_advance_and_centres_overflow() {
+    use photocraft_doc::text::BlockAlign;
+
+    let mut engine = TextEngine::new();
+    let mut text = TextLayer {
+        shape: TextShape::Box { x: 55.0, y: 40.0, width: 30.0, height: 115.0 },
+        block_align: BlockAlign::Center,
+        overflow_visible: true,
+        ..vertical("1 2 3 4", "Inter", 40.0)
+    };
+    for (width, height, columns) in [(1.0, 1.0, 2), (1.6, 1.0, 2), (1.0, 1.5, 4), (1.6, 0.5, 1)] {
+        text.runs[0].style.horizontal_scale = width;
+        text.runs[0].style.vertical_scale = height;
+        let layout = engine.layout(&text, 72.0);
+        assert_eq!(layout.lines.len(), columns, "{width} × {height}");
+        assert!(layout.clusters.iter().filter(|c| c.range.start % 2 == 0).all(|c| (c.advance - 40.0 * height).abs() < 0.01));
+        assert!(layout.lines.windows(2).all(|pair| {
+            let [a, b] = [&pair[0], &pair[1]];
+            b.baseline - a.baseline >= a.descent + b.ascent - 0.01
+        }), "automatic spacing must leave room for wider characters");
+        let [left, _, right, _] = crate::render::ink_bounds(&layout, &Affine::IDENTITY, None).unwrap();
+        assert!((left + right - 140.0).abs() < 0.001);
+        if columns > 1 { assert!(left < 55.0 && right > 85.0); }
     }
 }
 
@@ -303,18 +362,20 @@ fn cjk_is_upright_centred_with_vertical_alternates() {
     let g = &l.glyphs;
     assert_eq!(g.len(), text.chars().count(), "{fam}");
     assert!(g.iter().all(|g| g.id != 0), "{fam}: no .notdef");
-    // Ideographs and kana: upright, centred on the column (full-width advance ≈ 40 px).
+    // Ideographs and kana centre their full-width advance; low marks centre their ink instead.
     for (i, gl) in g.iter().take(8).enumerate() {
         assert_eq!(gl.orient, GlyphOrient::Upright, "{fam}: glyph {i}");
-        assert!((gl.x + 20.0).abs() < 4.0, "{fam}: glyph {i} at {gl:?}");
+        if ![3, 7].contains(&i) {
+            assert!((gl.x + 20.0).abs() < 4.0, "{fam}: glyph {i} at {gl:?}");
+        }
     }
     // Positions go down the column.
     assert!(g.windows(2).all(|w| w[1].y > w[0].y), "{fam}: {g:?}");
     // The first glyph's baseline is inside its em cell (vertical origin within the em).
     assert!(g[0].y > 20.0 && g[0].y < 40.0, "{fam}: {:?}", g[0]);
-    // 、 and 。 use their vertical alternates (different glyphs than in horizontal type).
+    // Low punctuation keeps the selected font's original glyph.
     for i in [3usize, 7] {
-        assert_ne!(g[i].id, h.glyphs[i].id, "{fam}: char {i} should use its vertical alternate");
+        assert_eq!(g[i].id, h.glyphs[i].id, "{fam}: char {i} should use its original glyph");
     }
     // ー: upright through its alternate when the font has one, else rotated.
     let dash = g[8];
@@ -329,7 +390,8 @@ fn cjk_is_upright_centred_with_vertical_alternates() {
     let s = e.layout(&vertical("ト、「東", &fam, 40.0), 72.0);
     let cx: Vec<f32> = s.clusters.iter().map(|c| c.x).collect();
     assert!((cx[1] - cx[0] - 40.0).abs() < 1.0 && (cx[2] - cx[1] - 20.0).abs() < 1.0, "{fam}: {cx:?}");
-    assert!((s.glyphs[2].y - s.glyphs[1].y - 20.0).abs() < 1.0, "{fam}: glyphs follow the clusters");
+    let bracket = e.layout(&vertical("「", &fam, 40.0), 72.0);
+    assert!((s.glyphs[2].y - cx[2] - bracket.glyphs[0].y).abs() < 1.0, "{fam}: glyphs follow the clusters");
     // Rendered: the column is tall and narrow.
     let (_, r) = e.render(&TextLayer { transform: Affine::translate(900.0, 30.0), ..vertical("縦書きテスト", &fam, 40.0) }, 72.0, PixelFormat::RGBA8);
     assert!(r.rect.height() > 4 * r.rect.width(), "{fam}: {:?}", r.rect);

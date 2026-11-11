@@ -38,6 +38,33 @@ fn emphasis_marks_follow_character_styles_and_reserve_line_space() {
 }
 
 #[test]
+fn horizontal_emphasis_scales_its_baseline_distance_once() {
+    let mut engine = TextEngine::new();
+    let mut text = point("H\nH", 40.0);
+    let unscaled = engine.layout(&text, 72.0);
+    for width in [0.7, 1.0, 1.5] {
+        for height in [0.7, 1.0, 1.5] {
+            text.runs = vec![TextRun { len: text.text.len(), style: CharStyle {
+                font_family: "Inter".into(), size_pt: 40.0, emphasis: true,
+                horizontal_scale: width, vertical_scale: height, ..Default::default()
+            } }];
+            let layout = engine.layout(&text, 72.0);
+            let dots: Vec<_> = layout.decorations.iter().filter(|d| d.round).collect();
+            assert_eq!(dots.len(), 2);
+            for (i, dot) in dots.iter().enumerate() {
+                // The glyph ascent scales with height; the 4 px decoration gap stays fixed.
+                // Width changes wrapping, so it must not change this vertical distance.
+                let distance = layout.lines[i].baseline - dot.y1;
+                let expected = unscaled.lines[i].ascent * height + 4.0;
+                assert!((distance - expected).abs() < 0.01, "{width}×{height}: {distance} vs {expected}");
+            }
+            assert!(dots[1].y0 >= layout.lines[0].baseline + layout.lines[0].descent - 0.01,
+                "{width}×{height}: the next row's dots must clear the previous row");
+        }
+    }
+}
+
+#[test]
 fn block_alignment_moves_glyphs_and_carets_without_moving_the_frame() {
     use photocraft_doc::text::BlockAlign;
     let mut engine = TextEngine::new();
@@ -49,10 +76,15 @@ fn block_alignment_moves_glyphs_and_carets_without_moving_the_frame() {
             for align in [BlockAlign::Center, BlockAlign::End] {
                 text.block_align = align;
                 let positioned = engine.layout(&text, 72.0);
-                let bounds = positioned.line_bounds().unwrap();
-                let origin = if orientation == Orientation::Vertical { -251.0 } else { 17.0 };
-                let factor = if align == BlockAlign::Center { 0.5 } else { 1.0 };
-                assert!((bounds[1] - origin - (240.0 - (bounds[3] - bounds[1])) * factor).abs() < 0.001);
+                if align == BlockAlign::Center {
+                    let [x0, y0, x1, y1] = crate::render::ink_bounds(&positioned, &Affine::IDENTITY, None).unwrap();
+                    let (ink_center, frame_center) = if orientation == Orientation::Vertical { ((x0 + x1) * 0.5, 131.0) } else { ((y0 + y1) * 0.5, 137.0) };
+                    assert!((ink_center - frame_center).abs() < 0.001);
+                } else {
+                    let bounds = positioned.line_bounds().unwrap();
+                    let end = if orientation == Orientation::Vertical { -11.0 } else { 257.0 };
+                    assert!((bounds[3] - end).abs() < 0.001);
+                }
                 assert_eq!(start.lines.len(), positioned.lines.len());
                 let (dx, dy) = positioned.to_text(0.0, positioned.block_offset);
                 for (before, after) in start.glyphs.iter().zip(&positioned.glyphs) {
@@ -67,6 +99,83 @@ fn block_alignment_moves_glyphs_and_carets_without_moving_the_frame() {
             }
         }
     }
+}
+
+#[test]
+fn horizontal_scale_is_measured_before_wrapping_and_alignment() {
+    let mut engine = TextEngine::new();
+    for source in ["H H H H H H", "AVATAR office fi e\u{301}", "one two three four five six"] {
+        for (width, height) in [(1.5, 1.0), (0.7, 1.0), (1.5, 1.5)] {
+            let style = CharStyle { font_family: "Inter".into(), size_pt: 40.0, horizontal_scale: width, vertical_scale: height,
+                variations: vec![photocraft_doc::text::FontVariation { axis: "opsz".into(), value: 40.0 }], ..Default::default() };
+            let layer = TextLayer {
+                shape: TextShape::Box { x: 30.0, y: 40.0, width: 230.0, height: 90.0 },
+                overflow_visible: true,
+                block_align: photocraft_doc::text::BlockAlign::Center,
+                runs: vec![TextRun { len: source.len(), style: style.clone() }],
+                paragraphs: vec![ParagraphRun { len: source.len(), style: ParagraphStyle { align: TextAlign::Center, ..Default::default() } }],
+                ..point(source, 40.0)
+            };
+            let reference = TextLayer {
+                runs: vec![TextRun { len: source.len(), style: CharStyle {
+                    size_pt: style.size_pt * width, horizontal_scale: 1.0, vertical_scale: height / width, ..style
+                } }],
+                ..layer.clone()
+            };
+            let actual = engine.layout(&layer, 72.0);
+            let expected = engine.layout(&reference, 72.0);
+            assert_eq!(actual.lines.iter().map(|l| l.range.clone()).collect::<Vec<_>>(),
+                       expected.lines.iter().map(|l| l.range.clone()).collect::<Vec<_>>(), "{source} {width}×{height}");
+            assert_eq!(actual.glyphs.iter().map(|g| g.id).collect::<Vec<_>>(), expected.glyphs.iter().map(|g| g.id).collect::<Vec<_>>());
+            for (a, b) in actual.clusters.iter().zip(&expected.clusters) {
+                assert!((a.x - b.x).abs() < 0.01 && (a.advance - b.advance).abs() < 0.01, "{source} {width}×{height}: {a:?} -> {b:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn horizontal_mixed_scales_keep_glyphs_and_scaled_auto_leading() {
+    let mut engine = TextEngine::new();
+    let source = "AVATAR office fi";
+    let styles = [
+        CharStyle { font_family: "Inter".into(), size_pt: 40.0, horizontal_scale: 1.5, vertical_scale: 1.2, ..Default::default() },
+        CharStyle { font_family: "Inter".into(), size_pt: 28.0, horizontal_scale: 0.7, vertical_scale: 1.6, ..Default::default() },
+    ];
+    let layer = TextLayer {
+        shape: TextShape::Box { x: 0.0, y: 0.0, width: 240.0, height: 80.0 },
+        overflow_visible: true,
+        runs: [7, source.len() - 7].into_iter().zip(styles).map(|(len, mut style)| {
+            style.variations.push(photocraft_doc::text::FontVariation { axis: "opsz".into(), value: style.size_pt });
+            TextRun { len, style }
+        }).collect(),
+        ..point(source, 40.0)
+    };
+    let reference = TextLayer {
+        runs: layer.runs.iter().map(|run| {
+            let mut run = run.clone();
+            run.style.size_pt *= run.style.horizontal_scale;
+            run.style.vertical_scale /= run.style.horizontal_scale;
+            run.style.horizontal_scale = 1.0;
+            run
+        }).collect(),
+        ..layer.clone()
+    };
+    let actual = engine.layout(&layer, 72.0);
+    let expected = engine.layout(&reference, 72.0);
+    assert_eq!(actual.glyphs.iter().map(|g| g.id).collect::<Vec<_>>(), expected.glyphs.iter().map(|g| g.id).collect::<Vec<_>>());
+    for (a, b) in actual.clusters.iter().zip(&expected.clusters) {
+        assert_eq!((&a.range, a.line), (&b.range, b.line));
+        assert!((a.x - b.x).abs() < 0.01 && (a.advance - b.advance).abs() < 0.01);
+    }
+    let mut text = styled("H\nH\nH", CharStyle { size_pt: 40.0, ..Default::default() });
+    let normal = engine.layout(&text, 72.0);
+    text.runs[0].style.vertical_scale = 1.5;
+    let tall = engine.layout(&text, 72.0);
+    assert!(((tall.lines[1].baseline - tall.lines[0].baseline) / (normal.lines[1].baseline - normal.lines[0].baseline) - 1.5).abs() < 0.001);
+    text.runs[0].style.leading_pt = Some(35.0);
+    let fixed = engine.layout(&text, 72.0);
+    assert!((fixed.lines[1].baseline - fixed.lines[0].baseline - 35.0).abs() < 0.001);
 }
 
 #[test]

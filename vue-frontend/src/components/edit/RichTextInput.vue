@@ -6,7 +6,7 @@ import { baseKeymap, joinBackward, splitBlockKeepMarks } from 'prosemirror-comma
 import { keymap } from 'prosemirror-keymap'
 import { history, undo, redo } from 'prosemirror-history'
 import type { BubbleState } from '@/types/bubble'
-import { defaultRun, fromTextDocument, patchRunStyle, textSchema, toTextDocument, type EditorFont, type RunStyle } from './richTextDocument'
+import { defaultParagraph, defaultRun, fromTextDocument, patchRunStyle, textSchema, toTextDocument, type EditorFont, type RunStyle } from './richTextDocument'
 
 const props = defineProps<{ bubble: BubbleState; fonts: EditorFont[]; disabled?: boolean }>()
 const emit = defineEmits<{
@@ -62,7 +62,7 @@ function selection(): void {
 function sync(): void {
   if (!view || view.composing) return
   const nextIdentity = props.bubble.backendBubbleId ?? props.bubble.clientMutationId ?? ''
-  const doc = toTextDocument(props.bubble.translatedText, props.bubble.richText, fallback())
+  const doc = toTextDocument(props.bubble.translatedText, props.bubble.richText, fallback(), defaultParagraph(props.bubble))
   const previousIdentity = previousBubble?.backendBubbleId ?? previousBubble?.clientMutationId
   if (nextIdentity !== identity && nextIdentity !== previousIdentity) {
     active = false
@@ -115,7 +115,7 @@ function format(patch: RunStyle, replace = false): void {
   const { state } = view
   const { from, to, empty } = state.selection
   const selected = active && !empty
-  const apply = (style: RunStyle) => replace ? patch : patchRunStyle(style, patch)
+  const apply = (style: RunStyle) => patchRunStyle(style, patch, replace)
   const transaction = state.tr
   const start = selected ? from : 0
   const end = selected ? to : state.doc.content.size

@@ -65,7 +65,11 @@ export const textSchema = new Schema({
 })
 
 export function defaultRun(bubble: BubbleState, font?: RunStyle): RunStyle {
-  return { ...font, size_pt: bubble.fontSize, color: nativeColor(bubble.textColor), leading_pt: bubble.fontSize * bubble.lineSpacing }
+  return { ...font, size_pt: bubble.fontSize, color: nativeColor(bubble.textColor) }
+}
+
+export function defaultParagraph(bubble: BubbleState): RunStyle {
+  return { align: { start: 'Left', center: 'Center', end: 'Right' }[bubble.inlineAlign], auto_leading: bubble.lineSpacing }
 }
 
 export function plainRun(bubble: BubbleState, font?: RunStyle): RunStyle {
@@ -75,8 +79,10 @@ export function plainRun(bubble: BubbleState, font?: RunStyle): RunStyle {
   return defaultRun(bubble, face)
 }
 
-export function patchRunStyle(style: RunStyle, patch: RunStyle): RunStyle {
-  const result = { ...style, ...patch }
+export function patchRunStyle(style: RunStyle, patch: RunStyle, replace = false): RunStyle {
+  const base = replace ? (style.leading_pt === undefined ? {} : { leading_pt: style.leading_pt }) : style
+  const result = { ...base, ...patch }
+  // Ordinary controls express spacing as a multiple of character size.
   if (patch.size_pt !== undefined && patch.leading_pt === undefined && style.leading_pt != null)
     result.leading_pt = Number(style.leading_pt) * Number(patch.size_pt) / (Number(style.size_pt) || 1)
   return result
@@ -85,8 +91,8 @@ export function patchRunStyle(style: RunStyle, patch: RunStyle): RunStyle {
 /** Whole-frame formatting uses the same character data as the rich-text input. */
 export function formatBubbleText(bubble: BubbleState, patch: RunStyle, replace = false): Partial<BubbleState> {
   const fallback = defaultRun(bubble)
-  const { richText } = fromTextDocument(toTextDocument(bubble.translatedText, bubble.richText, fallback), fallback)
-  return { richText: { ...richText, runs: richText.runs.map(run => ({ ...run, style: replace ? patch : patchRunStyle(run.style, patch) })) } }
+  const { richText } = fromTextDocument(toTextDocument(bubble.translatedText, bubble.richText, fallback, defaultParagraph(bubble)), fallback)
+  return { richText: { ...richText, runs: richText.runs.map(run => ({ ...run, style: patchRunStyle(run.style, patch, replace) })) } }
 }
 
 function styleReader(runs: NativeRichText['runs'], fallback: RunStyle): (at: number) => RunStyle {
@@ -98,10 +104,10 @@ function styleReader(runs: NativeRichText['runs'], fallback: RunStyle): (at: num
   }
 }
 
-export function toTextDocument(text: string, rich: NativeRichText | null | undefined, fallback: RunStyle): TextNode {
+export function toTextDocument(text: string, rich: NativeRichText | null | undefined, fallback: RunStyle, paragraphFallback: RunStyle = {}): TextNode {
   let offset = 0
   const readRun = styleReader(rich?.runs ?? [], fallback)
-  const readParagraph = styleReader(rich?.paragraphs ?? [], {})
+  const readParagraph = styleReader(rich?.paragraphs ?? [], paragraphFallback)
   const paragraphs = text.split('\n').map(line => {
     const start = offset
     const nodes: TextNode[] = []
@@ -152,7 +158,7 @@ export function fromTextDocument(doc: TextNode, fallback: RunStyle): { translate
  * characters outside the match keep their styles, including UTF-8 native run lengths. */
 export function replaceBubbleText(bubble: BubbleState, find: string, replacement: string): Partial<BubbleState> {
   if (!find || !bubble.translatedText.includes(find)) return {}
-  const rich = fromTextDocument(toTextDocument(bubble.translatedText, bubble.richText, defaultRun(bubble)), defaultRun(bubble)).richText
+  const rich = fromTextDocument(toTextDocument(bubble.translatedText, bubble.richText, defaultRun(bubble), defaultParagraph(bubble)), defaultRun(bubble)).richText
   const readRun = styleReader(rich.runs, defaultRun(bubble))
   const readParagraph = styleReader(rich.paragraphs, {})
   const runs: NativeRichText['runs'] = []

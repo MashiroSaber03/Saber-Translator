@@ -3,7 +3,7 @@ import { EditorState, TextSelection } from 'prosemirror-state'
 import { DOMParser, DOMSerializer } from 'prosemirror-model'
 import { copyTextStyle, applyTextStyle, copiedTextStyle } from '@/components/edit/textStyleClipboard'
 import { createBubbleState } from '@/utils/bubbleFactory'
-import { formatBubbleText, fromTextDocument, patchRunStyle, replaceBubbleText, textSchema, toTextDocument } from '@/components/edit/richTextDocument'
+import { defaultParagraph, defaultRun, formatBubbleText, fromTextDocument, patchRunStyle, plainRun, replaceBubbleText, textSchema, toTextDocument } from '@/components/edit/richTextDocument'
 
 describe('ordinary rich text uses native character and paragraph runs', () => {
   it('changes only the requested character attribute across frames, preserving mixed styles and masks', () => {
@@ -22,6 +22,28 @@ describe('ordinary rich text uses native character and paragraph runs', () => {
     expect(result).not.toHaveProperty('translatedText')
     expect(bubble.richText!.runs[0]!.style.size_pt).toBe(24)
     expect(patchRunStyle({ size_pt: 24, leading_pt: 30 }, { size_pt: 32, leading_pt: 35 })).toEqual({ size_pt: 32, leading_pt: 35 })
+  })
+  it('clears character decorations while retaining each run spacing ratio, paragraphs and manual line breaks', () => {
+    const bubble = createBubbleState({ coords: [0, 0, 200, 300], fontFamily: '', fontSize: 24, translatedText: '甲\n\n乙', richText: {
+      runs: [{ len: 5, style: { size_pt: 24, leading_pt: 48, underline: true } },
+        { len: 3, style: { size_pt: 40, leading_pt: 60, emphasis: true } }],
+      paragraphs: [{ len: 8, style: { align: 'Center', auto_leading: 1.4, space_before_pt: 5 } }],
+    } })
+    const result = formatBubbleText(bubble, plainRun(bubble), true)
+    expect(result.richText!.runs.map(run => run.style.leading_pt)).toEqual([48, 36])
+    expect(result.richText!.runs.every(run => !run.style.underline && !run.style.emphasis)).toBe(true)
+    expect(fromTextDocument(toTextDocument(bubble.translatedText, result.richText, defaultRun(bubble)), defaultRun(bubble)).translatedText).toBe(bubble.translatedText)
+    expect(result.richText!.paragraphs.map(p => p.style)).toEqual([bubble.richText!.paragraphs[0]!.style,
+      bubble.richText!.paragraphs[0]!.style, bubble.richText!.paragraphs[0]!.style])
+  })
+  it('materializes a plain bubble with relative paragraph spacing instead of inventing fixed character leading', () => {
+    const bubble = createBubbleState({ coords: [0, 0, 200, 300], fontFamily: '', translatedText: '甲\n乙', lineSpacing: 1.35, inlineAlign: 'center' })
+    const fallback = defaultRun(bubble)
+    expect(fallback).not.toHaveProperty('leading_pt')
+    const result = fromTextDocument(toTextDocument(bubble.translatedText, null, fallback, defaultParagraph(bubble)), fallback)
+    expect(result.richText.runs[0]!.style).not.toHaveProperty('leading_pt')
+    expect(result.richText.paragraphs.every(p => p.style.auto_leading === 1.35 && p.style.align === 'Center')).toBe(true)
+    expect(formatBubbleText(bubble, { size_pt: 48 }).richText!.paragraphs).toEqual(result.richText.paragraphs)
   })
   const normal = { font_family: 'Test', size_pt: 24, tracking: -25, variations: [{ tag: 'wght', value: 523 }], language: 'ja' }
   const red = { ...normal, color: { mode: 'Rgb', c: [1, 0, 0, 0], alpha: 0.7 }, faux_bold: true, emphasis: true }

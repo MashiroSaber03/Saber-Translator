@@ -30,7 +30,6 @@ from src.backend_v2.insight.repository import (
     mark_book_insight_derived_stale,
 )
 from src.backend_v2.jobs.repository import decode_job_progress
-from src.backend_v2.rendering.fonts import resolve_font_path
 from src.backend_v2.settings.validation import validate_setting_payload
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.database import immediate_transaction, read_transaction
@@ -2364,11 +2363,11 @@ class ContentRepository:
                 if self.storage is None:
                     raise ValueError("editing assets are unavailable")
                 default_id = default_font_id if default_font_id is not _MISSING else page["default_font_id"]
-                fitted = NativeEditor.fit_payloads([{**documents[id]["payload"],
-                    "fontFamily": resolve_font_path(connection, self.storage, documents[id]["fontId"] or default_id)}
-                    for id in auto_fit_ids], fonts=NativeEditor(self.storage).font_files(connection))
-                for index, id in enumerate(auto_fit_ids):
-                    calculated = fitted[str(index)]
+                fitted = NativeEditor(self.storage).fit_text(connection, page_id, auto_fit_ids,
+                    documents=[{**document, "fontId": document["fontId"] or default_id} for document in documents.values()],
+                    fields=native_fields)
+                for item in fitted:
+                    id, calculated = item["bubbleId"], item["fontSize"]
                     renderable_change |= documents[id]["payload"]["fontSize"] != calculated
                     documents[id]["payload"]["fontSize"] = calculated
 

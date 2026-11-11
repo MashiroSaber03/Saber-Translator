@@ -16,7 +16,7 @@ from src.backend_v2.api.app import ApiSettings, create_api_app
 from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.auth.ownership import owner_scope
 from tests_backend.v2.test_public_profile import public_platform, _login, ALICE_PASSWORD, BOB_PASSWORD, PUBLIC_BASE
-from src.backend_v2.editing.native import NativeEditor
+from src.backend_v2.editing.native import NATIVE_BUBBLE_FIELDS, NativeEditor
 from src.backend_v2.storage.defaults import DEFAULT_TEXT_STYLE
 from src.backend_v2.storage.schema import assets, bubbles, page_assets, pages
 
@@ -595,6 +595,31 @@ def _native_edit(platform, page, result, fonts, tmp_path, params):
     return saved['document']
 
 
+def test_size_only_edit_and_fit_keep_the_spacing_multiplier_from_native_text(content_platform, tmp_path):
+    page, _, result, fonts = _text_page(content_platform)
+    _, engine, repository, storage, *_ = content_platform
+    document = _native_edit(content_platform, page, result, fonts, tmp_path, {'leading': 60})
+    bubble = document['bubbles'][0]['bubbleId']
+    saved, _ = repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'],
+        mutations=[dict(op='patch', clientMutationId='size', bubbleId=bubble,
+                        fields={'fontSize': 40, 'translatedText': '甲\n乙', 'coords': [10, 10, 190, 90]})], idempotency_key='size')
+    payload = saved['document']['bubbles'][0]['payload']
+    assert payload['lineSpacing'] == 2.5
+    assert all(r['style']['leading_pt'] == 100 for r in payload['richText']['runs'])
+    before = _project_asset(content_platform, page)
+    with engine.connect() as connection:
+        fitted = NativeEditor(storage).fit_text(connection, page, [bubble])[0]['fontSize']
+    assert repository.get_page_document(page) == saved['document']
+    assert _project_asset(content_platform, page) == before
+    resized, _ = repository.mutate_page_document(page_id=page, base_revision=saved['document']['documentRevision'],
+        mutations=[dict(op='patch', clientMutationId='fit', bubbleId=bubble, fields={'fontSize': fitted})], idempotency_key='fit')
+    value = resized['document']['bubbles'][0]['payload']
+    assert value['lineSpacing'] == 2.5
+    assert value['coords'] == payload['coords']
+    assert value['translatedText'] == payload['translatedText']
+    assert all(abs(r['style']['leading_pt'] / r['style']['size_pt'] - 2.5) < 1e-5 for r in value['richText']['runs'])
+
+
 def _project_asset(platform, page):
     _, engine, _, storage, *_ = platform
     with engine.connect() as conn:
@@ -602,6 +627,103 @@ def _project_asset(platform, page):
             page_assets.c.asset_id == assets.c.id).where(
                 page_assets.c.page_id == page, page_assets.c.role == 'editor_document')).one()
     return row.id, storage.resolve_relative_path(row.relative_path).read_bytes()
+
+
+def _pre_native_page(platform, direction):
+    page, document, _, _ = _text_page(platform)
+    _, engine, *_ = platform
+    bubble = document['bubbles'][0]
+    payload = dict(bubble['payload'], translatedText='青梅\n\n竹马', fontSize=40,
+                   textDirection=direction, lineSpacing=1.0, richText=None)
+    with engine.begin() as connection:
+        connection.execute(update(bubbles).where(bubbles.c.id == bubble['bubbleId']).values(payload_json=json.dumps(payload)))
+        connection.execute(page_assets.delete().where(page_assets.c.page_id == page, page_assets.c.role == 'editor_document'))
+    return page, bubble['bubbleId'], payload
+
+
+@pytest.mark.parametrize('direction', ['horizontal', 'vertical'])
+def test_pre_native_sidebar_fit_uses_the_same_prepared_typography_as_ordinary_fit(content_platform, direction):
+    page, bubble, payload = _pre_native_page(content_platform, direction)
+    _, engine, repository, storage, *_ = content_platform
+    payload.update(translatedText='甲\n乙\n丙',
+                   coords=[10, 10, 190, 90] if direction == 'horizontal' else [10, 10, 90, 190])
+    with engine.begin() as connection:
+        connection.execute(update(bubbles).where(bubbles.c.id == bubble).values(payload_json=json.dumps(payload)))
+    with engine.connect() as connection:
+        expected = NativeEditor(storage).fit_text(connection, page, [bubble])[0]['fontSize']
+    saved, _ = repository.mutate_page_document(page_id=page, base_revision=2, mutations=[],
+        idempotency_key='sidebar-fit', page_style_defaults_patch={'autoFontSize': True}, propagate_style_fields=['fontSize'])
+    value = saved['document']['bubbles'][0]['payload']
+    assert value['fontSize'] == expected
+    assert value['translatedText'] == payload['translatedText']
+    assert value['coords'] == payload['coords']
+    with engine.connect() as connection:
+        reopened = NativeEditor(storage).prepare(connection, page, render=True, text_only=True)
+    assert reopened.bubbles[0]['payload']['richText'] == value['richText']
+
+
+@pytest.mark.parametrize('direction,spacing', [('horizontal', 1.125), ('vertical', 1.075)])
+def test_pre_native_spacing_is_imported_once_without_rewriting_text_or_published_assets(content_platform, direction, spacing):
+    page, bubble, payload = _pre_native_page(content_platform, direction)
+    _, engine, repository, storage, *_ = content_platform
+    editor = NativeEditor(storage)
+    with engine.connect() as connection:
+        before = connection.execute(select(page_assets).where(page_assets.c.page_id == page)).all()
+        result = editor.prepare(connection, page, render=True, text_only=True)
+        assert connection.execute(select(page_assets).where(page_assets.c.page_id == page)).all() == before
+    projected = result.bubbles[0]['payload']
+    assert projected['translatedText'] == payload['translatedText']
+    assert projected['coords'] == payload['coords']
+    assert projected['lineSpacing'] == spacing
+    assert all(run['style']['leading_pt'] is None for run in projected['richText']['runs'])
+    assert all(abs(p['style']['auto_leading'] - spacing) < 1e-6 for p in projected['richText']['paragraphs'])
+    assert repository.get_page_document(page)['bubbles'][0]['payload'] == payload
+    saved, _ = repository.mutate_page_document(page_id=page, base_revision=2, mutations=[],
+        editor_document=result.document, idempotency_key='import-pre-native')
+    assert saved['document']['bubbles'][0]['payload']['lineSpacing'] == spacing
+    with engine.connect() as connection:
+        reopened = editor.prepare(connection, page, render=True, text_only=True)
+    # Render-only preparation does not load business metadata; the saved document remains
+    # authoritative for OCR/auto-direction, while all native typography must agree.
+    assert {k: reopened.bubbles[0]['payload'][k] for k in NATIVE_BUBBLE_FIELDS} == {
+        k: projected[k] for k in NATIVE_BUBBLE_FIELDS}
+    assert repository.get_page_document(page) == saved['document']
+    assert reopened.text == result.text
+    assert reopened.translated == result.translated
+    # An explicit scalar edit switches to the requested relative value, without another conversion.
+    changed, _ = repository.mutate_page_document(page_id=page, base_revision=saved['document']['documentRevision'],
+        mutations=[dict(op='patch', clientMutationId='spacing', bubbleId=bubble, fields={'lineSpacing': 1.4})],
+        idempotency_key='explicit-spacing')
+    assert changed['document']['bubbles'][0]['payload']['lineSpacing'] == 1.4
+
+
+@pytest.mark.parametrize('direction,spacing', [('horizontal', 1.125), ('vertical', 1.075)])
+@pytest.mark.parametrize('rich_edit', [False, True])
+def test_first_pre_native_size_edit_preserves_the_imported_spacing(content_platform, direction, spacing, rich_edit):
+    page, bubble, payload = _pre_native_page(content_platform, direction)
+    _, engine, repository, storage, *_ = content_platform
+    if rich_edit:
+        with engine.connect() as connection:
+            rich = NativeEditor(storage).prepare(connection, page).bubbles[0]['payload']['richText']
+        # The ordinary editor started from the still-unconverted database projection.
+        for paragraph in rich['paragraphs']:
+            paragraph['style']['auto_leading'] = payload['lineSpacing']
+        for run in rich['runs']:
+            run['style']['size_pt'] = 48
+            run['style']['color'] = {'mode': 'Rgb', 'c': [1, 0, 0, 0], 'alpha': 1}
+        fields = {'richText': rich}
+    else:
+        fields = {'fontSize': 48}
+    saved, _ = repository.mutate_page_document(page_id=page, base_revision=2,
+        mutations=[dict(op='patch', clientMutationId='size', bubbleId=bubble, fields=fields)],
+        idempotency_key='first-edit')
+    value = saved['document']['bubbles'][0]['payload']
+    assert value['fontSize'] == 48
+    assert value['lineSpacing'] == spacing
+    assert value['translatedText'] == payload['translatedText']
+    assert value['coords'] == payload['coords']
+    if rich_edit:
+        assert value['textColor'] == '#ff0000'
 
 
 @pytest.mark.parametrize('direction', ['horizontal', 'vertical'])
