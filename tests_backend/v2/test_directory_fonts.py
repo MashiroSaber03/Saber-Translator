@@ -64,6 +64,59 @@ def test_manual_files_refresh_without_restart_and_missing_file_is_explicit(direc
     assert item in catalog.list()
 
 
+def test_new_bundled_fonts_are_added_to_existing_data_without_replacing_user_files(directory_fonts):
+    root, engine, catalog, storage, payload = directory_fonts
+    original = catalog.list()[0]
+    existing = root / 'fonts/shared/Alpha.ttf'
+    existing.write_bytes(payload + b'user replacement')
+    bundle = font_files.bundled_font_files()[0].path.parent
+    (bundle / 'Beta.ttf').write_bytes(payload)
+    expected = next(font for font in font_files.bundled_font_files() if font.path.name == 'Beta.ttf')
+    items = catalog.list()
+    added = next(item for item in items if item['displayName'] == 'Beta')
+    assert added['id'] == expected.id
+    assert original in items
+    assert existing.read_bytes() == payload + b'user replacement'
+    with engine.connect() as connection:
+        assert Path(resolve_font_path(connection, storage, added['id'])).read_bytes() == payload
+    assert FontRepository(engine).list() == items
+    # Shared fonts are directory-managed: a deliberate removal must stay removed.
+    (root / 'fonts/shared/Beta.ttf').unlink()
+    assert added['id'] not in {item['id'] for item in FontRepository(engine).list()}
+
+
+def test_new_bundle_does_not_overwrite_a_preexisting_same_name_font(directory_fonts):
+    root, _, catalog, _, payload = directory_fonts
+    catalog.list()
+    bundle = font_files.bundled_font_files()[0].path.parent
+    (bundle / 'Beta.ttf').write_bytes(payload)
+    destination = root / 'fonts/shared/Beta.ttf'
+    destination.write_bytes(payload + b'custom copy')
+    assert any(item['displayName'] == 'Beta' for item in catalog.list())
+    assert destination.read_bytes() == payload + b'custom copy'
+
+
+def test_interrupted_new_bundle_install_can_retry_without_publishing_partial_font(directory_fonts, monkeypatch):
+    from src.backend_v2.storage import platform_repositories
+
+    root, engine, catalog, _, payload = directory_fonts
+    before = catalog.list()
+    bundle = font_files.bundled_font_files()[0].path.parent
+    (bundle / 'Beta.ttf').write_bytes(payload)
+    copy = platform_repositories.shutil.copyfileobj
+    def interrupted(source, output):
+        output.write(source.read(16))
+        raise OSError('copy interrupted')
+    monkeypatch.setattr(platform_repositories.shutil, 'copyfileobj', interrupted)
+    with pytest.raises(OSError, match='copy interrupted'):
+        catalog.list()
+    assert not (root / 'fonts/shared/Beta.ttf').exists()
+    with engine.connect() as connection:
+        assert set(connection.execute(select(fonts.c.id)).scalars()) == {item['id'] for item in before}
+    monkeypatch.setattr(platform_repositories.shutil, 'copyfileobj', copy)
+    assert len(catalog.list()) == len(before) + 1
+
+
 def test_first_use_installation_can_race_without_overwriting_files(directory_fonts):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier

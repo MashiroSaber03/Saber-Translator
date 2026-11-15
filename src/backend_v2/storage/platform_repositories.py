@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PureWindowsPath
+import shutil
 import time
 import uuid
 from typing import Any, cast
@@ -37,7 +38,7 @@ from src.backend_v2.settings.validation import (
     validate_setting_payload,
 )
 from src.backend_v2.storage.defaults import FACTORY_PROMPTS, DEFAULT_FONT_ID
-from src.backend_v2.storage.font_files import DISPLAY_NAMES, FONT_NAMESPACE, font_path, scan_font_files
+from src.backend_v2.storage.font_files import DISPLAY_NAMES, FONT_NAMESPACE, bundled_font_files, font_path, scan_font_files
 from src.backend_v2.settings.scope import SettingsScope
 from src.backend_v2.storage.schema import (
     PROMPT_TYPES,
@@ -1570,12 +1571,12 @@ class FontRepository:
                 "isDefault": row["id"] == DEFAULT_FONT_ID}
 
     @staticmethod
-    def _register(connection, relative: str, owner: str | None, display_name=None):
+    def _register(connection, relative: str, owner: str | None, display_name=None, *, font_id=None):
         row = connection.execute(select(fonts).where(fonts.c.relative_path == relative)).mappings().one_or_none()
         if row is None:
             # Shared IDs stay stable when a data root is moved. Existing migrated
             # records retain their IDs because the relative path is checked first.
-            font_id = str(uuid.uuid5(FONT_NAMESPACE, relative))
+            font_id = font_id or str(uuid.uuid5(FONT_NAMESPACE, relative))
             name = Path(relative).name
             connection.execute(insert(fonts).values(
                 id=font_id, owner_user_id=owner, relative_path=relative,
@@ -1588,6 +1589,26 @@ class FontRepository:
         # No process cache: refresh sees manually added and removed files.
         files = scan_font_files(self.root, effective_owner_id())
         with immediate_transaction(self.engine) as connection:
+            known = set(connection.execute(select(fonts.c.relative_path)).scalars())
+            additions = [font for font in bundled_font_files() if font.relative_path not in known]
+            # An existing record also remembers an administrator's removed font.
+            # Install only newly bundled names; leave existing files and IDs alone.
+            for font in additions:
+                destination = font_path(self.root, font.relative_path, None)
+                created = False
+                try:
+                    with font.path.open('rb') as source, destination.open('xb') as output:
+                        created = True
+                        shutil.copyfileobj(source, output)
+                except FileExistsError:
+                    pass
+                except BaseException:
+                    if created:
+                        destination.unlink(missing_ok=True)
+                    raise
+                self._register(connection, font.relative_path, None, font.display_name, font_id=font.id)
+            if additions:
+                files = scan_font_files(self.root, effective_owner_id())
             items = [self._dto(self._register(connection, relative, owner)) for relative, owner in files
                      if font_path(self.root, relative, owner).is_file()]
         return sorted(items, key=lambda item: (not item["isDefault"], str(item["displayName"]).casefold(), item["id"]))

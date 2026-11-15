@@ -33,8 +33,22 @@ def _character_font_style(path: str, modified_ns: int) -> dict[str, object]:
 
     with TTFont(path, fontNumber=0, lazy=True) as font:
         names = font["name"]
+
+        def english_name(name_id: int) -> str | None:
+            for language in (0x409, 0):
+                for record in names.names:
+                    if record.nameID == name_id and record.langID == language:
+                        try:
+                            value = record.toUnicode()
+                        except UnicodeDecodeError:
+                            continue
+                        if value:
+                            return value
+            return None
+
         return {
-            "font_family": names.getDebugName(16) or names.getDebugName(1) or "",
+            # Match the native collection's canonical family, before localized labels.
+            "font_family": english_name(16) or english_name(1) or names.getDebugName(16) or names.getDebugName(1) or "",
             "font_style": names.getDebugName(17) or names.getDebugName(2) or "",
             "postscript_name": names.getDebugName(6),
             "weight": int(font["OS/2"].usWeightClass) if "OS/2" in font else 400,
