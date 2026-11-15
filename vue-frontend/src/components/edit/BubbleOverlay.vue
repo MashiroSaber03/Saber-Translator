@@ -375,14 +375,14 @@ onUnmounted(() => {
 <style scoped>
 .bubble-overlay {
   --bubble-overlay-box-border: color-mix(in srgb, var(--color-status-warning-bright) 80%, transparent);
-  --bubble-overlay-box-background: color-mix(in srgb, var(--color-status-warning-bright) 10%, transparent);
+  --bubble-overlay-box-background: color-mix(in srgb, var(--color-status-warning-bright) 3%, transparent);
   --bubble-overlay-box-hover-border: var(--color-status-error-bright);
-  --bubble-overlay-box-hover-background: color-mix(in srgb, var(--color-status-error-bright) 20%, transparent);
+  --bubble-overlay-box-hover-background: color-mix(in srgb, var(--color-status-error-bright) 5%, transparent);
   --bubble-overlay-selection-border: var(--color-action-success-bright);
-  --bubble-overlay-selection-background: color-mix(in srgb, var(--color-action-success-bright) 15%, transparent);
+  --bubble-overlay-selection-background: color-mix(in srgb, var(--color-action-success-bright) 5%, transparent);
   --bubble-overlay-selection-glow: color-mix(in srgb, var(--color-action-success-bright) 50%, transparent);
   --bubble-overlay-multi-selection-border: var(--color-status-error-vivid);
-  --bubble-overlay-multi-selection-background: color-mix(in srgb, var(--color-status-error-vivid) 25%, transparent);
+  --bubble-overlay-multi-selection-background: color-mix(in srgb, var(--color-status-error-vivid) 7%, transparent);
   --bubble-overlay-multi-selection-glow: color-mix(in srgb, var(--color-status-error-vivid) 60%, transparent);
   --bubble-overlay-index-background: var(--color-overlay-backdrop-strong);
   --bubble-overlay-selected-index-background: color-mix(in srgb, var(--color-action-success-bright) 90%, transparent);
@@ -402,22 +402,16 @@ onUnmounted(() => {
   height: 100%;
   pointer-events: none;
   user-select: none;
-  /* Inverse scaling keeps overlay controls usable while the image zoom changes. */
-  /* GPU compositing keeps large overlays stable while panning and zooming. */
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  will-change: contents;
 }
 
 .bubble-overlay__highlight-box {
+  /* Inverse scaling keeps overlay controls usable while the image zoom changes. */
   position: absolute;
   border: calc(2px / var(--scale, 1)) solid var(--bubble-overlay-box-border);
   background: var(--bubble-overlay-box-background);
   cursor: pointer;
   pointer-events: auto;
   overflow: visible;
-  /* Transform-heavy bubble boxes are isolated from surrounding layout. */
-  will-change: transform, left, top, width, height;
   contain: layout style;
 }
 

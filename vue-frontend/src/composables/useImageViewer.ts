@@ -9,9 +9,11 @@ export interface TransformState {
 export interface ImageViewerOptions {
   minScale?: number
   maxScale?: number
+  pixelRatio?: () => number
+  viewport?: () => HTMLElement | null
 }
 
-const DEFAULT_OPTIONS: Required<ImageViewerOptions> = {
+const DEFAULT_OPTIONS = {
   minScale: 0.1,
   maxScale: 5,
 }
@@ -32,13 +34,16 @@ function createViewerConfig(options: ImageViewerOptions) {
 
 export function useImageViewer(options: ImageViewerOptions = {}) {
   const config = createViewerConfig(options)
-  const initialScale = Math.min(Math.max(1, config.minScale), config.maxScale)
-  const scale = ref(initialScale)
+  const scale = ref(clampScale(1 / pixelRatio()))
   const translateX = ref(0)
   const translateY = ref(0)
   const isDragging = ref(false)
   const lastX = ref(0)
   const lastY = ref(0)
+
+  function pixelRatio(): number {
+    return normalizePositiveOption(options.pixelRatio?.(), 1)
+  }
 
   function clampScale(value: number): number {
     if (!Number.isFinite(value)) {
@@ -70,10 +75,7 @@ export function useImageViewer(options: ImageViewerOptions = {}) {
     const nextTranslateX = x - (x - translateX.value) * scaleChange
     const nextTranslateY = y - (y - translateY.value) * scaleChange
     if (!Number.isFinite(nextTranslateX) || !Number.isFinite(nextTranslateY)) return
-    translateX.value = nextTranslateX
-    translateY.value = nextTranslateY
-    scale.value = newScale
-
+    setTransform({ scale: newScale, translateX: nextTranslateX, translateY: nextTranslateY })
   }
 
   function zoomIn(x = 0, y = 0): void {
@@ -108,12 +110,11 @@ export function useImageViewer(options: ImageViewerOptions = {}) {
 
   function endDrag(): void {
     isDragging.value = false
+    setTransform({})
   }
 
   function reset(): void {
-    scale.value = initialScale
-    translateX.value = 0
-    translateY.value = 0
+    setTransform({ scale: 1 / pixelRatio(), translateX: 0, translateY: 0 })
   }
 
   function resetZoom(): void {
@@ -129,6 +130,19 @@ export function useImageViewer(options: ImageViewerOptions = {}) {
     }
     if (transform.translateY !== undefined && Number.isFinite(transform.translateY)) {
       translateY.value = transform.translateY
+    }
+    if (options.pixelRatio) {
+      const ratio = pixelRatio()
+      const physicalScale = scale.value * ratio
+      if (physicalScale >= 1 - 1e-6 && Math.abs(physicalScale - Math.round(physicalScale)) < 1e-6) {
+        const bounds = options.viewport?.()?.getBoundingClientRect()
+        if (bounds && (bounds.width <= 0 || bounds.height <= 0)) return
+        const left = bounds?.left ?? 0
+        const top = bounds?.top ?? 0
+        // Snap the existing transform, so hit testing and displayed pixels agree.
+        translateX.value = Math.round((left + translateX.value) * ratio) / ratio - left
+        translateY.value = Math.round((top + translateY.value) * ratio) / ratio - top
+      }
     }
   }
 

@@ -9,6 +9,49 @@ function source(file: string): string {
 }
 
 describe('useImageViewer', () => {
+  it('preserves the pan position while the viewport is temporarily hidden', () => {
+    let visible = true
+    const viewport = document.createElement('div')
+    viewport.getBoundingClientRect = () => visible ? new DOMRect(10, 20, 600, 400) : new DOMRect()
+    const viewer = useImageViewer({ pixelRatio: () => 1.25, viewport: () => viewport })
+    viewer.resetZoom()
+    const initial = viewer.getTransform()
+    for (let cycle = 0; cycle < 10; cycle++) {
+      visible = false
+      viewer.setTransform({})
+      visible = true
+      viewer.setTransform({})
+    }
+    expect(viewer.getTransform()).toEqual(initial)
+  })
+
+  it.each([1, 1.25, 1.5, 2])('aligns one image pixel to one physical pixel at DPR %s', ratio => {
+    const viewport = document.createElement('div')
+    viewport.getBoundingClientRect = () => new DOMRect(10.2, 20.3, 600, 400)
+    const viewer = useImageViewer({ pixelRatio: () => ratio, viewport: () => viewport })
+    viewer.resetZoom()
+    expect(viewer.scale.value * ratio).toBeCloseTo(1)
+    expect((10.2 + viewer.translateX.value) * ratio).toBeCloseTo(Math.round(10.2 * ratio))
+    expect((20.3 + viewer.translateY.value) * ratio).toBeCloseTo(Math.round(20.3 * ratio))
+
+    const before = viewer.getTransform()
+    viewer.startDrag(10, 20)
+    for (let x = 11; x <= 75; x++) viewer.drag(x, 20)
+    expect(viewer.translateX.value - before.translateX).toBeCloseTo(65)
+    viewer.endDrag()
+    expect(Math.abs(viewer.translateX.value - before.translateX - 65) * ratio).toBeLessThanOrEqual(.5)
+    expect((10.2 + viewer.translateX.value) * ratio).toBeCloseTo(Math.round((10.2 + viewer.translateX.value) * ratio))
+  })
+
+  it('keeps fractional transforms for smooth shrinking and for generic viewers', () => {
+    const viewer = useImageViewer({ pixelRatio: () => 1.25 })
+    viewer.setTransform({ scale: .4, translateX: 12.3, translateY: 24.6 })
+    expect(viewer.getTransform()).toEqual({ scale: .4, translateX: 12.3, translateY: 24.6 })
+    const generic = useImageViewer()
+    generic.setTransform({ translateX: 12.3, translateY: 24.6 })
+    expect(generic.getTransform()).toEqual({ scale: 1, translateX: 12.3, translateY: 24.6 })
+  })
+
   it('keeps the viewer composable source free of scaffold narration', () => {
     const content = source('src/composables/useImageViewer.ts')
 

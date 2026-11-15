@@ -534,9 +534,7 @@ defineExpose({
   flex: 1;
   overflow: hidden;
   background-color: var(--edit-image-comparison-viewport-background);
-  backface-visibility: hidden;
   cursor: grab;
-  transform: translateZ(0);
 }
 
 .edit-image-comparison__viewport:active {
@@ -556,8 +554,6 @@ defineExpose({
   position: absolute;
   top: 0;
   left: 0;
-  backface-visibility: hidden;
-  perspective: 1000px;
   transform-origin: 0 0;
   will-change: transform;
 }
@@ -567,10 +563,8 @@ defineExpose({
 .edit-image-comparison__translated-overlay {
   display: block;
   max-width: none;
-  backface-visibility: hidden;
-  image-rendering: crisp-edges;
+  image-rendering: inherit;
   pointer-events: none;
-  transform: translateZ(0);
   user-select: none;
   -webkit-user-drag: none;
 }

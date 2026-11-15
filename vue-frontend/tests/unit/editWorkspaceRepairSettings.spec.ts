@@ -43,6 +43,73 @@ async function harness(ordinaryActive = ref(true)) {
 }
 
 describe('repair choices without a selected text box', () => {
+  it('realigns the existing transform when panel resizing changes the pixel origin', async () => {
+    let notify!: ResizeObserverCallback
+    const disconnect = vi.fn()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { notify = callback }
+      observe = vi.fn()
+      disconnect = disconnect
+    })
+    const { editor, wrapper } = await harness()
+    try {
+      let left = 10
+      const viewport = document.createElement('div')
+      viewport.getBoundingClientRect = () => new DOMRect(left, 20, 600, 400)
+      editor.imageComparisonRef.value = { originalViewportRef: viewport, translatedViewportRef: viewport } as never
+      await flushPromises()
+      editor.resetZoom()
+      left = 10.3
+      notify([], {} as ResizeObserver)
+      const style = editor.translatedTransformStyle.value.transform!
+      const translation = Number(/translate\(([^,]+)px,/.exec(style)?.[1])
+      expect(left + translation).toBeCloseTo(10)
+      expect(editor.scale.value).toBe(1)
+      expect(mocks.mutation).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+      expect(disconnect).toHaveBeenCalled()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('uses physical-pixel zoom across display changes without writing page data', async () => {
+    vi.stubGlobal('devicePixelRatio', 1.25)
+    const queries: { addEventListener: ReturnType<typeof vi.fn>; removeEventListener: ReturnType<typeof vi.fn> }[] = []
+    vi.stubGlobal('matchMedia', vi.fn(() => {
+      const query = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+      queries.push(query)
+      return query
+    }))
+    const { editor, wrapper } = await harness()
+    try {
+      const viewport = document.createElement('div')
+      viewport.getBoundingClientRect = () => new DOMRect(10.2, 20.3, 600, 400)
+      editor.imageComparisonRef.value = { originalViewportRef: viewport, translatedViewportRef: viewport } as never
+      editor.resetZoom()
+      expect(editor.scale.value).toBeCloseTo(.8)
+      expect(editor.originalScale.value).toBeCloseTo(.8)
+      expect(editor.toolbarScale.value).toBeCloseTo(1)
+      expect(editor.translatedTransformStyle.value.imageRendering).toBe('pixelated')
+
+      vi.stubGlobal('devicePixelRatio', 2)
+      queries.at(-1)!.addEventListener.mock.calls[0]![1]()
+      expect(editor.scale.value).toBeCloseTo(.5)
+      expect(editor.originalScale.value).toBeCloseTo(.5)
+      expect(editor.toolbarScale.value).toBeCloseTo(1)
+      expect(queries[0]!.removeEventListener).toHaveBeenCalled()
+      vi.stubGlobal('devicePixelRatio', 1.5)
+      queries.at(-1)!.addEventListener.mock.calls[0]![1]()
+      expect(editor.scale.value).toBeCloseTo(2 / 3)
+      expect(editor.toolbarScale.value).toBeCloseTo(1)
+      expect(mocks.mutation).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+      expect(queries.at(-1)!.removeEventListener).toHaveBeenCalled()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('brings the next off-screen bubble into view without changing its geometry or zoom', async () => {
     const { editor, wrapper } = await harness()
     const store = useBubbleStore()

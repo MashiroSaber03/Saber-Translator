@@ -218,12 +218,17 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     }
   }
 
-  const originalViewer = useImageViewer({ minScale: 0.01 })
-  const translatedViewer = useImageViewer({ minScale: 0.01 })
+  const pixelRatio = ref(window.devicePixelRatio || 1)
+  const originalViewer = useImageViewer({
+    minScale: 0.01, pixelRatio: () => pixelRatio.value, viewport: () => originalViewportRef.value,
+  })
+  const translatedViewer = useImageViewer({
+    minScale: 0.01, pixelRatio: () => pixelRatio.value, viewport: () => translatedViewportRef.value,
+  })
   const useOriginalViewport = computed(() => viewMode.value === 'original'
     || (viewMode.value === 'dual' && imageComparisonRef.value?.translatedPanelCollapsed))
   const primaryViewer = computed(() => useOriginalViewport.value ? originalViewer : translatedViewer)
-  const toolbarScale = computed(() => primaryViewer.value.scale.value)
+  const toolbarScale = computed(() => primaryViewer.value.scale.value * pixelRatio.value)
 
   const scale = computed(() => translatedViewer.scale.value)
 
@@ -231,13 +236,44 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
 
   const activeViewport = ref<'original' | 'translated' | null>(null)
 
-  const originalTransformStyle = computed(() => ({
-    transform: `translate(${originalViewer.translateX.value}px, ${originalViewer.translateY.value}px) scale(${originalViewer.scale.value})`
-  }))
+  function viewerStyle(viewer: ReturnType<typeof useImageViewer>): Record<string, string> {
+    const { scale, translateX, translateY } = viewer.getTransform()
+    return {
+      transform: `translate(${translateX}px, ${translateY}px) scale(${scale})`,
+      imageRendering: scale * pixelRatio.value >= 1 - 1e-6 ? 'pixelated' : 'auto',
+    }
+  }
+  const originalTransformStyle = computed(() => viewerStyle(originalViewer))
+  const translatedTransformStyle = computed(() => viewerStyle(translatedViewer))
 
-  const translatedTransformStyle = computed(() => ({
-    transform: `translate(${translatedViewer.translateX.value}px, ${translatedViewer.translateY.value}px) scale(${translatedViewer.scale.value})`
-  }))
+  const viewportObserver = typeof ResizeObserver === 'function'
+    ? new ResizeObserver(() => {
+      originalViewer.setTransform({})
+      translatedViewer.setTransform({})
+    }) : undefined
+  watch([originalViewportRef, translatedViewportRef], viewports => {
+    viewportObserver?.disconnect()
+    for (const viewport of viewports) {
+      if (viewport) viewportObserver?.observe(viewport)
+    }
+  }, { immediate: true, flush: 'post' })
+
+  let pixelRatioQuery: MediaQueryList | undefined
+  function updatePixelRatio(): void {
+    const previous = pixelRatio.value
+    pixelRatio.value = window.devicePixelRatio || 1
+    if (previous !== pixelRatio.value) {
+      for (const [viewer, viewport] of [
+        [originalViewer, originalViewportRef.value], [translatedViewer, translatedViewportRef.value],
+      ] as const) {
+        const bounds = viewport?.getBoundingClientRect()
+        viewer.zoomAt((bounds?.width ?? 0) / 2, (bounds?.height ?? 0) / 2, previous / pixelRatio.value)
+      }
+    }
+    pixelRatioQuery?.removeEventListener('change', updatePixelRatio)
+    pixelRatioQuery = window.matchMedia?.(`(resolution: ${pixelRatio.value}dppx)`)
+    pixelRatioQuery?.addEventListener('change', updatePixelRatio)
+  }
 
   function currentViewportCenter(): { x: number; y: number } {
     const viewport = useOriginalViewport.value ? originalViewportRef.value : translatedViewportRef.value
@@ -267,6 +303,8 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
   }
 
   function resetZoom(): void {
+    clearDelayedFitTimers()
+    pendingScreenFit = false
     primaryViewer.value.resetZoom()
     syncViewerTransform(primaryViewer.value)
   }
@@ -767,6 +805,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     if (activeViewport.value) {
       const viewer = activeViewport.value === 'original' ? originalViewer : translatedViewer
       viewer.endDrag()
+      syncViewerTransform(viewer)
     }
     activeViewport.value = null
     document.removeEventListener('mousemove', handleDragMove)
@@ -1051,6 +1090,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     document.addEventListener('keydown', handleKeyDown)
     document.addEventListener('keyup', handleKeyUp)
     window.addEventListener('blur', cancelBrushShortcut)
+    updatePixelRatio()
     document.addEventListener('mousemove', handleGlobalMouseMove)
     document.addEventListener('mouseup', handleGlobalMouseUp)
 
@@ -1072,6 +1112,8 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     document.removeEventListener('keydown', handleKeyDown)
     document.removeEventListener('keyup', handleKeyUp)
     window.removeEventListener('blur', cancelBrushShortcut)
+    pixelRatioQuery?.removeEventListener('change', updatePixelRatio)
+    viewportObserver?.disconnect()
     document.removeEventListener('mousemove', handleGlobalMouseMove)
     document.removeEventListener('mouseup', handleGlobalMouseUp)
     document.removeEventListener('mousemove', handleDrawingMove)
