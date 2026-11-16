@@ -15,17 +15,20 @@ function editor(text = '中文😀') {
 }
 
 describe('ordinary rich text input', () => {
-  it('keeps the preview scale stable while a character size edit is saved and projected back', async () => {
+  it('previews a new character size immediately without changing its saved size or snapping on projection', async () => {
     const { wrapper, vm, bubble } = editor('AB')
-    const input = wrapper.get('[role=textbox]').element as HTMLElement
+    const preview = () => (wrapper.get('[data-saber-run]').element as HTMLElement).style.fontSize
+    const initial = preview()
     vm.format({ size_pt: 80 })
-    expect(input.style.getPropertyValue('--rich-text-document-size')).toBe('80')
+    expect(preview()).toBe('40px')
+    expect(preview()).not.toBe(initial)
     const value = wrapper.emitted('update')!.at(-1)![0] as Partial<typeof bubble>
+    expect(value.richText!.runs[0]!.style.size_pt).toBe(80)
     // The local rich-text draft leads the server's summarized fontSize.
     await wrapper.setProps({ bubble: { ...bubble, ...value } })
-    expect(input.style.getPropertyValue('--rich-text-document-size')).toBe('80')
+    expect(preview()).toBe('40px')
     await wrapper.setProps({ bubble: { ...bubble, ...value, fontSize: 80 } })
-    expect(input.style.getPropertyValue('--rich-text-document-size')).toBe('80')
+    expect(preview()).toBe('40px')
     expect(wrapper.emitted('update')).toHaveLength(1)
   })
 

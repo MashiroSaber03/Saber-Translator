@@ -19,13 +19,13 @@ export function nativeColor(hex: string): RunStyle {
 }
 
 function runCss(style: RunStyle): string {
-  // Input uses a readable base size; relative sizes and all native attributes survive saving.
-  const size = Math.max(1, Number(style.size_pt) || 16)
+  // Fixed 50% preview with a readable minimum; native sizes are saved unchanged.
+  const previewSize = Math.max(12, (Number(style.size_pt) || 16) / 2)
   const family = String(style.font_family ?? '').replace(/["\\;{}]/g, '')
   const color = textColor(style)
   const rgb = (style.color as { c?: number[] } | undefined)?.c
   const lightInk = color && rgb && 0.299 * rgb[0]! + 0.587 * rgb[1]! + 0.114 * rgb[2]! > 0.7
-  return `font-family:"${family}",sans-serif;font-size:max(12px, calc(16px * ${size} / var(--rich-text-document-size)));`
+  return `font-family:"${family}",sans-serif;font-size:${previewSize}px;`
     + `font-weight:${style.faux_bold ? 900 : Number(style.weight) || 400};font-style:${style.faux_italic || style.italic ? 'italic' : 'normal'};`
     + `text-decoration:${[style.underline && 'underline', style.strikethrough && 'line-through'].filter(Boolean).join(' ') || 'none'};`
     + `text-emphasis:${style.emphasis ? 'filled dot' : 'none'};text-emphasis-position:over right;`

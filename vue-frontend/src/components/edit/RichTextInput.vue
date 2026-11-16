@@ -59,15 +59,6 @@ function selection(): void {
   emit('selection', { active: selected, count: selected ? Array.from(view.state.doc.textBetween(from, to, '\n')).length : 0, styles: stylesInScope() })
 }
 
-function updatePreviewSize(): void {
-  if (!view) return
-  // Use the live first character, just like the native fontSize projection.
-  // Its saved summary may still describe the previous edit while a save runs.
-  const paragraph = view.state.doc.firstChild
-  const style = paragraph?.firstChild?.marks[0]?.attrs.style ?? paragraph?.attrs.breakStyle ?? fallback()
-  view.dom.style.setProperty('--rich-text-document-size', String(Math.max(1, Number(style.size_pt) || props.bubble.fontSize)))
-}
-
 function sync(): void {
   if (!view || view.composing) return
   const nextIdentity = props.bubble.backendBubbleId ?? props.bubble.clientMutationId ?? ''
@@ -97,7 +88,6 @@ function sync(): void {
   identity = nextIdentity
   previousBubble = props.bubble
   view.setProps({ editable: () => !props.disabled })
-  updatePreviewSize()
   selection()
   void loadFonts()
 }
@@ -155,7 +145,7 @@ function toggle(field: string): boolean {
 onMounted(() => {
   view = new EditorView(container.value!, {
     state: EditorState.create({ schema: textSchema }),
-    attributes: { role: 'textbox', 'aria-label': '译文富文本', 'aria-multiline': 'true', style: 'outline:none;white-space:pre-wrap;overflow-wrap:anywhere;min-height:64px;font-size:16px;line-height:1.6' },
+    attributes: { role: 'textbox', 'aria-label': '译文富文本', 'aria-multiline': 'true', style: 'outline:none;white-space:pre-wrap;overflow-wrap:anywhere;min-height:100%;font-size:16px;line-height:1.6' },
     // View-only feedback from the same selection used by formatting commands.
     decorations: ({ doc, selection: { from, to, empty } }) => empty ? DecorationSet.empty : DecorationSet.create(doc, [
       Decoration.inline(from, to, {
@@ -182,7 +172,6 @@ onMounted(() => {
         transaction.setStoredMarks([textSchema.marks.run!.create({ style })])
       }
       view.updateState(view.state.apply(transaction))
-      updatePreviewSize()
       if (transaction.docChanged && !view.composing) publish()
       selection()
     },
@@ -227,7 +216,7 @@ defineExpose({
 </template>
 
 <style scoped>
-.rich-text-input { padding: 10px 12px; min-height: 86px; max-height: 280px; overflow-y: auto; border: 1px solid var(--color-border-muted); border-radius: var(--radius-md); background: var(--color-surface-input); color: var(--color-text-default); }
+.rich-text-input { padding: 10px 12px; height: 160px; overflow-y: auto; border: 1px solid var(--color-border-muted); border-radius: var(--radius-md); background: var(--color-surface-input); color: var(--color-text-default); }
 .rich-text-input:focus-within { border-color: var(--color-border-brand); box-shadow: 0 0 0 3px var(--color-focus-brand-soft); }
 .rich-text-input[data-selection-active]:not(:focus-within) { --rich-text-input-selection-background: color-mix(in srgb, var(--color-action-brand) 25%, transparent); }
 .rich-text-input--disabled { opacity: 0.6; pointer-events: none; }
