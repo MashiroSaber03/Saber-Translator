@@ -1687,6 +1687,38 @@ def test_write_job_claims_immediately_after_preempting_pending_render(
         ).scalar_one() == "failed"
 
 
+@pytest.mark.parametrize("finish", ["completed", "cancelled"])
+def test_write_job_terminal_recovers_other_preempted_pages_in_its_chapter(job_platform, finish):
+    engine, repository, book, chapter, worker_epoch_id = job_platform
+    other_chapter = ContentRepository(engine).create_chapter(book_id=str(book["id"]), title="Other")
+    target, preempted, unrelated = (str(uuid.uuid4()) for _ in range(3))
+    with engine.begin() as connection:
+        for ordinal, page_id, chapter_id in [(1, target, chapter["id"]), (2, preempted, chapter["id"]),
+                                             (1, unrelated, other_chapter["id"])]:
+            connection.execute(insert(pages).values(id=page_id, chapter_id=chapter_id, ordinal=ordinal,
+                logical_source_path=f"{page_id}.png", render_status="not_rendered" if page_id == target else "stale"))
+        connection.execute(insert(render_requests).values(id=str(uuid.uuid4()), page_id=preempted,
+            requested_revision=1, status="pending"))
+    accepted = repository.create_batch(display_name="Selected page only", specs=[JobSpec(kind="remove_text",
+        chapter_id=str(chapter["id"]), config={"mode": "test"},
+        items=(JobItemSpec(page_id=target, step_kinds=("publish_clean",)),))])
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None and fence.job_id == accepted["jobIds"][0]
+    with engine.connect() as connection:
+        assert connection.execute(select(render_requests.c.status).where(
+            render_requests.c.page_id == preempted)).scalar_one() == "failed"
+        assert connection.execute(select(pages.c.render_status).where(pages.c.id == preempted)).scalar_one() == "stale"
+    if finish == "cancelled":
+        repository.request_cancel(fence.job_id)
+    else:
+        step = repository.next_step(fence)
+        repository.complete_step(fence, step_id=step["stepId"], checkpoint={})
+        assert repository.finish_if_complete(fence) == "completed"
+    with engine.connect() as connection:
+        assert connection.execute(select(pages.c.render_status).where(pages.c.id == preempted)).scalar_one() == "not_rendered"
+        assert connection.execute(select(pages.c.render_status).where(pages.c.id == unrelated)).scalar_one() == "stale"
+
+
 @pytest.mark.parametrize("terminal_step", ["save", "publish_clean", "detect"])
 def test_owner_round_robin_switches_only_after_each_completed_page_slice(
     job_platform,

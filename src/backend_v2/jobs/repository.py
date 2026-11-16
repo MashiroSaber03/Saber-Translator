@@ -3931,6 +3931,10 @@ class JobQueueRepository:
                 jobs.c.web_import_draft_id,
             ).where(jobs.c.id == job_id)
         ).mappings().one_or_none()
+        if job is not None and job["kind"] in WRITE_JOB_KINDS:
+            from src.backend_v2.operations.repository import RenderRequestRepository
+
+            RenderRequestRepository(connection.engine).reconcile_unrequested_pages(connection, job_id=job_id)
         if job is not None and job["web_import_draft_id"] is not None:
             draft_source_status = {
                 "web_extract": "extracting",

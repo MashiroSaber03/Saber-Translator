@@ -101,6 +101,33 @@ describe('useEditRender backend-first orchestration', () => {
     expect(onRenderError).toHaveBeenCalledWith('后端渲染失败')
   })
 
+  it('accepts the authoritative no-render result without resaving or guessing from cached text', async () => {
+    useImageStore().updateCurrentImage({ bubbleStates: useBubbleStore().bubbles })
+    getPageRenderStatusMock.mockResolvedValue({ ...readyStatus(), renderStatus: 'not_rendered',
+      renderedRevision: null, translatedUrl: null })
+    const { useEditRender } = await import('@/composables/useEditRender')
+    await expect(useEditRender().refreshRenderedImage()).resolves.toBe(true)
+    expect(queuePageDocumentSaveMock).not.toHaveBeenCalled()
+    expect(getPageRenderStatusMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for an actual graphic render even when every text box is empty', async () => {
+    vi.useFakeTimers()
+    try {
+      useImageStore().updateCurrentImage({ bubbleStates: [] })
+      getPageRenderStatusMock.mockResolvedValueOnce({ ...readyStatus(), renderStatus: 'rendering', renderedRevision: 3 })
+        .mockResolvedValueOnce(readyStatus())
+      const { waitForPageRender } = await import('@/composables/useEditRender')
+      const pending = waitForPageRender('page-1', 4, new AbortController().signal)
+      await vi.advanceTimersByTimeAsync(149)
+      expect(getPageRenderStatusMock).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      await pending
+      expect(getPageRenderStatusMock).toHaveBeenCalledTimes(2)
+      expect(useImageStore().currentImage?.translatedAssetUrl).toBe('/api/v2/assets/translated-1')
+    } finally { vi.useRealTimers() }
+  })
+
   it('observes completed work promptly and cancels the pending poll timer', async () => {
     vi.useFakeTimers()
     try {

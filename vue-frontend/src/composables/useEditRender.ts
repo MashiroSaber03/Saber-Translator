@@ -56,8 +56,7 @@ export async function waitForPageRender(pageId: string, minimumRevision: number,
       if (status.documentRevision >= minimumRevision) {
         if (status.renderStatus === 'render_failed' || status.renderStatus === 'repair_failed') throw new Error('后端渲染失败')
         if (status.renderStatus === 'ready' && (status.renderedRevision ?? 0) >= minimumRevision) return
-        const image = useImageStore().images.find(image => image.id === pageId)
-        if (status.renderStatus === 'not_rendered' && !image?.bubbleStates?.some(bubble => bubble.translatedText.trim())) return
+        if (status.renderStatus === 'not_rendered') return
       }
     }
     if (Date.now() >= deadline) throw new Error('后端渲染仍在继续，可稍后刷新查看结果')

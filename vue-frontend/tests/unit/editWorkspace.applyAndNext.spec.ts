@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   queuePageDocumentSave: vi.fn(),
   registerPageDocument: vi.fn(),
   reRenderFullImage: vi.fn(),
+  refreshRenderedImage: vi.fn(),
   toast: vi.fn(),
   exit: vi.fn(),
 }))
@@ -35,6 +36,7 @@ vi.mock('@/services/pageDocumentPersistence', () => ({
 vi.mock('@/composables/useEditRender', () => ({
   useEditRender: () => ({
     reRenderFullImage: mocks.reRenderFullImage,
+    refreshRenderedImage: mocks.refreshRenderedImage,
   }),
 }))
 
@@ -119,6 +121,7 @@ describe('EditWorkspace backend-owned navigation', () => {
     mocks.flushPageDocument.mockResolvedValue(undefined)
     mocks.queuePageDocumentSave.mockResolvedValue(undefined)
     mocks.reRenderFullImage.mockResolvedValue(false)
+    mocks.refreshRenderedImage.mockResolvedValue(true)
     mocks.getPageDocument.mockImplementation(async (pageId: string) => ({
       bubbles: [],
       chapterId: 'chapter-1',
@@ -230,16 +233,31 @@ describe('EditWorkspace backend-owned navigation', () => {
     expect(source).not.toContain('saveStep')
   })
 
-  it('shares the save gate for exit, rendering the result only after persistence', async () => {
+  it('saves once before exit and only observes the committed result', async () => {
     const wrapper = await mountWorkspace([])
     try {
       const workspace = wrapper.vm as unknown as WorkspaceHarness
       await workspace.handleExitToolbarAction()
       expect(mocks.flushPageDocument).toHaveBeenCalledWith('page-1')
-      expect(mocks.reRenderFullImage).toHaveBeenCalledOnce()
+      expect(mocks.reRenderFullImage).not.toHaveBeenCalled()
+      expect(mocks.queuePageDocumentSave).toHaveBeenCalledOnce()
+      expect(mocks.refreshRenderedImage).toHaveBeenCalledOnce()
       expect(mocks.exit).toHaveBeenCalledWith('exit')
-      expect(mocks.queuePageDocumentSave.mock.invocationCallOrder[0]).toBeLessThan(mocks.reRenderFullImage.mock.invocationCallOrder[0]!)
-      expect(mocks.reRenderFullImage.mock.invocationCallOrder[0]).toBeLessThan(mocks.exit.mock.invocationCallOrder[0]!)
+      expect(mocks.flushPageDocument.mock.invocationCallOrder[0]).toBeLessThan(mocks.refreshRenderedImage.mock.invocationCallOrder[0]!)
+      expect(mocks.refreshRenderedImage.mock.invocationCallOrder[0]).toBeLessThan(mocks.exit.mock.invocationCallOrder[0]!)
+    } finally { wrapper.unmount() }
+  })
+
+  it('keeps the editor open and restores its controls when saving on exit fails', async () => {
+    const wrapper = await mountWorkspace([])
+    try {
+      mocks.flushPageDocument.mockRejectedValueOnce(new Error('保存失败'))
+      const workspace = wrapper.vm as unknown as WorkspaceHarness
+      await workspace.handleExitToolbarAction()
+      expect(mocks.exit).not.toHaveBeenCalled()
+      expect(mocks.refreshRenderedImage).not.toHaveBeenCalled()
+      expect(workspace.isBusy).toBe(false)
+      expect(mocks.toast).toHaveBeenCalledWith('保存失败', 'error')
     } finally { wrapper.unmount() }
   })
 

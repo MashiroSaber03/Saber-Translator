@@ -1486,9 +1486,15 @@ class TranslationPipelineService:
         elif kind == "save":
             result = self._save(fence, step, page_id)
         elif kind == "publish_clean":
-            result = self._checkpoint_only(
-                fence, step, {"published": "clean"}
-            )
+            snapshot = self._snapshot(page_id)
+            def publish(connection: Connection) -> None:
+                from src.backend_v2.operations.repository import RenderRequestRepository
+
+                self._assert_revision(connection, page_id, snapshot.document_revision)
+                RenderRequestRepository(self.engine).settle_page(connection, page_id, job_id=fence.job_id)
+
+            result = {"published": "clean"}
+            self.jobs.complete_step(fence, step_id=str(step["stepId"]), checkpoint=result, publisher=publish)
             log_result("去字图已发布")
         else:
             raise ValueError(f"unsupported translation step: {kind}")
@@ -2801,7 +2807,8 @@ class TranslationPipelineService:
                 from dataclasses import replace
 
                 native_editor.publish(connection, page_id, snapshot.document_revision,
-                                      replace(native_result, translated=None), job_step_id=str(step["stepId"]))
+                                      native_result if step.get("jobKind") == "remove_text" else replace(native_result, translated=None),
+                                      job_step_id=str(step["stepId"]))
 
         checkpoint = {
             "cleanAssetId": record.id,

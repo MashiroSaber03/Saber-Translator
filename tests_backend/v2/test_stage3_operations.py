@@ -968,6 +968,77 @@ def test_operation_errors_and_events_never_expose_frozen_credentials(
     assert "[LOCAL_PATH]" in exposed
 
 
+@pytest.mark.parametrize('clean_revision,has_text,expected', [(2, False, 'ready'), (1, False, 'stale'), (2, True, 'stale')])
+def test_page_recovery_reuses_only_a_current_complete_clean_result(operation_platform, clean_revision, has_text, expected):
+    platform = operation_platform
+    storage = AssetStorageService(platform['data_root'], platform['engine'])
+    payload = BytesIO()
+    with Image.new('RGB', (64, 64), (145, 20, 60)) as image:
+        image.save(payload, format='PNG')
+    clean = storage.publish_bytes(payload.getvalue(), extension='png', mime_type='image/png', width=64, height=64)
+    with immediate_transaction(platform['engine']) as connection:
+        connection.execute(update(pages).where(pages.c.id == platform['page_id'])
+            .values(document_revision=2, render_status='stale'))
+        connection.execute(update(bubbles).where(bubbles.c.page_id == platform['page_id'])
+            .values(updated_revision=2, payload_json=json.dumps(_bubble_payload(translatedText='译文' if has_text else ''))))
+        for role, revision in [('clean', clean_revision), ('editor_document', 2)]:
+            connection.execute(insert(page_assets).values(page_id=platform['page_id'], role=role,
+                asset_id=clean.id, input_source_revision=1, input_document_revision=revision))
+    ProcessEpochRepository(platform['engine']).reconcile_orphaned_work()
+    page = platform['content'].get_page_summary(platform['page_id'])
+    assert page['renderStatus'] == expected
+    with platform['engine'].connect() as connection:
+        render = connection.execute(select(render_requests).where(render_requests.c.page_id == platform['page_id'])).mappings().one_or_none()
+        if expected == 'ready':
+            assert page['translatedUrl'] == page['cleanUrl']
+            assert page['renderedRevision'] == 2
+            assert render is None
+        else:
+            assert render['status'] == 'pending'
+            assert render['requested_revision'] == 2
+            assert page['renderedRevision'] is None
+
+
+def test_page_recovery_finishes_an_unrendered_empty_page_but_preserves_a_pending_request(operation_platform):
+    platform = operation_platform
+    repository = RenderRequestRepository(platform['engine'])
+    with immediate_transaction(platform['engine']) as connection:
+        connection.execute(update(pages).where(pages.c.id == platform['page_id']).values(render_status='stale'))
+    ProcessEpochRepository(platform['engine']).reconcile_orphaned_work()
+    assert platform['content'].get_page_summary(platform['page_id'])['renderStatus'] == 'not_rendered'
+    with immediate_transaction(platform['engine']) as connection:
+        repository.upsert(connection, page_id=platform['page_id'], requested_revision=1)
+        connection.execute(update(pages).where(pages.c.id == platform['page_id']).values(render_status='stale'))
+    ProcessEpochRepository(platform['engine']).reconcile_orphaned_work()
+    assert platform['content'].get_page_summary(platform['page_id'])['renderStatus'] == 'stale'
+    with platform['engine'].connect() as connection:
+        assert connection.execute(select(render_requests.c.status)).scalar_one() == 'pending'
+
+
+def test_page_recovery_reports_a_lost_repair_instead_of_waiting_forever(operation_platform):
+    platform = operation_platform
+    with immediate_transaction(platform['engine']) as connection:
+        connection.execute(update(pages).where(pages.c.id == platform['page_id']).values(render_status='awaiting_repair'))
+    ProcessEpochRepository(platform['engine']).reconcile_orphaned_work()
+    assert platform['content'].get_page_summary(platform['page_id'])['renderStatus'] == 'repair_failed'
+
+
+def test_page_recovery_uses_each_pages_owner_and_restores_the_callers_context(operation_platform):
+    from src.backend_v2.auth.ownership import owner_scope, effective_owner_id
+
+    platform = operation_platform
+    original_owner = effective_owner_id()
+    with immediate_transaction(platform['engine']) as connection:
+        connection.execute(update(pages).where(pages.c.id == platform['page_id']).values(render_status='stale'))
+        connection.execute(update(bubbles).where(bubbles.c.page_id == platform['page_id'])
+            .values(payload_json=json.dumps(_bubble_payload(translatedText='需要出图'))))
+    with owner_scope('different-recovery-caller'):
+        ProcessEpochRepository(platform['engine']).reconcile_orphaned_work()
+        assert effective_owner_id() == 'different-recovery-caller'
+    with platform['engine'].connect() as connection:
+        assert connection.execute(select(render_requests.c.owner_user_id)).scalar_one() == original_owner
+
+
 def test_render_request_coalesces_and_old_revision_cannot_publish(
     operation_platform,
 ) -> None:

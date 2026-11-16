@@ -311,6 +311,10 @@ class ProcessEpochRepository:
                 now=now,
                 reason="API_EPOCH_MISSING",
             )
+            from src.backend_v2.operations.repository import RenderRequestRepository
+
+            recovered_renders = RenderRequestRepository(self.engine).reconcile_unrequested_pages(connection)
+            api_counts = (api_counts[0], api_counts[1], api_counts[2] + recovered_renders)
         if any(worker_counts):
             interrupted, requeued, transient_requeued, transient_cancelled = (
                 worker_counts

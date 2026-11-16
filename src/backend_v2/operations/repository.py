@@ -14,7 +14,7 @@ import uuid
 from sqlalchemy import Engine, exists, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from src.backend_v2.auth.ownership import effective_owner_id
+from src.backend_v2.auth.ownership import effective_owner_id, owner_scope
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.serialization import canonical_json as _json
@@ -27,12 +27,16 @@ from src.backend_v2.redaction import (
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.storage.schema import (
+    NONTERMINAL_JOB_STATUSES,
     books,
     bubbles,
     chapter_write_locks,
     chapters,
     credential_versions,
     idempotency_records,
+    job_items,
+    job_steps,
+    jobs,
     operation_asset_inputs,
     operation_credential_snapshots,
     operation_events,
@@ -1151,6 +1155,70 @@ class OperationRepository:
 class RenderRequestRepository:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
+
+    def settle_page(self, connection: Connection, page_id: str, *, job_id: str | None = None) -> bool:
+        """Finish from current assets or queue the missing output under the caller's write fence."""
+        page = connection.execute(select(pages).where(pages.c.id == page_id)).mappings().one()
+        revision = page["document_revision"]
+        pointers = {row["role"]: dict(row) for row in connection.execute(
+            select(page_assets).where(page_assets.c.page_id == page_id)).mappings()}
+
+        def current(role: str):
+            asset = pointers.get(role)
+            return asset if asset and asset["input_source_revision"] == page["source_revision"] and asset["input_document_revision"] == revision else None
+
+        translated, clean = current("translated"), current("clean")
+        rendered = translated is not None and job_id is not None and connection.execute(
+            select(job_items.c.job_id).join(job_steps, job_steps.c.job_item_id == job_items.c.id)
+            .where(job_steps.c.id == translated["producer_job_step_id"])).scalar_one_or_none() == job_id
+        has_text = any(json.loads(value)["translatedText"].strip() for value in connection.execute(
+            select(bubbles.c.payload_json).where(bubbles.c.page_id == page_id)).scalars())
+        if not rendered and clean is not None and not has_text:
+            # The current clean export includes graphic layers too. An older
+            # clean pointer cannot stand in for unsaved painting or repair work.
+            values = {key: value for key, value in clean.items() if key not in {"page_id", "role"}}
+            if "translated" in pointers:
+                connection.execute(update(page_assets).where(page_assets.c.page_id == page_id,
+                    page_assets.c.role == "translated").values(**values))
+            else:
+                connection.execute(insert(page_assets).values(page_id=page_id, role="translated", **values))
+            rendered = True
+        if rendered:
+            values = dict(render_status="ready", rendered_revision=revision)
+        elif not has_text and not any(role in pointers for role in ("editor_document", "clean", "translated")):
+            values = dict(render_status="not_rendered", rendered_revision=None)
+        else:
+            self.upsert(connection, page_id=page_id, requested_revision=revision, existing_chain=True)
+            values = dict(render_status="stale")
+        connection.execute(update(pages).where(pages.c.id == page_id).values(**values, updated_at=utcnow()))
+        return values["render_status"] == "stale"
+
+    def reconcile_unrequested_pages(self, connection: Connection, *, job_id: str | None = None) -> int:
+        """Recover old pending page states without touching live jobs or operations."""
+        statement = select(pages.c.id, pages.c.render_status, books.c.owner_user_id)
+        statement = statement.join(chapters, chapters.c.id == pages.c.chapter_id).join(books, books.c.id == chapters.c.book_id)
+        statement = statement.where(pages.c.render_status.in_(("stale", "rendering", "awaiting_repair")),
+                ~exists(select(render_requests.c.id).where(render_requests.c.page_id == pages.c.id,
+                    render_requests.c.status.in_(("pending", "running")))),
+                ~exists(select(operations.c.id).where(operations.c.page_id == pages.c.id,
+                    operations.c.status.in_(("pending", "running")))),
+                ~exists(select(job_items.c.id).join(jobs, jobs.c.id == job_items.c.job_id)
+                    .where(job_items.c.page_id == pages.c.id, jobs.c.status.in_(NONTERMINAL_JOB_STATUSES), jobs.c.id != job_id)),
+                ~exists(select(chapter_write_locks.c.chapter_id).where(chapter_write_locks.c.chapter_id == pages.c.chapter_id))
+            )
+        if job_id is not None:
+            # Write jobs preempt immediate work across the whole chapter, including unselected pages.
+            statement = statement.where(pages.c.chapter_id == select(jobs.c.chapter_id)
+                .where(jobs.c.id == job_id).scalar_subquery())
+        candidates = connection.execute(statement).all()
+        queued = 0
+        for page_id, status, owner_id in candidates:
+            if status == "awaiting_repair":
+                connection.execute(update(pages).where(pages.c.id == page_id).values(render_status="repair_failed", updated_at=utcnow()))
+            else:
+                with owner_scope(owner_id):
+                    queued += self.settle_page(connection, page_id)
+        return queued
 
     def upsert(
         self,

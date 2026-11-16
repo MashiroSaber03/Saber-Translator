@@ -45,6 +45,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
 
   const {
     reRenderFullImage,
+    refreshRenderedImage,
     isRendering: isPreviewRendering,
     renderError,
   } = useEditRender({
@@ -927,7 +928,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
   async function handleExitToolbarAction(): Promise<void> {
     await navigateAfterPersist(async () => {
       // Unmounting cancels editor polling, so refresh the result before leaving.
-      await reRenderFullImage()
+      await refreshRenderedImage()
       emit('exit')
     })
   }

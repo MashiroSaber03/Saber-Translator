@@ -3880,17 +3880,26 @@ def test_native_jobs_keep_clean_projection_and_paint_in_sync(
             config=dict(mode=mode, executionMode='sequential'), idempotency_key='native-job')
     job_id = _run_translation_job(platform, CoreTranslationAlgorithms())
     assert JobQueueRepository(platform['engine']).get_job(job_id)['status'] == 'completed'
+    if mode == 'remove_text':
+        page_state = content.get_page_summary(page)
+        assert page_state['renderStatus'] == 'ready'
+        assert page_state['renderedRevision'] == page_state['documentRevision']
+        with platform['engine'].connect() as connection:
+            assert connection.execute(select(render_requests.c.id).where(
+                render_requests.c.page_id == page, render_requests.c.status.in_(('pending', 'running')))).first() is None
     with platform['engine'].connect() as connection:
         clean_path = connection.execute(select(assets.c.relative_path).join(
             page_assets, page_assets.c.asset_id == assets.c.id).where(
             page_assets.c.page_id == page, page_assets.c.role == 'clean')).scalar_one()
         reloaded = native.prepare(connection, page, render=True)
         saved_document = native.read_document(connection, page)
-    with Image.open(storage.resolve_relative_path(clean_path)) as published, Image.open(BytesIO(reloaded.clean)) as projected:
+    painted.write_bytes(saved_document)
+    projected_clean = tmp_path / 'projected-clean.png'
+    NativeEditor.invoke(dict(pageId=page, project=str(painted), fonts=fonts, clean=str(projected_clean)))
+    with Image.open(storage.resolve_relative_path(clean_path)) as published, Image.open(projected_clean) as projected:
         assert published.getpixel((55, 55)) == expected_pixel
         assert published.convert('RGB').tobytes() == projected.convert('RGB').tobytes()
     assert reloaded.document is None  # Rendering reads the saved native document without rewriting it.
-    painted.write_bytes(saved_document)
     with zipfile.ZipFile(painted) as archive:
         layers = json.loads(archive.read('manifest.json'))['document']['layers']
         paint_id = next(layer['id'] for layer in layers if layer['name'] == 'Manual paint')
@@ -3999,6 +4008,28 @@ def test_hq_mixed_batch_detects_only_unprocessed_page_and_preserves_manual_bubbl
     }
 
 
+def test_cancelled_translation_settles_the_page_without_disturbing_a_live_attempt(translation_platform):
+    platform = translation_platform
+    repository = JobQueueRepository(platform['engine'])
+    accepted = TranslationJobCommandService(platform['engine'], profile=LOCAL_PROFILE).create_chapter_job(
+        chapter_id=str(platform['chapter']['id']), config={'mode': 'remove_text', 'executionMode': 'sequential'},
+        page_ids=[platform['page_id']], idempotency_key='cancel-before-clean')
+    fence = repository.claim_next(worker_epoch_id=platform['epoch_id'])
+    assert fence is not None
+    service = TranslationPipelineService(data_root=platform['data_root'], engine=platform['engine'],
+        jobs=repository, algorithms=DeterministicFakeProvider())
+    step = repository.next_step(fence)
+    assert step['stepKind'] == 'detect'
+    service.handler(fence, step)
+    assert ContentRepository(platform['engine']).get_page_summary(platform['page_id'])['renderStatus'] == 'stale'
+    ProcessEpochRepository(platform['engine']).reconcile_orphaned_work()
+    assert ContentRepository(platform['engine']).get_page_summary(platform['page_id'])['renderStatus'] == 'stale'
+    repository.request_cancel(accepted['jobIds'][0])
+    page = ContentRepository(platform['engine']).get_page_summary(platform['page_id'])
+    assert page['renderStatus'] == 'not_rendered'
+    assert repository.get_job(fence.job_id)['status'] == 'cancelled'
+
+
 def test_remove_text_uses_existing_bubbles_without_running_detection(
     translation_platform,
 ) -> None:
@@ -4044,6 +4075,14 @@ def test_remove_text_uses_existing_bubbles_without_running_detection(
     )
     assert document["bubbles"][0]["bubbleId"] == bubble_id
     assert document["bubbles"][0]["payload"]["coords"] == [9, 10, 51, 58]
+
+    page = ContentRepository(platform["engine"]).get_page_summary(platform["page_id"])
+    assert page["renderStatus"] == "ready"
+    assert page["renderedRevision"] == page["documentRevision"]
+    assert page["translatedUrl"] == page["cleanUrl"]
+    with platform["engine"].connect() as connection:
+        assert connection.execute(select(render_requests.c.id).where(
+            render_requests.c.page_id == platform["page_id"])).first() is None
 
 
 def test_remove_text_reuses_both_saved_mask_layers_without_detection(translation_platform):
