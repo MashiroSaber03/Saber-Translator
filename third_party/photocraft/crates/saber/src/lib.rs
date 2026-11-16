@@ -42,6 +42,35 @@ pub fn register_font(bytes: Vec<u8>) -> Result<Value> {
     Ok(json!({"family":face.family,"fontStyle":face.style,"postscriptName":face.postscript_name,"weight":face.weight,"italic":face.italic}))
 }
 
+/// File-backed registration is native-only; the browser keeps its existing byte
+/// registration. Both paths use the same FontDb and shaping/fallback rules.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn register_font_paths(fonts: &[Value]) -> Result<Value> {
+    let paths: Vec<_> = fonts
+        .iter()
+        .map(|font| {
+            let path = std::path::PathBuf::from(font.get("path").and_then(Value::as_str).ok_or("font path required")?);
+            if !path.is_file() {
+                return Err("字体文件不存在或不可读取".to_string());
+            }
+            Ok(path)
+        })
+        .collect::<Result<_>>()?;
+    let mut engine = photocraft_text::shared().lock().unwrap_or_else(|e| e.into_inner());
+    let faces = engine.fonts.register_font_paths(&paths);
+    let mut catalog = serde_json::Map::new();
+    for (font, path) in fonts.iter().zip(paths) {
+        let face = faces.get(&path).ok_or_else(|| format!("无法读取字体字形：{}", path.display()))?;
+        let id = font.get("id").and_then(Value::as_str).ok_or("font id required")?;
+        catalog.insert(
+            id.into(),
+            json!({"family":face.family,"fontStyle":face.style,
+            "postscriptName":face.postscript_name,"weight":face.weight,"italic":face.italic}),
+        );
+    }
+    Ok(Value::Object(catalog))
+}
+
 fn font_family(font: &Value) -> Option<&str> {
     font.as_str().or_else(|| font.get("family").and_then(Value::as_str))
 }
@@ -1067,6 +1096,19 @@ mod tests {
             let layer = projected["bubbles"][0]["layer"].as_u64().unwrap();
             reopened.execute("type.setStyle", json!({"layer":layer,"font":"Other"})).unwrap();
             assert_eq!(project(&reopened).unwrap()["bubbles"][0]["fontId"], "font-other");
+        }
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn file_backed_catalog_preserves_metadata_and_rejects_invalid_files() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let path = root.join("../../assets/fonts/Inter-Regular.ttf");
+        let catalog = register_font_paths(&[json!({"id":"a","path":path}), json!({"id":"b","path":path})]).unwrap();
+        assert_eq!(catalog["a"], catalog["b"]);
+        assert_eq!(catalog["a"], register_font(photocraft_text::fonts::INTER_REGULAR.to_vec()).unwrap());
+        for invalid in [json!({"id":"missing-path"}), json!({"id":"directory","path":root}), json!({"id":"invalid","path":root.join("Cargo.toml")})] {
+            assert!(register_font_paths(&[invalid]).is_err());
         }
     }
 

@@ -59,6 +59,15 @@ function selection(): void {
   emit('selection', { active: selected, count: selected ? Array.from(view.state.doc.textBetween(from, to, '\n')).length : 0, styles: stylesInScope() })
 }
 
+function updatePreviewSize(): void {
+  if (!view) return
+  // Use the live first character, just like the native fontSize projection.
+  // Its saved summary may still describe the previous edit while a save runs.
+  const paragraph = view.state.doc.firstChild
+  const style = paragraph?.firstChild?.marks[0]?.attrs.style ?? paragraph?.attrs.breakStyle ?? fallback()
+  view.dom.style.setProperty('--rich-text-document-size', String(Math.max(1, Number(style.size_pt) || props.bubble.fontSize)))
+}
+
 function sync(): void {
   if (!view || view.composing) return
   const nextIdentity = props.bubble.backendBubbleId ?? props.bubble.clientMutationId ?? ''
@@ -88,7 +97,7 @@ function sync(): void {
   identity = nextIdentity
   previousBubble = props.bubble
   view.setProps({ editable: () => !props.disabled })
-  view.dom.style.setProperty('--rich-text-document-size', String(Math.max(1, props.bubble.fontSize)))
+  updatePreviewSize()
   selection()
   void loadFonts()
 }
@@ -173,6 +182,7 @@ onMounted(() => {
         transaction.setStoredMarks([textSchema.marks.run!.create({ style })])
       }
       view.updateState(view.state.apply(transaction))
+      updatePreviewSize()
       if (transaction.docChanged && !view.composing) publish()
       selection()
     },

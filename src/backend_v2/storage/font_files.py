@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import os
 import shutil
+import stat
 import threading
 import uuid
 
@@ -51,7 +52,49 @@ def bundled_font_files() -> tuple[FontFile, ...]:
 
 
 def font_path(root: Path, relative: str, owner: str | None) -> Path:
+    return font_paths(root, [(relative, owner)])[0]
+
+
+def font_paths(root: Path, entries: list[tuple[str, str | None]], *, require_files: bool = False) -> list[Path]:
+    """Validate a batch with one directory scan; never cache it across requests."""
     root = filesystem_path(root)
+    resolved_root = root.resolve()
+    checked = set()
+    listings = {}
+    result = []
+    for relative, owner in entries:
+        parts = _font_parts(relative, owner)
+        folder = root
+        for part in parts[:-1]:
+            folder = folder / part
+            if folder not in checked:
+                reject_links(folder)
+                if not folder.resolve().is_relative_to(resolved_root):
+                    raise ValueError('字体路径越界')
+                checked.add(folder)
+        if folder not in listings:
+            listings[folder] = {}
+            if len(entries) > 1:
+                try:
+                    with os.scandir(folder) as scan:
+                        listings[folder] = {entry.name: entry for entry in scan}
+                except (FileNotFoundError, PermissionError):
+                    # A known file can be readable even without list permission.
+                    # Keep the existing per-file validation for that directory.
+                    pass
+        path = folder / parts[-1]
+        entry = listings[folder].get(parts[-1])
+        if entry is None:
+            reject_links(path)
+        elif entry.is_symlink() or getattr(entry.stat(follow_symlinks=False), 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0):
+            reject_links(path)
+        if require_files and not (entry.is_file(follow_symlinks=False) if entry is not None else path.is_file()):
+            raise LookupError(f'字体文件已移除：{path.name}')
+        result.append(path)
+    return result
+
+
+def _font_parts(relative: str, owner: str | None) -> tuple[str, ...]:
     if owner is not None and (owner in {'.', '..'} or PureWindowsPath(owner).name != owner or '/' in owner or ':' in owner):
         raise ValueError('字体所属用户无效')
     parts = PurePosixPath(relative).parts
@@ -63,13 +106,7 @@ def font_path(root: Path, relative: str, owner: str | None) -> Path:
         raise ValueError('字体文件名无效')
     if Path(filename).suffix.lower() not in SUPPORTED_FONT_SUFFIXES:
         raise ValueError('不支持的字体扩展名')
-    path = root
-    for part in parts:
-        path = path / part
-        reject_links(path)
-    if not path.resolve().is_relative_to(root.resolve()):
-        raise ValueError('字体路径越界')
-    return path
+    return parts
 
 
 def _restore_legacy_font_inheritance(shared: Path) -> None:

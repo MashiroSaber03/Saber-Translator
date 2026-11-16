@@ -262,7 +262,10 @@ describe('useTextStyleSync backend ownership', () => {
     await vi.advanceTimersByTimeAsync(30_500)
 
     expect(getPageRenderStatusMock.mock.calls.length).toBeGreaterThan(1)
-    expect(getPageRenderStatusMock.mock.calls.length).toBeLessThanOrEqual(61)
+    expect(getPageRenderStatusMock.mock.calls.length).toBeLessThanOrEqual(201)
+    const completedReads = getPageRenderStatusMock.mock.calls.length
+    await vi.advanceTimersByTimeAsync(1_500)
+    expect(getPageRenderStatusMock).toHaveBeenCalledTimes(completedReads)
     expect(showToastMock).toHaveBeenCalledWith(
       '文字样式已保存，后端渲染仍在继续，可稍后刷新查看结果',
       'error',

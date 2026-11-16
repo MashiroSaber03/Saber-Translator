@@ -101,6 +101,34 @@ describe('useEditRender backend-first orchestration', () => {
     expect(onRenderError).toHaveBeenCalledWith('后端渲染失败')
   })
 
+  it('observes completed work promptly and cancels the pending poll timer', async () => {
+    vi.useFakeTimers()
+    try {
+      const { waitForPageRender } = await import('@/composables/useEditRender')
+      const pendingStatus = { ...readyStatus(), renderStatus: 'stale', renderedRevision: 3 }
+      getPageRenderStatusMock.mockResolvedValueOnce(pendingStatus).mockResolvedValueOnce(readyStatus())
+      const controller = new AbortController()
+      const pending = waitForPageRender('page-1', 4, controller.signal)
+      await vi.advanceTimersByTimeAsync(149)
+      expect(getPageRenderStatusMock).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      await pending
+      expect(getPageRenderStatusMock).toHaveBeenCalledTimes(2)
+      expect(vi.getTimerCount()).toBe(0)
+
+      getPageRenderStatusMock.mockResolvedValue(pendingStatus)
+      const cancelled = waitForPageRender('page-1', 5, controller.signal)
+      await vi.advanceTimersByTimeAsync(0)
+      controller.abort()
+      await cancelled
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(getPageRenderStatusMock).toHaveBeenCalledTimes(3)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('rejects a render status response for another page', async () => {
     getPageRenderStatusMock.mockResolvedValue({
       ...readyStatus(),

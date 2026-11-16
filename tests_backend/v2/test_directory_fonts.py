@@ -64,6 +64,41 @@ def test_manual_files_refresh_without_restart_and_missing_file_is_explicit(direc
     assert item in catalog.list()
 
 
+def test_batch_paths_scan_once_and_observe_removal_on_next_request(directory_fonts, monkeypatch):
+    root, _, _, _, payload = directory_fonts
+    root = font_files.filesystem_path(root)
+    font_files.prepare_font_directory(root)
+    first = root / 'fonts/shared/Alpha.ttf'
+    second = root / 'fonts/shared/Beta.ttf'
+    second.write_bytes(payload)
+    entries = [('fonts/shared/Alpha.ttf', None), ('fonts/shared/Beta.ttf', None)]
+    scans = []
+    original = font_files.os.scandir
+    def scan(folder):
+        scans.append(folder)
+        return original(folder)
+    monkeypatch.setattr(font_files.os, 'scandir', scan)
+    assert font_files.font_paths(root, entries, require_files=True) == [first, second]
+    assert scans == [first.parent]
+    second.unlink()
+    with pytest.raises(LookupError, match='字体文件已移除'):
+        font_files.font_paths(root, entries, require_files=True)
+    # Single-file resolution still supports a not-yet-created upload path.
+    assert font_files.font_path(root, entries[1][0], None) == second
+
+
+def test_batch_paths_allow_readable_files_without_directory_list_permission(directory_fonts, monkeypatch):
+    root, _, _, _, payload = directory_fonts
+    font_files.prepare_font_directory(root)
+    second = root / 'fonts/shared/Beta.ttf'
+    second.write_bytes(payload)
+    def denied(_folder):
+        raise PermissionError('directory listing denied')
+    monkeypatch.setattr(font_files.os, 'scandir', denied)
+    paths = font_files.font_paths(root, [('fonts/shared/Alpha.ttf', None), ('fonts/shared/Beta.ttf', None)], require_files=True)
+    assert all(path.read_bytes() == payload for path in paths)
+
+
 def test_new_bundled_fonts_are_added_to_existing_data_without_replacing_user_files(directory_fonts):
     root, engine, catalog, storage, payload = directory_fonts
     original = catalog.list()[0]

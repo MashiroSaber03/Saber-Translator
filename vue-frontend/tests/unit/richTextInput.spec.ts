@@ -15,6 +15,20 @@ function editor(text = '中文😀') {
 }
 
 describe('ordinary rich text input', () => {
+  it('keeps the preview scale stable while a character size edit is saved and projected back', async () => {
+    const { wrapper, vm, bubble } = editor('AB')
+    const input = wrapper.get('[role=textbox]').element as HTMLElement
+    vm.format({ size_pt: 80 })
+    expect(input.style.getPropertyValue('--rich-text-document-size')).toBe('80')
+    const value = wrapper.emitted('update')!.at(-1)![0] as Partial<typeof bubble>
+    // The local rich-text draft leads the server's summarized fontSize.
+    await wrapper.setProps({ bubble: { ...bubble, ...value } })
+    expect(input.style.getPropertyValue('--rich-text-document-size')).toBe('80')
+    await wrapper.setProps({ bubble: { ...bubble, ...value, fontSize: 80 } })
+    expect(input.style.getPropertyValue('--rich-text-document-size')).toBe('80')
+    expect(wrapper.emitted('update')).toHaveLength(1)
+  })
+
   it('formats existing text immediately after typing without reselecting its canvas frame', async () => {
     const { wrapper, vm } = editor('')
     await wrapper.get('[role=textbox]').trigger('focus')

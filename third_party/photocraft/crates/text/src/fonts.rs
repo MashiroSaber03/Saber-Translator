@@ -295,6 +295,34 @@ impl FontDb {
         // stable, and macOS ships private UI faces (".Hiragino Kaku Gothic Interface") whose
         // metrics differ from the public family's.
         names.sort_by_key(|n| (is_hidden_family(n), n.to_lowercase()));
+        self.fonts_changed();
+        names
+    }
+
+    /// Native hosts can register paths without copying every font into memory.
+    /// Fontique maps the files and the existing shaper loads the faces it needs.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn register_font_paths(&mut self, paths: &[std::path::PathBuf]) -> HashMap<std::path::PathBuf, FaceInfo> {
+        use parley::fontique::SourceKind;
+
+        self.fcx.collection.load_fonts_from_paths(paths);
+        self.fonts_changed();
+        let families: Vec<_> = self.fcx.collection.family_names().map(str::to_string).collect();
+        let mut first_faces = HashMap::new();
+        for family in families {
+            let Some(info) = self.fcx.collection.family_by_name(&family) else { continue };
+            for (font, face) in info.fonts().iter().zip(self.faces(&family)) {
+                if font.index() == 0
+                    && let SourceKind::Path(path) = font.source().kind()
+                {
+                    first_faces.insert(path.to_path_buf(), face);
+                }
+            }
+        }
+        first_faces
+    }
+
+    fn fonts_changed(&mut self) {
         self.ps_cache.clear();
         self.face_cache.clear();
         self.refresh_generics();
@@ -302,7 +330,6 @@ impl FontDb {
         if self.shared {
             SHARED_GENERATION.fetch_add(1, Ordering::Relaxed);
         }
-        names
     }
 
     /// Marks this as the shared engine's database ([`crate::shared`]) and moves
@@ -822,6 +849,31 @@ pub fn is_hidden_family(name: &str) -> bool {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
+    #[test]
+    fn file_backed_fonts_preserve_byte_registered_faces_and_layout() {
+        use photocraft_doc::TextLayer;
+
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fonts");
+        let paths: Vec<_> = super::BUNDLED.iter().map(|(name, _)| directory.join(name)).collect();
+        let mut mapped = crate::TextEngine::new();
+        let faces = mapped.fonts.register_font_paths(&paths);
+        let mut copied = crate::TextEngine::new();
+        for ((_, bytes), path) in super::BUNDLED.iter().zip(&paths) {
+            let names = copied.fonts.register_font_data(bytes.to_vec());
+            let face = faces.get(path).expect("first face returned for each file");
+            assert!(names.contains(&face.family));
+            assert!(copied.fonts.faces(&face.family).contains(face));
+        }
+        let layer = TextLayer { text: "AVATAR café…!? 123".into(), ..Default::default() };
+        let a = mapped.layout(&layer, 72.0);
+        let b = copied.layout(&layer, 72.0);
+        assert_eq!(a.glyphs.len(), b.glyphs.len());
+        assert_eq!(a.lines.len(), b.lines.len());
+        for (a, b) in a.glyphs.iter().zip(&b.glyphs) {
+            assert_eq!((a.x, a.y, a.id), (b.x, b.y, b.id));
+        }
+    }
+
     #[test]
     fn hidden_families_sort_last_and_are_not_listed() {
         assert!(super::is_hidden_family(".Hiragino Kaku Gothic Interface"));

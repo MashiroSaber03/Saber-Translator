@@ -4,12 +4,7 @@ use std::io::{Read, Write};
 fn process(request: Value) -> Result<Value, String> {
     let mut session = photocraft_engine::Session::new();
     let page = request.get("pageId").and_then(Value::as_str).ok_or("pageId required")?;
-    let mut fonts = serde_json::Map::new();
-    for font in request.get("fonts").and_then(Value::as_array).into_iter().flatten() {
-        let path = font.get("path").and_then(Value::as_str).ok_or("font path required")?;
-        let face = photocraft_saber::register_font(std::fs::read(path).map_err(|e| format!("字体读取失败：{e}"))?)?;
-        fonts.insert(font.get("id").and_then(Value::as_str).ok_or("font id required")?.into(), face);
-    }
+    let mut fonts = photocraft_saber::register_font_paths(request.get("fonts").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default())?;
     let read = |key: &str| -> Result<Vec<u8>, String> {
         std::fs::read(request.get(key).and_then(Value::as_str).ok_or_else(|| format!("{key} required"))?).map_err(|e| e.to_string())
     };
@@ -20,10 +15,9 @@ fn process(request: Value) -> Result<Value, String> {
         photocraft_saber::create(&mut session, &read("source")?, clean.as_deref(), page)?;
     }
     if let Some(default) = request.get("defaultFontId").and_then(Value::as_str).and_then(|id| fonts.get(id)).cloned() {
-        fonts.insert("__default".into(), default);
-        fonts.insert("__defaultId".into(), request["defaultFontId"].clone());
+        fonts["__default"] = default;
+        fonts["__defaultId"] = request["defaultFontId"].clone();
     }
-    let fonts = Value::Object(fonts);
     photocraft_saber::set_fonts(&mut session, &fonts)?;
     if let Some(bubbles) = request.get("bubbles").and_then(Value::as_array) {
         photocraft_saber::set_bubbles(&mut session, bubbles, &fonts)?;

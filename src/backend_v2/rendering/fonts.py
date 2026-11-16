@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from collections.abc import Mapping
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.content.page_style import (
@@ -15,7 +15,7 @@ from src.backend_v2.content.page_style import (
     validate_page_style,
 )
 from src.backend_v2.storage.assets import AssetStorageService
-from src.backend_v2.storage.font_files import font_path, prepare_font_directory
+from src.backend_v2.storage.font_files import font_paths, prepare_font_directory
 from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
 from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.storage.schema import bubbles, fonts, pages
@@ -61,16 +61,25 @@ def resolve_font_path(
     storage: AssetStorageService,
     font_id: str | None,
 ) -> str:
-    row = connection.execute(
-        select(fonts).where(fonts.c.id == (font_id or DEFAULT_FONT_ID))
-    ).mappings().one_or_none()
-    if row is None or row["owner_user_id"] not in (None, effective_owner_id()):
+    return resolve_font_paths(connection, storage, [font_id or DEFAULT_FONT_ID])[0]["path"]
+
+
+def resolve_font_paths(connection: Connection, storage: AssetStorageService,
+                       font_ids: list[str] | None = None) -> list[dict[str, str]]:
+    """Resolve a catalog in one query and prepare the shared directory only once."""
+    query = select(fonts).where(or_(fonts.c.owner_user_id.is_(None),
+                                   fonts.c.owner_user_id == effective_owner_id()))
+    if font_ids is not None:
+        query = query.where(fonts.c.id.in_(font_ids))
+    rows = list(connection.execute(query).mappings())
+    if font_ids is not None and {row["id"] for row in rows} != set(font_ids):
         raise LookupError("font not found")
     prepare_font_directory(storage.data_root)
-    path = font_path(storage.data_root, row["relative_path"], row["owner_user_id"])
-    if not path.is_file():
-        raise LookupError(f"字体文件已移除：{path.name}")
-    return str(path)
+    result = []
+    paths = font_paths(storage.data_root, [(row["relative_path"], row["owner_user_id"]) for row in rows], require_files=True)
+    for row, path in zip(rows, paths):
+        result.append({"id": row["id"], "path": str(path)})
+    return result
 
 
 def materialize_render_payloads(

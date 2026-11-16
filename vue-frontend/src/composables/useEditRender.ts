@@ -63,7 +63,7 @@ export async function waitForPageRender(pageId: string, minimumRevision: number,
     if (Date.now() >= deadline) throw new Error('后端渲染仍在继续，可稍后刷新查看结果')
     await new Promise<void>(resolve => {
       const finish = () => { clearTimeout(timer); signal.removeEventListener('abort', finish); resolve() }
-      const timer = setTimeout(finish, 500)
+      const timer = setTimeout(finish, 150)
       signal.addEventListener('abort', finish, { once: true })
     })
   }

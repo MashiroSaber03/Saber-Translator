@@ -16,15 +16,16 @@ from pathlib import Path
 import subprocess
 from tempfile import TemporaryDirectory
 from io import BytesIO
-from zipfile import ZipFile
+from zipfile import BadZipFile, ZipFile
 
-from sqlalchemy import insert, or_, select, update
+from sqlalchemy import insert, select, update
 
-from src.backend_v2.auth.ownership import effective_owner_id
-from src.backend_v2.rendering.fonts import character_font_style, resolve_font_path
+from src.backend_v2.rendering.fonts import (
+    character_font_style, resolve_font_path, resolve_font_paths,
+)
 from src.backend_v2.serialization import canonical_json
 from src.backend_v2.storage.assets import AssetStorageService
-from src.backend_v2.storage.schema import assets, bubbles, fonts, page_assets, pages
+from src.backend_v2.storage.schema import assets, bubbles, page_assets, pages
 from src.backend_v2.timestamps import utcnow
 from src.core.config_models import BubbleState, validate_bubble_payload
 from src.shared.path_helpers import resource_path
@@ -49,6 +50,7 @@ class EditingResult:
     clean: bytes | None = None
     text: bytes | None = None
     user_mask: bytes | None = None
+    clean_asset_id: str | None = None
 
 
 class NativeEditor:
@@ -56,22 +58,47 @@ class NativeEditor:
         self.storage = storage
 
     def font_files(self, connection):
-        return [{"id": row.id, "path": resolve_font_path(connection, self.storage, row.id)}
-                for row in connection.execute(select(fonts.c.id).where(or_(
-                    fonts.c.owner_user_id.is_(None), fonts.c.owner_user_id == effective_owner_id(),
-                )))]
+        # The native FontDb keeps a file-backed catalog and chooses actual faces
+        # through the same shaper/fallback path used by the fine editor.
+        return resolve_font_paths(connection, self.storage)
+
+    @staticmethod
+    def _project_document(payload: bytes) -> dict:
+        try:
+            with ZipFile(BytesIO(payload)) as archive:
+                document = json.loads(archive.read("manifest.json"))["document"]
+            if not isinstance(document, dict):
+                raise ValueError("document must be an object")
+            return document
+        except (BadZipFile, KeyError, TypeError, ValueError) as exc:
+            raise ValueError("无效的精细编辑文档") from exc
+
+    @staticmethod
+    def _background(document: dict) -> dict:
+        """Compare the content that survives the native text-hidden clean export."""
+        document = deepcopy(document)
+        metadata = document.get("metadata", {})
+        metadata["text"] = [item for item in metadata.get("text", []) if item[0] != "saber.page"]
+        layers = list(document.get("layers", []))
+        while layers:
+            layer = layers.pop()
+            content = layer.get("content", {})
+            if content.get("kind") == "text":
+                layer["content"] = {"kind": "text"}
+            else:
+                layers.extend(content.get("children", []))
+        return document
 
     @staticmethod
     def _legacy_document(payload: bytes) -> str | None:
         """Return the migration needed; only old text metadata needs the stored text."""
-        with ZipFile(BytesIO(payload)) as archive:
-            manifest = json.loads(archive.read("manifest.json"))
-        text = dict(manifest["document"].get("metadata", {}).get("text", []))
+        document = NativeEditor._project_document(payload)
+        text = dict(document.get("metadata", {}).get("text", []))
         metadata = json.loads(text.get("saber.page", "{}"))
         if any("translatedText" in entry.get("payload", {}) or "richText" in entry.get("payload", {})
                for entry in metadata.get("bubbles", {}).values()):
             return "text"
-        layers = list(manifest["document"].get("layers", []))
+        layers = list(document.get("layers", []))
         while layers:
             layer = layers.pop()
             if layer["id"] == metadata.get("background"):
@@ -225,7 +252,8 @@ class NativeEditor:
                 render: bool = False, repair: bytes | None = None, text_only: bool = False,
                 mask_override: bytes | None = None, background: bytes | None = None, fields=None) -> EditingResult:
         page = connection.execute(select(pages).where(pages.c.id == page_id)).mappings().one()
-        pointer_rows = list(connection.execute(select(page_assets.c.role,
+        pointer_rows = list(connection.execute(select(page_assets.c.role, page_assets.c.asset_id,
+                            page_assets.c.input_source_revision, page_assets.c.input_document_revision,
                             assets.c.relative_path, assets.c.width, assets.c.height)
                     .join(assets, assets.c.id == page_assets.c.asset_id)
                     .where(page_assets.c.page_id == page_id)))
@@ -233,6 +261,11 @@ class NativeEditor:
         records = {row.role: row for row in pointer_rows}
         current = pointers["editor_document"].read_bytes() if "editor_document" in pointers else None
         legacy = self._legacy_document(current) if current is not None else None
+        clean = records.get("clean")
+        clean_is_current = (current is not None and not legacy and clean is not None
+                            and clean.input_source_revision == page["source_revision"]
+                            and clean.input_document_revision == page["document_revision"]
+                            and pointers["clean"].is_file())
         writing = (documents is not None or uploaded is not None or repair is not None
                    or mask_override is not None or background is not None or current is None or legacy is not None)
         stored = self.page_bubbles(connection, page_id) if current is None or documents is None and (writing or not render and not text_only) else []
@@ -279,7 +312,9 @@ class NativeEditor:
                 (root / "repair.png").write_bytes(repair)
                 request["repair"] = str(root / "repair.png")
             if render:
-                request.update(png=str(root / "translated.png"), clean=str(root / "clean.png"))
+                request["png"] = str(root / "translated.png")
+                if writing or not clean_is_current:
+                    request["clean"] = str(root / "clean.png")
             if text_only:
                 request["text"] = str(root / "text.png")
             projection = self.invoke(request)
@@ -304,16 +339,30 @@ class NativeEditor:
                 with read_user_mask(BytesIO(user_mask)) as mask:
                     if mask.size != (projection["width"], projection["height"]):
                         raise ValueError("手动修复范围尺寸与原图不一致")
-            return EditingResult((root / "document.pcraft").read_bytes() if writing else
+            document = (root / "document.pcraft").read_bytes() if writing else None
+            # A clean pointer is valid for the next revision only if it was valid
+            # for this snapshot and the saved document still has that background.
+            # Pending graphic/repair edits therefore cannot mark an older clean
+            # image as current when a text edit follows them.
+            clean_asset_id = None
+            if clean_is_current and document is not None and "clean" not in request:
+                if self._background(self._project_document(current)) == self._background(self._project_document(document)):
+                    clean_asset_id = clean.asset_id
+            return EditingResult(document if writing else
                                  (current if not render and not text_only else None), projected,
                                  projection["width"], projection["height"],
                                  (root / "translated.png").read_bytes() if render else None,
-                                 (root / "clean.png").read_bytes() if render else None,
-                                 (root / "text.png").read_bytes() if text_only else None, user_mask)
+                                 (root / "clean.png").read_bytes() if "clean" in request else None,
+                                 (root / "text.png").read_bytes() if text_only else None, user_mask,
+                                 clean_asset_id)
 
     def publish(self, connection, page_id: str, revision: int, result: EditingResult,
                 *, render_request_id=None, operation_id=None, job_step_id=None):
         source_revision = connection.execute(select(pages.c.source_revision).where(pages.c.id == page_id)).scalar_one()
+        if result.clean_asset_id is not None:
+            connection.execute(update(page_assets).where(page_assets.c.page_id == page_id,
+                page_assets.c.role == "clean", page_assets.c.asset_id == result.clean_asset_id,
+                page_assets.c.input_source_revision == source_revision).values(input_document_revision=revision))
         if result.document is not None:
             self._publish_bubbles(connection, page_id, revision, result.bubbles)
         current_mask = connection.execute(select(page_assets.c.asset_id, assets.c.checksum).join(
