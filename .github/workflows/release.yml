@@ -9,9 +9,9 @@
 #   3. 手动发布：Run workflow 勾选 publish
 #
 # 流程:
-#   1. 先创建 Draft Release
-#   2. 并行构建 CPU 和 GPU 版本，每个直接上传到 Release
-#   3. 等待手动编辑更新日志后发布
+#   1. 校验清单与触发参数；发布模式才创建 Draft Release
+#   2. 并行验证 CPU/GPU；发布模式才上传发行包
+#   3. 正式发布前手动核对更新日志
 # ============================================================================
 
 name: Build and Release
@@ -37,8 +37,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.ref_type == 'tag' || inputs.publish == true }}-${{ github.event.inputs.version || github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' && inputs.publish != true }}
+  group: build-${{ (github.event_name == 'push' && github.ref_type == 'tag') || inputs.publish == true }}-${{ github.event.inputs.version || github.ref }}
+  cancel-in-progress: ${{ !(github.event_name == 'push' && github.ref_type == 'tag') && inputs.publish != true }}
 
 env:
   PYTHON_VERSION: '3.12'
@@ -47,7 +47,7 @@ env:
 
 jobs:
   # ============================================================================
-  # 准备 Job - 先创建 Draft Release
+  # 准备 Job - 共用校验，仅发布模式创建 Draft Release
   # ============================================================================
   prepare:
     runs-on: ubuntu-latest
@@ -98,14 +98,13 @@ jobs:
             VERSION="${REF_NAME#v}"
           fi
           TAG_NAME="v${VERSION}"
-          if [ "$REF_TYPE" == "tag" ] || { [ "$EVENT_NAME" == "workflow_dispatch" ] && [ "$INPUT_PUBLISH" == "true" ]; }; then
+          if { [ "$EVENT_NAME" == "push" ] && [ "$REF_TYPE" == "tag" ]; } || { [ "$EVENT_NAME" == "workflow_dispatch" ] && [ "$INPUT_PUBLISH" == "true" ]; }; then
             PUBLISH=true
           fi
           if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "Invalid release version: $VERSION" >&2
             exit 1
           fi
-          MANIFEST_VERSION=$(jq -er .version version.json)
           if [[ "$VERSION" != "$MANIFEST_VERSION" ]]; then
             echo "Release version differs from version.json: $VERSION != $MANIFEST_VERSION" >&2
             exit 1
@@ -432,7 +431,7 @@ jobs:
               echo "CPU/GPU packages verified. No version tag or release was created."
             fi
           else
-            echo "The build failed or was cancelled. Keep the release as a draft and inspect the failed job."
+            echo "The build failed or was cancelled. Inspect the failed job."
           fi
           echo ""
           echo "Link: https://github.com/${{ github.repository }}/releases"

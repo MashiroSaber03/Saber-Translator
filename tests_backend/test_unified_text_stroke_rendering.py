@@ -172,22 +172,25 @@ def test_overflow_matches_unclipped_full_page_render(direction, text, stroke_wid
     )
     font = get_font(state.font_family, state.font_size)
     direct = not stroke_width and not rotation_angle
-    with Image.new("RGB" if direct else "RGBA", (1000, 1000),
+    # 特殊竖排文本可延伸到页面左侧之外；参照也须保留这些像素再旋转。
+    padding = 300
+    with Image.new("RGB" if direct else "RGBA", (1600, 1600),
                    "white" if direct else (0, 0, 0, 0)) as reference_layer:
         draw = ImageDraw.Draw(reference_layer)
         for fill, width in ((state.stroke_color, stroke_width), (state.text_color, 0)):
             if fill == state.stroke_color and not stroke_width:
                 continue
             _draw_bubble_text_pass(
-                draw, text, font, state, 426.75, 447.75, 120, 120,
+                draw, text, font, state, 426.75 + padding, 447.75 + padding, 120, 120,
                 bubble_index=0, fill=fill, stroke_width=width,
             )
         with reference_layer.rotate(
-            -rotation_angle, center=(486.75, 507.75),
+            -rotation_angle, center=(486.75 + padding, 507.75 + padding),
             resample=Image.Resampling.BICUBIC,
-        ) as rotated, Image.new("RGB", (1000, 1000), "white") as expected, \
+        ) as rotated, rotated.crop((padding, padding, padding + 1000, padding + 1000)) as cropped, \
+                Image.new("RGB", (1000, 1000), "white") as expected, \
                 Image.new("RGB", (1000, 1000), "white") as actual:
-            expected.paste(rotated, (0, 0), None if direct else rotated)
+            expected.paste(cropped, (0, 0), None if direct else cropped)
             render_bubbles_unified(actual, [state])
             expected_pixels = np.asarray(expected).astype(np.int16)
             actual_pixels = np.asarray(actual).astype(np.int16)
