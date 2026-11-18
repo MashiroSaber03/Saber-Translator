@@ -2,74 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import sys
 
+from src.shared.model_catalog import LOCAL_MODELS, model_available
 
-@dataclass(frozen=True, slots=True)
-class LocalModelOption:
-    model_id: str
-    label: str
-    description: str
-
-
-LOCAL_MODEL_OPTIONS = (
-    LocalModelOption(
-        "detector_default",
-        "Default 文本检测",
-        "默认 DBNet 检测模型",
-    ),
-    LocalModelOption(
-        "detector_ctd",
-        "CTD 文本检测",
-        "Comic Text Detector 检测模型",
-    ),
-    LocalModelOption(
-        "detector_yolo",
-        "YSGYolo 文本检测",
-        "YSGYolo 检测模型，也用于辅助检测",
-    ),
-    LocalModelOption(
-        "saber_yolo",
-        "SaberYOLO 文本检测",
-        "SaberYOLO 旋转框检测模型",
-    ),
-    LocalModelOption(
-        "manga_ocr",
-        "MangaOCR",
-        "日文漫画 OCR 模型",
-    ),
-    LocalModelOption(
-        "paddle_ocr",
-        "PP-OCRv6",
-        "Paddle 文本检测与识别模型",
-    ),
-    LocalModelOption(
-        "ocr_48px",
-        "48px OCR",
-        "48px 漫画文本识别模型",
-    ),
-    LocalModelOption(
-        "paddleocr_vl",
-        "PaddleOCR-VL",
-        "PaddleOCR-VL 视觉语言识别模型",
-    ),
-    LocalModelOption(
-        "lama_mpe",
-        "LaMA MPE",
-        "LaMA MPE 文字背景修复模型",
-    ),
-    LocalModelOption(
-        "litelama",
-        "LiteLaMA",
-        "LiteLaMA 文字背景修复模型",
-    ),
-    LocalModelOption(
-        "lama_manga",
-        "LaMA Manga",
-        "漫画版 LaMA 文字背景修复模型",
-    ),
-)
+LOCAL_MODEL_OPTIONS = LOCAL_MODELS
 LOCAL_MODEL_IDS = tuple(option.model_id for option in LOCAL_MODEL_OPTIONS)
 LOCAL_MODEL_LABELS = {
     option.model_id: option.label for option in LOCAL_MODEL_OPTIONS
@@ -147,20 +84,31 @@ def preload_local_models(model_ids: object) -> tuple[str, ...]:
 
     from src.shared.user_logging import inline_log_text, user_log
 
-    labels = [LOCAL_MODEL_LABELS[model_id] for model_id in resident_models]
+    available = tuple(model_id for model_id in resident_models if model_available(model_id))
+    missing = set(resident_models) - set(available)
+    if missing:
+        user_log("system", "常驻模型尚未安装，跳过预加载；可在设置 → 更多 → 模型管理下载｜" +
+                 "、".join(LOCAL_MODEL_LABELS[key] for key in resident_models if key in missing))
+    if not available:
+        return ()
+    labels = [LOCAL_MODEL_LABELS[model_id] for model_id in available]
     user_log("system", f"正在加载常驻模型｜{', '.join(labels)}")
-    for model_id in resident_models:
+    loaded: list[str] = []
+    for model_id in available:
         try:
             _load_local_model(model_id)
         except Exception as error:
             label = LOCAL_MODEL_LABELS[model_id]
             user_log(
                 "error",
-                f"常驻模型加载失败｜{label}｜{inline_log_text(error)}",
+                f"常驻模型加载失败，已跳过预加载；请在设置 → 更多 → 模型管理校验或修复｜{label}｜{inline_log_text(error)}",
             )
-            raise RuntimeError(f"常驻模型 {label} 加载失败：{error}") from error
-    user_log("system", f"常驻模型已就绪｜{', '.join(labels)}")
-    return resident_models
+            release_loaded_local_model(model_id)
+            continue
+        loaded.append(model_id)
+    if loaded:
+        user_log("system", "常驻模型已就绪｜" + '、'.join(LOCAL_MODEL_LABELS[key] for key in loaded))
+    return tuple(loaded)
 
 
 def _load_local_model(model_id: str) -> None:

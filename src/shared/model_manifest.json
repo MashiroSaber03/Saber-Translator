@@ -1,0 +1,298 @@
+{
+  "releaseTag": "model-files-v2",
+  "githubRepository": "MashiroSaber03/Saber-Translator-Models",
+  "modelscope": {
+    "repository": "MashiroSaber/Saber-Translator-Models",
+    "revision": "44efeecb4413fb4fd1435ca9f065b9e9bcfa8841"
+  },
+  "models": [
+    {
+      "id": "detector_default",
+      "label": "Default 文本检测",
+      "description": "默认 DBNet 检测模型",
+      "directory": "default",
+      "files": [
+        {
+          "path": "default/detect-20241225.ckpt",
+          "size": 308380176,
+          "sha256": "67ce1c4ed4793860f038c71189ba9630a7756f7683b1ee5afb69ca0687dc502e"
+        }
+      ],
+      "archive": {
+        "path": "detector_default/detector_default.zip",
+        "size": 308380330,
+        "sha256": "b68072f654cf9d7018348e5ecc818fea0d3795cc6cc6d8b5b49aa3ce4e78f9c3"
+      }
+    },
+    {
+      "id": "detector_ctd",
+      "label": "CTD 文本检测",
+      "description": "Comic Text Detector 检测模型",
+      "directory": "ctd",
+      "files": [
+        {
+          "path": "ctd/comictextdetector.pt",
+          "size": 79948869,
+          "sha256": "1f90fa60aeeb1eb82e2ac1167a66bf139a8a61b8780acd351ead55268540cccb"
+        },
+        {
+          "path": "ctd/comictextdetector.pt.onnx",
+          "size": 94669756,
+          "sha256": "1a86ace74961413cbd650002e7bb4dcec4980ffa21b2f19b86933372071d718f"
+        }
+      ],
+      "archive": {
+        "path": "detector_ctd/detector_ctd.zip",
+        "size": 174618905,
+        "sha256": "7ac3f9f3466c283b791ffdc66d546419f6d54893b1a7bd2022d25f3f01e52d95"
+      }
+    },
+    {
+      "id": "detector_yolo",
+      "label": "YSGYolo 文本检测",
+      "description": "YSGYolo 检测模型，也用于辅助检测",
+      "directory": "yolo",
+      "files": [
+        {
+          "path": "yolo/ysgyolo_1.2_OS1.0.pt",
+          "size": 16534011,
+          "sha256": "bde7c9d55641a9e319903b6f64c82d5912ccd96977a5a6a28b52c1b639d39096"
+        }
+      ],
+      "archive": {
+        "path": "detector_yolo/detector_yolo.zip",
+        "size": 16534159,
+        "sha256": "50073ba43a03f27e3fc029bde65075cfd592b95a921cf614abc9c67a20a79e38"
+      }
+    },
+    {
+      "id": "saber_yolo",
+      "label": "SaberYOLO 文本检测",
+      "description": "SaberYOLO 旋转框检测模型",
+      "directory": "saber_yolo",
+      "files": [
+        {
+          "path": "saber_yolo/saber_yolo.pt",
+          "size": 56455253,
+          "sha256": "a34bcb05eb3ca75941cfdaa59883edf19f6b209bcc9cc1fb139a2f5cf0bc6324"
+        }
+      ],
+      "archive": {
+        "path": "saber_yolo/saber_yolo.zip",
+        "size": 56455399,
+        "sha256": "8859b54d1cbb0764388e9f8a41eebf93f0e69c722631807132630d65e53453d1"
+      }
+    },
+    {
+      "id": "manga_ocr",
+      "label": "MangaOCR",
+      "description": "日文漫画 OCR 模型",
+      "directory": "manga_ocr",
+      "files": [
+        {
+          "path": "manga_ocr/config.json",
+          "size": 77546,
+          "sha256": "8c0e395de8fa699daaac21aee33a4ba9bd1309cfbff03147813d2a025f39f349"
+        },
+        {
+          "path": "manga_ocr/preprocessor_config.json",
+          "size": 228,
+          "sha256": "af4eb4d79cf61b47010fc0bc9352ee967579c417423b4917188d809b7e048948"
+        },
+        {
+          "path": "manga_ocr/pytorch_model.bin",
+          "size": 444135475,
+          "sha256": "c63e0bb5b3ff798c5991de18a8e0956c7ee6d1563aca6729029815eda6f5c2eb"
+        },
+        {
+          "path": "manga_ocr/tokenizer_config.json",
+          "size": 486,
+          "sha256": "d775ad1deac162dc56b84e9b8638f95ed8a1f263d0f56f4f40834e26e205e266"
+        },
+        {
+          "path": "manga_ocr/vocab.txt",
+          "size": 24072,
+          "sha256": "344fbb6b8bf18c57839e924e2c9365434697e0227fac00b88bb4899b78aa594d"
+        }
+      ],
+      "archive": {
+        "path": "manga_ocr/manga_ocr.zip",
+        "size": 444238473,
+        "sha256": "b768f0475e084ef4a203a4905f4d7479d98518524c5679badcd8820b5d616ece"
+      }
+    },
+    {
+      "id": "paddle_ocr",
+      "label": "PP-OCRv6 Medium",
+      "description": "PP-OCRv6 Medium ONNX 文本检测与识别",
+      "directory": "paddle_ocr_onnx_v6",
+      "files": [
+        {
+          "path": "paddle_ocr_onnx_v6/det.onnx",
+          "size": 62032837,
+          "sha256": "eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1"
+        },
+        {
+          "path": "paddle_ocr_onnx_v6/rec.onnx",
+          "size": 76554979,
+          "sha256": "9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba"
+        },
+        {
+          "path": "paddle_ocr_onnx_v6/ppocrv6_dict.txt",
+          "size": 74947,
+          "sha256": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d"
+        }
+      ],
+      "archive": {
+        "path": "paddle_ocr/paddle_ocr.zip",
+        "size": 138663191,
+        "sha256": "744e98ede41a5a2bdbcf4c80d8cb9f649beeea0bf13f938278befd9a86122150"
+      }
+    },
+    {
+      "id": "ocr_48px",
+      "label": "48px OCR",
+      "description": "48px 漫画文本识别模型",
+      "directory": "ocr_48px",
+      "files": [
+        {
+          "path": "ocr_48px/ocr_ar_48px.ckpt",
+          "size": 204290192,
+          "sha256": "29daa46d080818bb4ab239a518a88338cbccff8f901bef8c9db191a7cb97671d"
+        },
+        {
+          "path": "ocr_48px/alphabet-all-v7.txt",
+          "size": 186651,
+          "sha256": "f5722368146aa0fbcc9f4726866e4efc3203318ebb66c811d8cbbe915576538a"
+        }
+      ],
+      "archive": {
+        "path": "ocr_48px/ocr_48px.zip",
+        "size": 204477123,
+        "sha256": "2f5f3f9dc13298aa89363861e6208288be15972252e9ee5e958c2fb628863f5d"
+      }
+    },
+    {
+      "id": "paddleocr_vl",
+      "label": "PaddleOCR-VL-1.6",
+      "description": "PaddleOCR-VL-1.6 视觉语言识别模型",
+      "directory": "paddleocr_vl_1_6",
+      "files": [
+        {
+          "path": "paddleocr_vl_1_6/config.json",
+          "size": 1649,
+          "sha256": "fcb3c44bcf675ff3a6433722c8e05a9c377cc113cdf16093db04f1fd43cf5ba3"
+        },
+        {
+          "path": "paddleocr_vl_1_6/generation_config.json",
+          "size": 133,
+          "sha256": "3d1ef4abaf88801de46c711cea9e4bea8d6f9d2e2efb484cc0a4b90e18e33855"
+        },
+        {
+          "path": "paddleocr_vl_1_6/model.safetensors",
+          "size": 1917255968,
+          "sha256": "85a479d506a11e724e7285d395c551be69f41dbc16b6342d3cacfb189aed71db"
+        },
+        {
+          "path": "paddleocr_vl_1_6/preprocessor_config.json",
+          "size": 467,
+          "sha256": "3dcf5707f28f2571f6c87a344d177474a5139d5f9575935f4be187a947a6907e"
+        },
+        {
+          "path": "paddleocr_vl_1_6/processor_config.json",
+          "size": 48,
+          "sha256": "1e2481a3f42dba5a46f76cf251441ab2ab907bc9594cedf045c5a2b45fdbed64"
+        },
+        {
+          "path": "paddleocr_vl_1_6/added_tokens.json",
+          "size": 25381,
+          "sha256": "f59f889088e0fe21c523e7cf121bb6dca3b0bb148cb7159fbb4572c74dfc5644"
+        },
+        {
+          "path": "paddleocr_vl_1_6/special_tokens_map.json",
+          "size": 1151,
+          "sha256": "d3a125c03103deb2acaf7730791bdbbf196f620e5a2213b664511ff9b4b25bab"
+        },
+        {
+          "path": "paddleocr_vl_1_6/tokenizer.json",
+          "size": 11189060,
+          "sha256": "c8a215a59183d0d0781adc33bacd3ce6162716f7fd568fb30234a74d69803a7d"
+        },
+        {
+          "path": "paddleocr_vl_1_6/tokenizer.model",
+          "size": 1614363,
+          "sha256": "34ef7db83df785924fb83d7b887b6e822a031c56e15cff40aaf9b982988180df"
+        },
+        {
+          "path": "paddleocr_vl_1_6/tokenizer_config.json",
+          "size": 186859,
+          "sha256": "07bad5971e224bfd6d2b4b1a839c6ce950abcc0c1d1adfb60ca79f87509d86e5"
+        },
+        {
+          "path": "paddleocr_vl_1_6/chat_template.jinja",
+          "size": 1474,
+          "sha256": "2f27812dab7f333e471884e0c803d807f11953d5453140dfb1aaba234f872bc8"
+        }
+      ],
+      "archive": {
+        "path": "paddleocr_vl/paddleocr_vl.zip",
+        "size": 1930278193,
+        "sha256": "d49401a4ef9b11e3e00fe64d28d12e7de7707c98530651b1ca9eaa0f5bac9430"
+      }
+    },
+    {
+      "id": "lama_mpe",
+      "label": "LaMA MPE",
+      "description": "LaMA MPE 文字背景修复模型",
+      "directory": "lama",
+      "files": [
+        {
+          "path": "lama/inpainting_lama_mpe.ckpt",
+          "size": 108580583,
+          "sha256": "d625aa1b3e0d0408acfd6928aa84f005867aa8dbb9162480346a4e20660786cc"
+        }
+      ],
+      "archive": {
+        "path": "lama_mpe/lama_mpe.zip",
+        "size": 108580739,
+        "sha256": "493117f9635ed5c44eca570f89bb417628147af20d17e2d24d80d214e6bc1b98"
+      }
+    },
+    {
+      "id": "litelama",
+      "label": "LiteLaMA",
+      "description": "LiteLaMA 文字背景修复模型",
+      "directory": "lama",
+      "files": [
+        {
+          "path": "lama/big-lama.safetensors",
+          "size": 496800380,
+          "sha256": "f8fcaae73ca8a96e463bf29c7583ea84a3c99075cb58ff90ceed6816243a1f09"
+        }
+      ],
+      "archive": {
+        "path": "litelama/litelama.zip",
+        "size": 496800528,
+        "sha256": "8fa06a2b806d447cc898aa2168dc3a071fcdedffcd110497660487a710017893"
+      }
+    },
+    {
+      "id": "lama_manga",
+      "label": "LaMA Manga",
+      "description": "漫画版 LaMA 文字背景修复模型",
+      "directory": "lama-manga",
+      "files": [
+        {
+          "path": "lama-manga/lama-manga.safetensors",
+          "size": 204332996,
+          "sha256": "a790515e9da839b8d89af7d565ceb110d908b7d6fbdb991f2acb2ec7d9b08bdb"
+        }
+      ],
+      "archive": {
+        "path": "lama_manga/lama_manga.zip",
+        "size": 204333160,
+        "sha256": "b43c46265d287c2c5f51c21522ab32d4d20b415d29b291869deac3a5c09e73bb"
+      }
+    }
+  ]
+}

@@ -31,6 +31,7 @@ def test_resident_model_selection_is_deduplicated_in_catalog_order() -> None:
 
 def test_preload_uses_each_models_normal_loader_once(monkeypatch) -> None:
     loaded: list[str] = []
+    monkeypatch.setattr(local_models, "model_available", lambda _model_id: True)
     monkeypatch.setattr(
         "src.backend_v2.local_models._load_local_model",
         loaded.append,

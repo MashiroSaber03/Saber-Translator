@@ -10,6 +10,7 @@ import os
 import shutil
 import stat
 import sys
+from pathlib import Path
 from importlib.util import find_spec
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all, copy_metadata
 
@@ -41,19 +42,14 @@ datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'desktop', 'assets
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'text_style_defaults_factory.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'prompt_defaults_factory.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'ai_provider_manifest.json'), os.path.join('src', 'shared')))
+datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'model_manifest.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'plugins', 'plugin_builder_skill.md'), os.path.join('src', 'backend_v2', 'plugins')))
 datas.append((os.path.join(PROJECT_ROOT, 'openapi', 'v2.yaml'), 'openapi'))
 
 # 2. 用户设置、提示词和凭据只存在于 v2 data root 的数据库中，
 # 不把任何运行时配置或密钥打进应用包。
 
-# 3. 模型文件 - 包含所有模型
-models_path = os.path.join(PROJECT_ROOT, 'models')
-# Release runners can move models into the finished bundle to avoid a second copy.
-# Ordinary local builds keep the source models directory unchanged.
-move_models = os.environ.get('SABER_BUILD_MOVE_MODELS') == '1'
-if os.path.exists(models_path) and not move_models:
-    datas.append((models_path, 'models'))
+# 3. 模型权重由用户在设置中按需下载，绝不收集到应用包。
 
 # 4. 插件目录
 plugins_path = os.path.join(PROJECT_ROOT, 'plugins')
@@ -78,6 +74,10 @@ for pkg in critical_packages:
     if find_spec(pkg) is None:
         raise ModuleNotFoundError(f"required packaging dependency is missing: {pkg}")
     pkg_datas, pkg_binaries, pkg_hiddenimports = collect_all(pkg)
+    if pkg == 'rapidocr':
+        # Runtime downloads in site-packages are caches, not application assets.
+        model_cache = Path(find_spec(pkg).origin).parent / 'models'
+        pkg_datas = [item for item in pkg_datas if not Path(item[0]).is_relative_to(model_cache)]
     datas += pkg_datas
     binaries += pkg_binaries
     hiddenimports += pkg_hiddenimports
@@ -299,9 +299,6 @@ coll = COLLECT(
 )
 
 bundle_plugins_path = os.path.join(coll.name, 'plugins')
-if move_models:
-    shutil.move(models_path, os.path.join(coll.name, '_internal', 'models'))
-
 if os.path.exists(bundle_plugins_path):
     shutil.rmtree(bundle_plugins_path)
 if os.path.exists(plugins_path):

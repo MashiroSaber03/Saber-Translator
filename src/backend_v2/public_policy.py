@@ -15,6 +15,11 @@ from src.backend_v2.runtime_profile import RuntimeProfile
 from src.backend_v2.serialization import canonical_json
 from src.backend_v2.storage.schema import pages, platform_config
 from src.backend_v2.timestamps import utcnow
+from src.shared.model_catalog import (
+    DETECTOR_MODELS as _DETECTOR_MODELS,
+    OCR_MODELS as _OCR_MODELS,
+    INPAINT_MODELS as _INPAINT_MODELS,
+)
 
 
 FEATURE_LABELS = {
@@ -45,23 +50,6 @@ DEFAULT_PUBLIC_USER_POLICY: dict[str, Any] = {
         "lamaDisableResize": {"editable": False, "value": False},
         "parallel": {"allowed": False},
     },
-}
-
-_DETECTOR_MODELS = {
-    "default": "detector_default",
-    "ctd": "detector_ctd",
-    "yolo": "detector_yolo",
-}
-_OCR_MODELS = {
-    "manga_ocr": "manga_ocr",
-    "48px_ocr": "ocr_48px",
-    "paddle_ocr": "paddle_ocr",
-    "paddleocr_vl": "paddleocr_vl",
-}
-_INPAINT_MODELS = {
-    "lama_mpe": "lama_mpe",
-    "litelama": "litelama",
-    "lama_manga": "lama_manga",
 }
 
 

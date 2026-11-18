@@ -260,8 +260,7 @@ describe('AdminView user task overview', () => {
   })
 
   it('exposes one global ordinary-user policy without per-user permission layers', () => {
-    expect(apiSource).toContain('export interface PublicUserPolicy')
-    expect(apiSource).toContain("'translation' | 'insight' | 'characterStudio' | 'editMode'")
+    expect(apiSource).toContain("PublicUserPolicy = components['schemas']['PublicUserPolicy']")
     expect(apiSource).toContain('getPublicUserPolicy')
     expect(apiSource).toContain('setPublicUserPolicy')
     expect(viewSource).toContain('功能与性能控制')

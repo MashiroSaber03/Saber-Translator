@@ -34,6 +34,9 @@ from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.public_policy import PublicUserPolicyAccess
 from src.backend_v2.runtime_profile import RuntimeProfile
 from src.backend_v2.content.repository import ContentConflict, ContentLocked
+from src.shared.model_catalog import (
+    detector_model_ids, ocr_model_ids, require_local_models, require_inpaint_model,
+)
 
 
 def create_operations_blueprint(
@@ -48,11 +51,15 @@ def create_operations_blueprint(
     public_access = PublicUserPolicyAccess(engine, profile)
     from src.backend_v2.operations.repair import PageRepairService
 
+    def validate_repair_method(method: str) -> None:
+        public_access.require_inpaint_method(method)
+        require_inpaint_model(method)
+
     repairs = PageRepairService(
         data_root=data_root,
         engine=engine,
         repository=repository,
-        method_validator=public_access.require_inpaint_method,
+        method_validator=validate_repair_method,
         settings_transformer=public_access.apply_page_repair_settings,
     )
     from src.backend_v2.operations.masks import PageMaskService
@@ -147,6 +154,12 @@ def create_operations_blueprint(
             kind=kind,
         )
         public_access.require_page_operation(kind, payload)
+        if kind == "page_detect":
+            require_local_models(detector_model_ids(payload.get("detector", payload)))
+        elif kind == "bubble_ocr":
+            require_local_models(ocr_model_ids(payload.get("ocr", payload)))
+        elif kind == "bubble_color":
+            require_local_models(("ocr_48px",))
         bubble_id: str | None = None
         if "bubbleId" in body:
             bubble_id = _required_string(body, "bubbleId")

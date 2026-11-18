@@ -66,6 +66,8 @@ vi.mock('@/stores/runtimeStore', () => ({
   useRuntimeStore: () => runtimeStoreState,
 }))
 
+vi.mock('@/stores/authStore', () => ({ useAuthStore: () => ({ isAdmin: true }) }))
+
 vi.mock('@/utils/toast', () => ({
   showToast: vi.fn(),
 }))
@@ -149,6 +151,7 @@ vi.mock('@/components/settings/PluginManager.vue', () => ({
 vi.mock('@/components/settings/MoreSettings.vue', () => ({
   default: defineComponent({
     name: 'MoreSettings',
+    props: ['active'],
     setup: () => () => h('div', 'MoreSettings stub'),
   }),
 }))
@@ -164,6 +167,21 @@ import SettingsModal from '@/components/settings/SettingsModal.vue'
 enableAutoUnmount(afterEach)
 
 describe('SettingsModal', () => {
+  it('places model management under More and deactivates it when leaving', async () => {
+    const wrapper = mount(SettingsModal, { props: { modelValue: true } })
+    await flushPromises()
+    const tabs = () => wrapper.findAll('[role="tab"]')
+    expect(tabs().map(tab => tab.text())).not.toContain('模型管理')
+    await tabs().find(tab => tab.text() === '更多')!.trigger('click')
+    const more = wrapper.findComponent({ name: 'MoreSettings' })
+    expect(more.props('active')).toBe(true)
+    await tabs().find(tab => tab.text() === 'OCR识别')!.trigger('click')
+    expect(more.props('active')).toBe(false)
+    await tabs().find(tab => tab.text() === '更多')!.trigger('click')
+    await wrapper.setProps({ modelValue: false })
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'MoreSettings' }).exists()).toBe(false)
+  })
   beforeEach(() => {
     loadFromBackendMock.mockReset()
     loadFromBackendMock.mockResolvedValue(true)

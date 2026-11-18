@@ -298,6 +298,7 @@ watch(activeIndex, (index) => {
       role="listbox"
       :style="dropdownStyle"
     >
+      <div v-if="options.length === 0" class="ui-select-option" role="status">暂无可选项</div>
       <div
         v-for="(option, index) in options"
         :id="optionId(index)"

@@ -46,6 +46,7 @@ const {
   fontSelectOptions,
   layoutDirectionOptions,
   inpaintMethodOptions,
+  autoTextColorAvailable,
   inlineAlignOptions,
   blockAlignOptions,
   createPageSelectionSummary,
@@ -99,6 +100,7 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
         :has-images="hasImages"
         :disabled="disabled || (hasImages && !isCurrentPageReady)"
         :inpaint-method-options="inpaintMethodOptions"
+        :auto-text-color-available="autoTextColorAvailable"
         :layout-direction-options="layoutDirectionOptions"
         :show-apply-options="showApplyOptions"
         :inline-align-options="inlineAlignOptions"

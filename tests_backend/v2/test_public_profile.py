@@ -53,6 +53,7 @@ from src.backend_v2.storage.lifecycle import initialize_database
 from src.backend_v2.storage.schema import assets, credentials, jobs, users
 from src.backend_v2.timestamps import utcnow
 from src.shared.http_config import build_httpx_kwargs
+from src.shared.model_catalog import installed_model_ids
 
 
 PUBLIC_HOST = "public.example.test"
@@ -311,6 +312,7 @@ def test_public_capabilities_host_filter_and_security_headers(public_platform) -
 
     assert response.status_code == 200
     assert response.get_json() == {
+        "installedModels": installed_model_ids(),
         "profile": "public",
         "requiresAuth": True,
         "browserCredentials": True,

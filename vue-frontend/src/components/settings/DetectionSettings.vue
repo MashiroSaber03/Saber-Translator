@@ -7,6 +7,7 @@
           id="settingsTextDetector"
           :model-value="settings.textDetector"
           :options="detectorOptions"
+          placeholder="请先在更多 → 模型管理中安装检测模型"
           @change="updateTextDetector"
         />
       </UiField>
@@ -28,7 +29,7 @@
       <UiField
         variant="settings"
         control="checkbox"
-        hint="使用 YSGYolo 在一阶段检测后补框/替框，提升主检测器结果质量"
+        hint="需要安装 YSGYolo；在一阶段检测后补框/替框"
       >
         <UiCheckbox
           :model-value="settings.enableAuxYoloDetection"
@@ -62,7 +63,7 @@
       <UiField
         variant="settings"
         control="checkbox"
-        hint="使用 SaberYOLO 对误合并的大文本块进行二次拆分修正"
+        hint="需要安装 SaberYOLO；对误合并的大文本块进行二次拆分修正"
       >
         <UiCheckbox
           :model-value="settings.enableSaberYoloRefine"
@@ -181,6 +182,7 @@ import { useSettingsStore } from '@/stores/settings'
 import type { BoxExpandSettings, PreciseMaskSettings } from '@/types/settings'
 import type { UiSelectValue } from '@/components/ui/selectTypes'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
+import { DETECTOR_MODEL_KEYS } from '@/utils/localModelAvailability'
 
 const rawDetectorOptions = [
   { label: 'CTD (Comic Text Detector)', value: 'ctd' },
@@ -192,11 +194,7 @@ const settingsStore = useSettingsStore()
 const publicAccess = usePublicUserAccess()
 
 const settings = computed(() => settingsStore.settings)
-const detectorOptions = computed(() => publicAccess.modelOptions(rawDetectorOptions, {
-  default: 'detector_default',
-  ctd: 'detector_ctd',
-  yolo: 'detector_yolo',
-}))
+const detectorOptions = computed(() => publicAccess.modelOptions(rawDetectorOptions, DETECTOR_MODEL_KEYS))
 const auxYoloAllowed = computed(() => publicAccess.modelAllowed('aux_ysg_yolo'))
 const saberYoloAllowed = computed(() => publicAccess.modelAllowed('saber_yolo'))
 

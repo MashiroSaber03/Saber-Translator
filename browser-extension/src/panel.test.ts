@@ -68,6 +68,8 @@ it('edits only plugin text style and the optional DOM assistant, preserving draf
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init: RequestInit) => {
+      if (url.endsWith('/system/models/installed'))
+        return Response.json({ installedModels: ['ocr_48px', 'lama_mpe'] })
       if (url.endsWith('/settings/transactions')) {
         const transaction = JSON.parse(String(init.body))
         transactions.push(transaction)

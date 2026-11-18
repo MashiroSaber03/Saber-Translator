@@ -15,6 +15,7 @@ import RichTextInput from '@/components/edit/RichTextInput.vue'
 import { nativeColor } from '@/components/edit/richTextDocument'
 import { copiedTextStyle } from '@/components/edit/textStyleClipboard'
 import type { BubbleState } from '@/types/bubble'
+import { useRuntimeStore } from '@/stores/runtimeStore'
 
 vi.mock('@/api/client', () => ({ apiClient: { get: vi.fn().mockResolvedValue({ items: [] }) } }))
 
@@ -158,6 +159,7 @@ describe('BubbleEditor button labels', () => {
       disconnect = vi.fn()
     })
     setActivePinia(createPinia())
+    useRuntimeStore().assumeLocalForTests()
 
     Object.defineProperty(globalThis.navigator, 'clipboard', {
       value: { writeText: vi.fn() },

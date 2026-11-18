@@ -41,6 +41,7 @@ function policy(): PublicUserPolicy {
 
 function capabilities(profile: 'local' | 'public' = 'public'): RuntimeCapabilities {
   return {
+    installedModels: Object.keys(policy().models).filter(key => key !== 'aux_ysg_yolo'),
     profile,
     requiresAuth: profile === 'public',
     browserCredentials: profile === 'public',

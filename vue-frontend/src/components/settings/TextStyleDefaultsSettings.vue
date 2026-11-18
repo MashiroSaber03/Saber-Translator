@@ -27,6 +27,7 @@
       :model-value="draftDefaults"
       :font-select-options="fontSelectOptions"
       :font-disabled="isLoading || isUploadingFont"
+      :auto-text-color-available="publicAccess.modelAllowed('ocr_48px')"
       :inpaint-method-options="inpaintMethodOptions"
       @change="updateDraft"
       @font-change="handleFontSelectChange"
@@ -66,17 +67,14 @@ import {
   inpaintMethodOptions as rawInpaintMethodOptions,
 } from '@/utils/textStyleForm'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
+import { INPAINT_MODEL_KEYS } from '@/utils/localModelAvailability'
 
 const toast = useToast()
 const settingsStore = useSettingsStore()
 const publicAccess = usePublicUserAccess()
 const inpaintMethodOptions = computed(() => publicAccess.modelOptions(
   rawInpaintMethodOptions,
-  {
-    lama_mpe: 'lama_mpe',
-    litelama: 'litelama',
-    lama_manga: 'lama_manga',
-  },
+  INPAINT_MODEL_KEYS,
 ))
 const draftDefaults = computed(() => settingsStore.textStyleDefaults)
 const isLoading = ref(false)

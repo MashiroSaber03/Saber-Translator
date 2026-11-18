@@ -13,7 +13,7 @@ import numpy as np
 
 from ..base import BaseTextDetector
 from ..data_types import TextLine
-from src.shared.path_helpers import resource_path
+from src.shared.model_catalog import model_directory
 from src.shared import constants
 from src.shared.user_logging import user_log
 
@@ -38,7 +38,7 @@ class SaberYoloBackend(BaseTextDetector):
         iou_thresh: float = constants.SABER_YOLO_IOU_THRESH,
     ):
         self.model_dir = (
-            resource_path(constants.SABER_YOLO_MODEL_DIR)
+            model_directory("saber_yolo")
             if model_dir is None
             else model_dir
         )

@@ -4,6 +4,8 @@ import ast
 import importlib.util
 from pathlib import Path
 
+import yaml
+
 from src.backend_v2.dispatch import _parser
 
 
@@ -141,6 +143,26 @@ def test_release_workflow_builds_the_triggering_revision() -> None:
     assert "npm run lint:ui:audit" in workflow
     assert 'echo "Build result: ${{ needs.build.result }}"' in workflow
     assert 'if [ "${{ needs.build.result }}" = "success" ]; then' in workflow
+
+
+def test_validation_builds_both_packages_without_publishing() -> None:
+    workflow = yaml.load(
+        (PROJECT_ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    assert workflow["on"]["push"]["branches"] == ["dev"]
+    assert workflow["on"]["pull_request"]["branches"] == ["dev"]
+    assert workflow["on"]["workflow_dispatch"]["inputs"]["publish"]["default"] == "false"
+    prepare = workflow["jobs"]["prepare"]
+    release_guard = next(step for step in prepare["steps"] if step.get("id") == "release_target")
+    assert release_guard["if"] == "steps.version.outputs.PUBLISH == 'true'"
+    build = workflow["jobs"]["build"]
+    assert {entry["variant"] for entry in build["strategy"]["matrix"]["include"]} == {"cpu", "gpu"}
+    assert "needs.editor_runtime.result == 'skipped'" in build["if"]
+    uploads = [step for step in build["steps"] if "upload_release_assets.py" in step.get("run", "")]
+    assert len(uploads) == 2
+    assert all("needs.prepare.outputs.publish == 'true'" in step["if"] for step in uploads)
+    assert workflow["jobs"]["editor_runtime"]["if"] == "needs.prepare.outputs.publish == 'true'"
 
 
 def test_direct_runtime_dependencies_are_declared() -> None:

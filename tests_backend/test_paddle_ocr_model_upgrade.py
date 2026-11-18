@@ -15,6 +15,7 @@ from src.interfaces.paddleocr_vl_interface import (
     PaddleOCRVLHandler,
 )
 from src.shared import constants
+from src.shared.model_catalog import MODELS_BY_ID
 from src.shared.paddleocr_vl import (
     PADDLEOCR_VL_LANGUAGE_NAMES,
     build_paddleocr_vl_prompt,
@@ -25,14 +26,15 @@ def test_paddle_model_versions_are_explicitly_pinned() -> None:
     assert constants.PADDLE_OCR_VERSION == "PP-OCRv6"
     assert constants.PADDLE_OCR_MODEL_TIER == "medium"
     assert constants.PADDLEOCR_VL_VERSION == "PaddleOCR-VL-1.6"
-    assert constants.PADDLE_OCR_MODEL_DIR == "models/paddle_ocr_onnx_v6"
-    assert constants.PADDLEOCR_VL_MODEL_DIR == "models/paddleocr_vl_1_6"
+    assert MODELS_BY_ID["paddle_ocr"].directory == "paddle_ocr_onnx_v6"
+    assert MODELS_BY_ID["paddleocr_vl"].directory == "paddleocr_vl_1_6"
 
 
 def test_ppocrv6_parses_rapidocr_v3_output_and_passes_bgr() -> None:
     handler = PaddleOCRHandlerONNX()
     handler.initialized = True
-    handler.ocr = mock.Mock(
+    handler._global_config = SimpleNamespace(use_preprocess_img=False)
+    handler.text_recognizer = mock.Mock(
         side_effect=(
             SimpleNamespace(txts=("第一行",), scores=(0.9,)),
             SimpleNamespace(txts=("第二行",), scores=(0.7,)),
@@ -57,23 +59,23 @@ def test_ppocrv6_parses_rapidocr_v3_output_and_passes_bgr() -> None:
     assert results[0].confidence == pytest.approx(0.8)
     assert results[0].confidence_supported is True
 
-    assert handler.ocr.call_count == 2
-    for call in handler.ocr.call_args_list:
-        model_input = call.args[0]
+    assert handler.text_recognizer.call_count == 2
+    for call in handler.text_recognizer.call_args_list:
+        model_input = call.args[0].img[0]
         assert model_input.flags["C_CONTIGUOUS"]
         assert model_input.shape == (4, 4, 3)
         assert model_input[0, 0].tolist() == [0, 0, 255]
-        assert call.kwargs == {
-            "use_det": False,
-            "use_cls": False,
-            "use_rec": True,
-        }
+        assert call.args[0].return_word_box is False
+        assert call.kwargs == {}
 
 
 def test_ppocrv6_detects_and_orders_vertical_textlines() -> None:
     handler = PaddleOCRHandlerONNX()
     handler.initialized = True
-    handler.ocr = mock.Mock(
+    handler._global_config = SimpleNamespace(
+        use_preprocess_img=False, use_vertical_padding=False,
+    )
+    handler.text_detector = mock.Mock(
         return_value=SimpleNamespace(
             boxes=np.asarray(
                 [
@@ -103,20 +105,16 @@ def test_ppocrv6_detects_and_orders_vertical_textlines() -> None:
             "confidence": 0.4,
         },
     ]
-    model_input = handler.ocr.call_args.args[0]
+    model_input = handler.text_detector.call_args.args[0]
     assert model_input.flags["C_CONTIGUOUS"]
     assert model_input[0, 0].tolist() == [0, 0, 255]
-    assert handler.ocr.call_args.kwargs == {
-        "use_det": True,
-        "use_cls": False,
-        "use_rec": False,
-    }
+    assert handler.text_detector.call_args.kwargs == {}
 
 
 def test_ppocrv6_requires_current_textlines() -> None:
     handler = PaddleOCRHandlerONNX()
     handler.initialized = True
-    handler.ocr = mock.Mock()
+    handler.text_recognizer = mock.Mock()
     image = Image.new("RGB", (8, 8), "white")
     try:
         with pytest.raises(ValueError, match="文本行必须是数组"):
@@ -126,7 +124,7 @@ def test_ppocrv6_requires_current_textlines() -> None:
     finally:
         image.close()
 
-    handler.ocr.assert_not_called()
+    handler.text_recognizer.assert_not_called()
 
 
 def test_core_passes_detected_textlines_to_ppocrv6(
@@ -306,6 +304,21 @@ def test_ppocrv6_uses_one_fixed_multilingual_model_set() -> None:
     assert dict_path == os.path.join("model-root", "ppocrv6_dict.txt")
 
 
+def test_ppocrv6_retry_resolves_the_current_model_directory(monkeypatch) -> None:
+    from src.interfaces import paddle_ocr_onnx_interface
+
+    directory = mock.Mock(side_effect=["legacy", "legacy", "installed"])
+    monkeypatch.setattr(paddle_ocr_onnx_interface, "model_directory", directory)
+    handler = PaddleOCRHandlerONNX()
+    check = mock.Mock(return_value=(False, ["fixture missing"]))
+    monkeypatch.setattr(handler, "_check_models_exist", check)
+
+    assert handler.initialize() is False
+    assert check.call_args.args[0] == os.path.join("legacy", "det.onnx")
+    assert handler.initialize() is False
+    assert check.call_args.args[0] == os.path.join("installed", "det.onnx")
+
+
 @pytest.mark.parametrize(
     ("providers", "torch_cuda_available", "expected_use_cuda"),
     [
@@ -324,15 +337,14 @@ def test_ppocrv6_auto_selects_cuda_and_scopes_thread_limits(
     for filename in ("det.onnx", "rec.onnx", "ppocrv6_dict.txt"):
         (tmp_path / filename).write_bytes(b"fixture")
 
-    rapidocr_factory = mock.Mock(return_value=object())
-    fake_rapidocr = SimpleNamespace(
-        EngineType=SimpleNamespace(ONNXRUNTIME="onnxruntime"),
-        LangDet=SimpleNamespace(CH="ch"),
-        LangRec=SimpleNamespace(CH="ch"),
-        ModelType=SimpleNamespace(MEDIUM="medium"),
-        OCRVersion=SimpleNamespace(PPOCRV6="PP-OCRv6"),
-        RapidOCR=rapidocr_factory,
-    )
+    from rapidocr import ch_ppocr_det, ch_ppocr_rec, ch_ppocr_cls
+
+    detector = mock.Mock()
+    recognizer = mock.Mock()
+    classifier = mock.Mock(side_effect=AssertionError("unused CLS must not load"))
+    monkeypatch.setattr(ch_ppocr_det, "TextDetector", detector)
+    monkeypatch.setattr(ch_ppocr_rec, "TextRecognizer", recognizer)
+    monkeypatch.setattr(ch_ppocr_cls, "TextClassifier", classifier)
     preload_dlls = mock.Mock()
     fake_onnxruntime = SimpleNamespace(
         preload_dlls=preload_dlls,
@@ -343,18 +355,25 @@ def test_ppocrv6_auto_selects_cuda_and_scopes_thread_limits(
             is_available=mock.Mock(return_value=torch_cuda_available),
         )
     )
-    monkeypatch.setitem(sys.modules, "rapidocr", fake_rapidocr)
     monkeypatch.setitem(sys.modules, "onnxruntime", fake_onnxruntime)
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
     handler = PaddleOCRHandlerONNX()
-    handler.model_base_dir = str(tmp_path)
+    monkeypatch.setattr(
+        "src.interfaces.paddle_ocr_onnx_interface.model_directory", lambda _: str(tmp_path),
+    )
 
     assert handler.initialize() is True
 
-    params = rapidocr_factory.call_args.kwargs["params"]
-    assert params["EngineConfig.onnxruntime.intra_op_num_threads"] == 1
-    assert params["EngineConfig.onnxruntime.inter_op_num_threads"] == 1
-    assert params["EngineConfig.onnxruntime.use_cuda"] is expected_use_cuda
+    det_config = detector.call_args.args[0]
+    rec_config = recognizer.call_args.args[0]
+    for config in (det_config, rec_config):
+        assert config.engine_cfg.intra_op_num_threads == 1
+        assert config.engine_cfg.inter_op_num_threads == 1
+        assert config.engine_cfg.use_cuda is expected_use_cuda
+    assert det_config.model_path == str(tmp_path / "det.onnx")
+    assert rec_config.model_path == str(tmp_path / "rec.onnx")
+    assert rec_config.rec_keys_path == str(tmp_path / "ppocrv6_dict.txt")
+    classifier.assert_not_called()
     if expected_use_cuda:
         preload_dlls.assert_called_once_with()
     else:

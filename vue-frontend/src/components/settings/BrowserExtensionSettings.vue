@@ -1,14 +1,19 @@
 <template>
-  <BrowserExtensionSettingsForm ref="editor" :api="api" @saving="emit('saving', $event)" />
+  <BrowserExtensionSettingsForm ref="editor" :api="api" :inpaint-method-options="inpaintOptions" :auto-text-color-available="access.modelAllowed('ocr_48px')" @saving="emit('saving', $event)" />
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
+import { INPAINT_MODEL_KEYS } from '@/utils/localModelAvailability'
+import { inpaintMethodOptions } from '@/utils/textStyleForm'
 import { createUuid } from '@/utils/uuid'
 import { apiClient } from '@/api/client'
 import BrowserExtensionSettingsForm from './BrowserExtensionSettingsForm.vue'
 import type { PluginSettingsApi } from '@/types/browserExtensionSettings'
 const emit = defineEmits<{ (event: 'saving', value: boolean): void }>()
+const access = usePublicUserAccess()
+const inpaintOptions = computed(() => access.modelOptions(inpaintMethodOptions, INPAINT_MODEL_KEYS))
 const editor = ref<InstanceType<typeof BrowserExtensionSettingsForm>>()
 const api: PluginSettingsApi = async <T,>(path: string, method = 'GET', body?: unknown) => {
   const url = `/api/v2${path}`

@@ -127,7 +127,7 @@
           v-show="activeTab === 'more'"
           class="settings-modal__tab-pane"
         >
-          <MoreSettings />
+          <MoreSettings :active="isOpen && activeTab === 'more'" />
         </div>
       </div>
       <p v-else class="settings-modal__loading">正在读取后端设置…</p>
@@ -135,16 +135,16 @@
 
     <template #footer>
       <div class="settings-modal__footer">
-      <ProductStatusBanner v-if="closeSaveFailed" tone="danger" role="alert">
-        保存失败，部分修改尚未保存。可以继续编辑并重试；仍然关闭可能丢失未保存的修改。
-      </ProductStatusBanner>
-      <ProductActionRow aria-label="设置状态" variant="dialog">
-        <span class="settings-modal__save-status">
-          {{ isSaving ? '正在保存…' : closeSaveFailed ? '上次关闭时保存失败' : '修改后自动保存' }}
-        </span>
-        <UiButton v-if="closeSaveFailed" variant="secondary" :disabled="isSaving" @click="closeModal(true)">仍然关闭</UiButton>
-        <UiButton variant="primary" :disabled="isSaving" @click="handleClose">完成</UiButton>
-      </ProductActionRow>
+        <ProductStatusBanner v-if="closeSaveFailed" tone="danger" role="alert">
+          保存失败，部分修改尚未保存。可以继续编辑并重试；仍然关闭可能丢失未保存的修改。
+        </ProductStatusBanner>
+        <ProductActionRow aria-label="设置状态" variant="dialog">
+          <span class="settings-modal__save-status">
+            {{ isSaving ? '正在保存…' : closeSaveFailed ? '上次关闭时保存失败' : '修改后自动保存' }}
+          </span>
+          <UiButton v-if="closeSaveFailed" variant="secondary" :disabled="isSaving" @click="closeModal(true)">仍然关闭</UiButton>
+          <UiButton variant="primary" :disabled="isSaving" @click="handleClose">完成</UiButton>
+        </ProductActionRow>
       </div>
     </template>
   </BaseModal>

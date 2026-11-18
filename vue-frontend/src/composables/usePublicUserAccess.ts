@@ -2,6 +2,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useRuntimeStore } from '@/stores/runtimeStore'
 import type { PublicFeatureKey, PublicModelKey } from '@/api/v2/auth'
 import type { UiSelectOption } from '@/components/ui/selectTypes'
+import { installedModelOptions, localModelInstalled } from '@/utils/localModelAvailability'
 
 export function usePublicUserAccess() {
   const auth = useAuthStore()
@@ -16,14 +17,16 @@ export function usePublicUserAccess() {
   }
 
   function modelAllowed(model: PublicModelKey): boolean {
-    return !restricted() || runtime.capabilities?.publicUserPolicy.models[model] !== false
+    return localModelInstalled(model, runtime.capabilities?.installedModels ?? []) &&
+      (!restricted() || runtime.capabilities?.publicUserPolicy.models[model] !== false) &&
+      (!(model === 'detector_ctd' || model === 'detector_yolo') || modelAllowed('detector_default'))
   }
 
   function modelOptions(
     options: UiSelectOption[],
     modelByValue: Partial<Record<string, PublicModelKey>>
   ): UiSelectOption[] {
-    return options.map(option => {
+    return installedModelOptions(options, modelByValue, runtime.capabilities?.installedModels ?? []).map(option => {
       const model = modelByValue[String(option.value)]
       if (!model || modelAllowed(model)) return option
       return {

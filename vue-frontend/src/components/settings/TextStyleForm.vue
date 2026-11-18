@@ -90,11 +90,13 @@
         variant="settings"
         control="checkbox"
         label="自动识别文字颜色"
+        hint="需要安装 48px OCR"
         :control-id="id('UseAutoTextColor')"
       >
         <UiCheckbox
           :input-id="id('UseAutoTextColor')"
           :model-value="draftDefaults.useAutoTextColor"
+          :disabled="!autoTextColorAvailable && !draftDefaults.useAutoTextColor"
           @change="updateUseAutoTextColor"
         />
       </UiField>
@@ -114,6 +116,7 @@
             :id="id('InpaintMethod')"
             :model-value="draftDefaults.inpaintMethod"
             :options="inpaintMethodOptions"
+            placeholder="请选择已安装的修复模型或纯色填充"
             @change="handleInpaintMethodChange"
           />
         </UiField>
@@ -201,11 +204,13 @@ const props = withDefaults(
     modelValue: TextStyleSettings
     fontSelectOptions: UiSelectOption[]
     fontDisabled?: boolean
+    autoTextColorAvailable?: boolean
     inpaintMethodOptions?: UiSelectOption[]
     idPrefix?: string
   }>(),
   {
     fontDisabled: false,
+    autoTextColorAvailable: true,
     idPrefix: 'textDefaults',
     inpaintMethodOptions: () => defaultInpaintOptions,
   }

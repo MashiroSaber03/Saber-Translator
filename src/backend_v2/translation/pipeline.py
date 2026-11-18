@@ -872,6 +872,9 @@ class CoreTranslationAlgorithms:
 
         validate_detector_config(config)
 
+        from src.shared.model_catalog import detector_model_ids, require_local_models
+        require_local_models(detector_model_ids(config))
+
         from src.core.detection import (
             get_bubble_detection_result_with_auto_directions,
         )
@@ -916,6 +919,9 @@ class CoreTranslationAlgorithms:
         bubble_payloads: list[dict[str, Any]],
         config: Mapping[str, Any],
     ) -> Mapping[str, Any]:
+        from src.shared.model_catalog import ocr_model_ids, require_local_models
+        if bubble_payloads:
+            require_local_models(ocr_model_ids(config))
         from src.core.ocr import recognize_ocr_results_in_bubbles
         from src.core.ocr_types import (
             extract_texts_from_ocr_results,
@@ -1016,6 +1022,9 @@ class CoreTranslationAlgorithms:
         image: Image.Image,
         bubble_payloads: list[dict[str, Any]],
     ) -> list[Mapping[str, Any]]:
+        from src.shared.model_catalog import require_local_models
+        if bubble_payloads:
+            require_local_models(("ocr_48px",))
         from src.core.color_extractor import extract_bubble_colors
 
         coords = [payload["coords"] for payload in bubble_payloads]

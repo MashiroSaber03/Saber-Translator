@@ -136,8 +136,11 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
 
     @blueprint.get("/system/capabilities")
     def capabilities() -> Response:
+        from src.shared.model_catalog import installed_model_ids
+
         return jsonify(
             {
+                "installedModels": installed_model_ids(),
                 "profile": settings.profile.name,
                 "requiresAuth": settings.profile.requires_auth,
                 "browserCredentials": settings.profile.browser_credentials,
@@ -244,6 +247,13 @@ def _install_request_logging(app: Flask) -> None:
 
 def create_api_app(settings: ApiSettings) -> Flask:
     app = Flask("saber_translator_v2", static_folder=None)
+    from src.shared.model_catalog import MissingModelsError
+    from src.backend_v2.api.request_helpers import error_response
+
+    @app.errorhandler(MissingModelsError)
+    def missing_models(error):
+        return error_response("models_missing", str(error), 422,
+                              details={"modelIds": list(error.model_ids)})
     @app.before_request
     def storage_admission():
         if request.path != "/api/v2/health" and not business_ready(settings.data_root):
@@ -498,9 +508,14 @@ def create_api_app(settings: ApiSettings) -> Flask:
             create_jobs_blueprint(engine=engine, broadcaster=broadcaster, profile=settings.profile),
             url_prefix="/manage",
         )
+    from src.backend_v2.api.model_routes import create_model_blueprint
+    from src.backend_v2.model_installer import ModelInstaller
+
+    model_installer = ModelInstaller()
+    app.register_blueprint(create_model_blueprint(installer=model_installer, profile=settings.profile))
     app.extensions["saber_v2_runtime"] = ApiRuntimeServices(
         job_events=broadcaster,
-        executors=(cpu_operation_executor, render_executor),
+        executors=(cpu_operation_executor, render_executor, model_installer),
     )
     app.register_blueprint(
         create_content_blueprint(

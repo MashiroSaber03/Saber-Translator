@@ -2,6 +2,8 @@
   <div class="more-settings">
     <ParallelSettings />
 
+    <LocalModelsSettings v-if="!publicAccess.restricted()" :active="active" />
+
     <ProductFormSection>
       <template #title>下载设置</template>
       <UiField variant="settings" label="图片格式" hint="适用于当前页、章节和书架导出。JPG 使用质量 95 的有损压缩，体积更小；PNG 保留完整像素。均不缩放图片。">
@@ -192,8 +194,11 @@ import {
   isSupportedFontFileName,
 } from '@/utils/fontFiles'
 import ParallelSettings from './ParallelSettings.vue'
+import LocalModelsSettings from './LocalModelsSettings.vue'
 import CustomAiProfileManager from './CustomAiProfileManager.vue'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
+
+withDefaults(defineProps<{ active?: boolean }>(), { active: false })
 
 const settingsStore = useSettingsStore()
 const toast = useToast()

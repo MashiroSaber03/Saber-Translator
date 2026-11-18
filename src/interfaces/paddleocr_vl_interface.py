@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import List, Tuple
 
 import numpy as np
@@ -16,26 +15,12 @@ from src.shared.paddleocr_vl import (
     PADDLEOCR_VL_LANGUAGE_NAMES,
     build_paddleocr_vl_prompt,
 )
-from src.shared.path_helpers import resource_path
+from src.shared.model_catalog import model_directory, require_local_models
 from src.shared.user_logging import inline_log_text, user_log
 
 logger = logging.getLogger("PaddleOCR_VL")
 
 PADDLEOCR_VL_MAX_NEW_TOKENS = 512
-
-_REQUIRED_MODEL_FILES = (
-    "config.json",
-    "generation_config.json",
-    "model.safetensors",
-    "preprocessor_config.json",
-    "processor_config.json",
-    "added_tokens.json",
-    "special_tokens_map.json",
-    "tokenizer.json",
-    "tokenizer.model",
-    "tokenizer_config.json",
-    "chat_template.jinja",
-)
 
 
 class PaddleOCRVLHandler:
@@ -49,19 +34,8 @@ class PaddleOCRVLHandler:
         self.initialized = False
 
     def _get_model_path(self) -> str:
-        model_path = resource_path(constants.PADDLEOCR_VL_MODEL_DIR)
-        missing = [
-            filename
-            for filename in _REQUIRED_MODEL_FILES
-            if not os.path.isfile(os.path.join(model_path, filename))
-        ]
-        if missing:
-            raise FileNotFoundError(
-                f"{constants.PADDLEOCR_VL_VERSION} 模型包不完整，缺少: "
-                f"{', '.join(missing)}。请将单独发布的模型包完整解压到 "
-                f"{model_path}"
-            )
-        return model_path
+        require_local_models(("paddleocr_vl",))
+        return model_directory("paddleocr_vl")
 
     @staticmethod
     def _resolve_device_and_dtype(requested_device: str) -> Tuple[str, torch.dtype]:

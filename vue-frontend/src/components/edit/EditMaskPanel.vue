@@ -7,6 +7,7 @@ import UiColorInput from '@/components/ui/UiColorInput.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import type { UiIconName } from '@/components/ui/iconRegistry'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
+import { INPAINT_MODEL_KEYS } from '@/utils/localModelAvailability'
 import { inpaintMethodOptions } from '@/utils/textStyleForm'
 import type { InpaintMethod } from '@/types/bubble'
 import type { MaskTool } from '@/composables/edit/useMaskEditor'
@@ -38,9 +39,8 @@ const emit = defineEmits<{
   fillColor: [value: string]
 }>()
 const access = usePublicUserAccess()
-const repairMethods = computed(() => access.modelOptions(inpaintMethodOptions, {
-  lama_mpe: 'lama_mpe', litelama: 'litelama', lama_manga: 'lama_manga',
-}))
+const repairMethods = computed(() => access.modelOptions(inpaintMethodOptions, INPAINT_MODEL_KEYS))
+const repairAvailable = computed(() => repairMethods.value.some(option => option.value === props.inpaintMethod && !option.disabled))
 const tools: { value: MaskTool; label: string; icon: UiIconName; hint: string }[] = [
   { value: 'repair', label: '增加修复区域 (R)', icon: 'brush', hint: '修复区域笔刷：按住 R，或点击启用；再次点击退出' },
   { value: 'preserve', label: '保留原图区域 (U)', icon: 'eraser', hint: '保留原图笔刷：按住 U，或点击启用；再次点击退出' },
@@ -119,6 +119,7 @@ function layerDescription(layer: MaskLayer): string {
           <UiSelect
             aria-label="修复方式" teleport-to=".edit-mask-panel" size="sm"
             :options="repairMethods" :model-value="inpaintMethod" :disabled="busy"
+            placeholder="请选择已安装的修复模型或纯色填充"
             @update:model-value="$emit('method', $event as InpaintMethod)"
           />
         </div>
@@ -131,7 +132,7 @@ function layerDescription(layer: MaskLayer): string {
       <UiButton
         variant="toolbar" class="edit-mask-panel__control edit-mask-panel__apply"
         aria-label="按当前范围修复" title="按当前范围修复 (Ctrl+Enter)"
-        :disabled="busy || dirty || !!error" @click="$emit('apply')"
+        :disabled="busy || dirty || !!error || !repairAvailable" @click="$emit('apply')"
       >
         <UiIcon :name="applying ? 'loading' : 'wand-sparkles'" size="14" />
         {{ applying ? '正在修复…' : '按范围修复' }}

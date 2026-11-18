@@ -7,76 +7,15 @@ import cv2
 from PIL import Image
 
 # 导入路径助手
-from src.shared.path_helpers import resource_path
+from src.shared.model_catalog import model_directory, require_local_models
 from src.shared.memory_errors import is_memory_allocation_error
 from src.shared.user_logging import user_log
 
 logger = logging.getLogger("LAMAInterface")
 
-# ============================================================
-# LAMA 可用性检查
-# ============================================================
-
-LAMA_MPE_AVAILABLE = False
-LAMA_LITELAMA_AVAILABLE = False
-LAMA_MANGA_AVAILABLE = os.path.isfile(resource_path("models/lama-manga/lama-manga.safetensors"))
-
-# --- 检查 LAMA MPE ---
-try:
-    from src.interfaces.lama_mpe_interface import (
-        is_lama_mpe_available,
-        inpaint_with_lama_mpe
-    )
-    
-    if is_lama_mpe_available():
-        LAMA_MPE_AVAILABLE = True
-        logger.debug("LAMA MPE 模型可用")
-    else:
-        logger.debug("LAMA MPE 模型文件不存在: models/lama/inpainting_lama_mpe.ckpt")
-        
-except ImportError as e:
-    logger.debug(f"无法导入 LAMA MPE 模块: {e}")
-except Exception as e:
-    if is_memory_allocation_error(e):
-        raise
-    logger.debug("LAMA MPE 可用性检查失败: %s", e, exc_info=True)
-
-# --- 检查 litelama ---
-LiteLama = None
-try:
-    from litelama import LiteLama as OriginalLiteLama
-    import torch
-
-    LiteLama = OriginalLiteLama
-    
-    # 检查模型文件是否存在
-    model_path = resource_path("models/lama")
-    checkpoint_path = os.path.join(model_path, "big-lama.safetensors")
-    if os.path.exists(checkpoint_path):
-        LAMA_LITELAMA_AVAILABLE = True
-        logger.debug("litelama 模型可用")
-    else:
-        logger.debug("litelama 模型文件不存在: models/lama/big-lama.safetensors")
-
-except ImportError as e:
-    logger.debug(f"litelama 库不可用: {e}")
-except Exception as e:
-    if is_memory_allocation_error(e):
-        raise
-    logger.debug("litelama 可用性检查失败: %s", e, exc_info=True)
-
-# 最终状态日志
-if LAMA_MPE_AVAILABLE or LAMA_LITELAMA_AVAILABLE or LAMA_MANGA_AVAILABLE:
-    available_models = []
-    if LAMA_MPE_AVAILABLE:
-        available_models.append("lama_mpe (速度优化)")
-    if LAMA_LITELAMA_AVAILABLE:
-        available_models.append("litelama (通用)")
-    if LAMA_MANGA_AVAILABLE:
-        available_models.append("lama_manga (漫画)")
-    logger.debug(f"LAMA 功能已启用，可用模型: {', '.join(available_models)}")
-else:
-    logger.debug("LAMA 功能不可用：未找到可用模型")
+# Weight availability is checked when used, so installation needs no restart.
+import torch
+from src.interfaces.lama_mpe_interface import inpaint_with_lama_mpe
 
 
 # ============================================================
@@ -123,7 +62,7 @@ class LiteLamaInpainter:
     
     def __init__(self):
         # 注意：单例模式下 __init__ 会被多次调用，所以不要在这里重置状态
-        self.model_path = resource_path("models/lama/big-lama.safetensors")
+        self.model_path = os.path.join(model_directory("litelama"), "big-lama.safetensors")
     
     def load(self, device: str = None):
         """加载模型到指定设备（加载后保持在该设备上）"""
@@ -139,17 +78,14 @@ class LiteLamaInpainter:
         if device is None:
             device = "cuda:0" if torch.cuda.is_available() else "cpu"
         
-        if not os.path.exists(self.model_path):
-            raise FileNotFoundError(
-                f"litelama 模型文件不存在: {self.model_path}\n"
-                f"请下载模型文件: big-lama.safetensors\n"
-                f"并放置到: models/lama/big-lama.safetensors"
-            )
+        self.model_path = os.path.join(model_directory("litelama"), "big-lama.safetensors")
+        require_local_models(("litelama",))
         
         logger.debug(f"加载 litelama 模型: {self.model_path}，设备: {device}")
         
         # 获取 litelama 的默认配置文件
         import litelama
+        from litelama import LiteLama
 
         config_path = None
         litelama_package_dir = os.path.dirname(litelama.__file__)
@@ -317,8 +253,6 @@ def reset_litelama_inpainter():
 
 def _clean_with_litelama(image, mask, disable_resize=False):
     """使用 litelama 进行修复"""
-    if not LAMA_LITELAMA_AVAILABLE:
-        raise RuntimeError("litelama 模型不可用")
     inpainter = get_litelama_inpainter()
     return inpainter.inpaint(image, mask, disable_resize=disable_resize)
 
@@ -327,7 +261,7 @@ class LamaMangaInpainter:
     """漫画版 LaMA；与其他本地模型一样按需加载、由 Worker 释放。"""
 
     def __init__(self):
-        self.model_path = resource_path("models/lama-manga/lama-manga.safetensors")
+        self.model_path = os.path.join(model_directory("lama_manga"), "lama-manga.safetensors")
         self._model = None
         self._device = None
 
@@ -342,12 +276,8 @@ class LamaMangaInpainter:
                 self._model.to(device)
                 self._device = device
             return
-        if not os.path.isfile(self.model_path):
-            raise FileNotFoundError(
-                f"漫画版 LaMA 模型文件不存在: {self.model_path}\n"
-                "请从 https://huggingface.co/mayocream/lama-manga 下载 "
-                "lama-manga.safetensors 并放入 models/lama-manga/"
-            )
+        self.model_path = os.path.join(model_directory("lama_manga"), "lama-manga.safetensors")
+        require_local_models(("lama_manga",))
         model = FFCResNetGenerator(
             4, 3, n_blocks=18, add_out_act="sigmoid",
             init_conv_kwargs=dict(ratio_gin=0, ratio_gout=0, enable_lfu=False),
@@ -420,13 +350,9 @@ def lama_clean_object(image, mask, lama_model='lama_mpe', disable_resize=False):
     if not isinstance(disable_resize, bool):
         raise ValueError("disable_resize 必须是布尔值")
     if lama_model == 'lama_mpe':
-        if not LAMA_MPE_AVAILABLE:
-            raise RuntimeError("LAMA MPE 模型不可用")
         logger.debug("使用 LAMA MPE 进行修复")
         return _clean_with_lama_mpe(image, mask, disable_resize=disable_resize)
     if lama_model == 'litelama':
-        if not LAMA_LITELAMA_AVAILABLE:
-            raise RuntimeError("litelama 模型不可用")
         logger.debug("使用 litelama 进行修复")
         return _clean_with_litelama(image, mask, disable_resize=disable_resize)
     if lama_model == 'lama_manga':

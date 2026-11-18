@@ -4,6 +4,7 @@ import { getCapabilities, type PublicUserPolicy, type RuntimeCapabilities } from
 import { configureLocalProviderVisibility } from '@/config/aiProviders'
 
 const LOCAL_CAPABILITIES: RuntimeCapabilities = {
+  installedModels: [],
   profile: 'local',
   requiresAuth: false,
   browserCredentials: false,
@@ -42,13 +43,13 @@ export const useRuntimeStore = defineStore('runtime', () => {
   const capabilities = ref<RuntimeCapabilities | null>(null)
   let loading: Promise<RuntimeCapabilities> | null = null
 
-  async function load(): Promise<RuntimeCapabilities> {
-    if (capabilities.value) return capabilities.value
+  async function load(refresh = false): Promise<RuntimeCapabilities> {
+    if (!refresh && capabilities.value) return capabilities.value
     if (loading) return loading
     loading = getCapabilities()
       .then(value => {
         configureLocalProviderVisibility(value.features.localProviders)
-        capabilities.value = value
+        if (JSON.stringify(capabilities.value) !== JSON.stringify(value)) capabilities.value = value
         return value
       })
       .finally(() => {
@@ -59,7 +60,9 @@ export const useRuntimeStore = defineStore('runtime', () => {
 
   function assumeLocalForTests(): void {
     configureLocalProviderVisibility(true)
-    capabilities.value = LOCAL_CAPABILITIES
+    capabilities.value = structuredClone(LOCAL_CAPABILITIES)
+    capabilities.value.installedModels = Object.keys(LOCAL_CAPABILITIES.publicUserPolicy.models)
+      .filter(model => model !== 'aux_ysg_yolo')
   }
 
   function setRegistrationRequiresInvite(value: boolean): void {

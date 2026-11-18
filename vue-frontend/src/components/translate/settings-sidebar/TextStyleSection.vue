@@ -15,6 +15,7 @@ import ApplyOptionsSection from './ApplyOptionsSection.vue'
 withDefaults(defineProps<{
   applyOptions: ApplySettingsOptions
   disabled?: boolean
+  autoTextColorAvailable?: boolean
   fontSelectOptions: UiSelectOption[]
   hasImages: boolean
   inpaintMethodOptions: UiSelectOption[]
@@ -25,6 +26,7 @@ withDefaults(defineProps<{
   textStyle: TextStyleSettings
 }>(), {
   disabled: false,
+  autoTextColorAvailable: true,
 })
 
 defineEmits<{
@@ -191,7 +193,8 @@ const isTextStyleExpanded = ref(true)
               class="text-style-section__toggle text-style-section__toggle--auto-color"
               input-id="useAutoTextColor"
               :model-value="textStyle.useAutoTextColor"
-              :disabled="disabled"
+              :disabled="disabled || (!autoTextColorAvailable && !textStyle.useAutoTextColor)"
+              title="需要安装 48px OCR"
               label="自动"
               @change="$emit('updateUseAutoTextColor', $event)"
             />
@@ -211,6 +214,7 @@ const isTextStyleExpanded = ref(true)
             id="useInpainting"
             :model-value="textStyle.inpaintMethod"
             :options="inpaintMethodOptions"
+            placeholder="请选择已安装的修复模型或纯色填充"
             :disabled="disabled"
             @change="$emit('inpaintMethodChange', $event)"
           />

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { installedModelOptions, localModelInstalled, INPAINT_MODEL_KEYS } from '../../../vue-frontend/src/utils/localModelAvailability'
 import { useBrowserExtensionSettings } from '../../../vue-frontend/src/composables/useBrowserExtensionSettings'
 import SelectControl from './SelectControl.vue'
 import ColorControl from './ColorControl.vue'
 import NumberControl from './NumberControl.vue'
 import type { PluginSettingsApi } from '../../../vue-frontend/src/types/browserExtensionSettings'
-const props = defineProps<{ api: PluginSettingsApi; active?: boolean }>()
+const props = defineProps<{ api: PluginSettingsApi; active?: boolean; installedModels: string[] }>()
 const {
   style,
   fontOptions,
@@ -51,12 +52,12 @@ const layouts = [
   { value: 'vertical', label: '竖排' },
   { value: 'horizontal', label: '横排' },
 ]
-const fills = [
+const fills = computed(() => installedModelOptions([
   { value: 'solid', label: '纯色填充' },
   { value: 'lama_mpe', label: 'LAMA 修复' },
   { value: 'litelama', label: 'LiteLAMA 修复' },
   { value: 'lama_manga', label: 'LAMA 漫画修复' },
-]
+], INPAINT_MODEL_KEYS, props.installedModels))
 function number(event: Event, field: 'fontSize' | 'lineSpacing') {
   const input = event.target as HTMLInputElement
   if (input.validity.valid && Number.isFinite(input.valueAsNumber))
@@ -173,6 +174,7 @@ function number(event: Event, field: 'fontSize' | 'lineSpacing') {
             type="checkbox"
             class="switch"
             :checked="style.useAutoTextColor"
+            :disabled="!localModelInstalled('ocr_48px', installedModels) && !style.useAutoTextColor"
             @change="
               changeStyle({
                 useAutoTextColor: ($event.target as HTMLInputElement).checked,

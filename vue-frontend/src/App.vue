@@ -69,6 +69,13 @@ const bootstrapDescription = computed(() => {
   return '正在读取已保存的应用设置。'
 })
 let appMounted = false
+let modelRefreshTimer: ReturnType<typeof setInterval> | undefined
+
+function refreshRuntime(): void {
+  if (document.visibilityState !== 'hidden') {
+    void runtimeStore.load(true).catch(() => { /* Keep the last successful inventory when offline. */ })
+  }
+}
 
 settingsStore.initSettings()
 
@@ -137,6 +144,9 @@ function handleAuthenticationRequired(): void {
 onMounted(async () => {
   appMounted = true
   window.addEventListener('saber:authentication-required', handleAuthenticationRequired)
+  window.addEventListener('focus', refreshRuntime)
+  document.addEventListener('visibilitychange', refreshRuntime)
+  modelRefreshTimer = setInterval(refreshRuntime, 5000)
   await router.isReady()
   if (appMounted) routerReady.value = true
 })
@@ -148,6 +158,9 @@ watch([routerReady, readerImmersiveMode, applicationContextReady, settingsContex
 onBeforeUnmount(() => {
   appMounted = false
   window.removeEventListener('saber:authentication-required', handleAuthenticationRequired)
+  window.removeEventListener('focus', refreshRuntime)
+  document.removeEventListener('visibilitychange', refreshRuntime)
+  clearInterval(modelRefreshTimer)
   taskCenterStore.disconnect()
 })
 </script>

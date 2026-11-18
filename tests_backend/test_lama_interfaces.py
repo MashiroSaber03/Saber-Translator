@@ -36,10 +36,11 @@ def test_manga_routes_masks_and_preserves_original_pixels(monkeypatch, disable_r
 
 
 def test_manga_missing_weights_does_not_fall_back(monkeypatch, tmp_path):
+    monkeypatch.setenv("SABER_MODELS_DIR", str(tmp_path / "models"))
     inpainter = lama_interface.LamaMangaInpainter()
     inpainter.model_path = str(tmp_path / "missing.safetensors")
     monkeypatch.setattr(lama_interface, "_lama_manga_inpainter", inpainter)
-    with pytest.raises(FileNotFoundError, match="lama-manga"):
+    with pytest.raises(FileNotFoundError, match="模型管理"):
         lama_interface.lama_clean_object(
             Image.new("RGB", (8, 8)), Image.new("L", (8, 8), 255),
             lama_model="lama_manga",
@@ -140,7 +141,6 @@ def test_lama_mpe_rejects_malformed_inputs() -> None:
 def test_selected_lama_model_failure_does_not_switch_models(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(lama_interface, "LAMA_MPE_AVAILABLE", True)
     selected = mock.Mock(side_effect=RuntimeError("selected model failed"))
     other = mock.Mock()
     monkeypatch.setattr(lama_interface, "_clean_with_lama_mpe", selected)

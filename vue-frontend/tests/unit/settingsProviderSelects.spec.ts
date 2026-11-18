@@ -13,6 +13,7 @@ import UiField from '@/components/ui/UiField.vue'
 import UiModelPicker from '@/components/ui/UiModelPicker.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { useSettingsStore } from '@/stores/settings'
+import { useRuntimeStore } from '@/stores/runtimeStore'
 
 const { fetchModelsMock } = vi.hoisted(() => ({
   fetchModelsMock: vi.fn(),
@@ -78,8 +79,41 @@ describe('settings provider select contracts', () => {
   beforeEach(() => {
     pinia = createPinia()
     setActivePinia(pinia)
+    useRuntimeStore().assumeLocalForTests()
     localStorage.clear()
     fetchModelsMock.mockReset()
+  })
+
+  it('filters live installations and dependencies without rewriting saved OCR choices', async () => {
+    const runtime = useRuntimeStore()
+    const store = useSettingsStore()
+    store.setOcrEngine('paddleocr_vl')
+    const original = JSON.stringify(store.settings)
+    runtime.capabilities!.installedModels = []
+    const wrapper = mount(OcrSettings, globalMountOptions(pinia))
+    const engines = () => wrapper.findAllComponents(UiSelect)[0]!
+      .props('options').map((option: { value: string }) => option.value)
+    expect(engines()).toEqual(['baidu_ocr', 'ai_vision'])
+    expect(wrapper.get('#settingsOcrEngine').text()).toContain('更多 → 模型管理')
+    expect(wrapper.get('#settingsHybridOcrEnabled').attributes('disabled')).toBeDefined()
+    runtime.capabilities!.installedModels = ['manga_ocr', 'ocr_48px']
+    await flushPromises()
+    expect(engines()).toEqual(['manga_ocr', 'baidu_ocr', '48px_ocr', 'ai_vision'])
+    expect(wrapper.get('#settingsHybridOcrEnabled').attributes('disabled')).toBeUndefined()
+    expect(JSON.stringify(store.settings)).toBe(original)
+    wrapper.unmount()
+
+    runtime.capabilities!.installedModels = ['detector_ctd', 'detector_yolo']
+    const detection = mount(DetectionSettings, globalMountOptions(pinia))
+    const choices = () => detection.findAllComponents(UiSelect)[0]!.props('options')
+    expect(choices()).toEqual([])
+    runtime.capabilities!.installedModels.push('detector_default')
+    await flushPromises()
+    expect(choices().map((option: { value: string }) => option.value)).toEqual(['ctd', 'yolo', 'default'])
+    runtime.capabilities!.installedModels = ['detector_default']
+    await flushPromises()
+    expect(choices().map((option: { value: string }) => option.value)).toEqual(['default'])
+    detection.unmount()
   })
 
   it('uses fixed select primitives for model-provider fields outside dynamic model lists', () => {

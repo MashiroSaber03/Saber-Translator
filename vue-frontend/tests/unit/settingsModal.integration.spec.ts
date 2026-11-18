@@ -24,6 +24,8 @@ vi.mock('@/stores/runtimeStore', () => ({
   }),
 }))
 
+vi.mock('@/stores/authStore', () => ({ useAuthStore: () => ({ isAdmin: true }) }))
+
 vi.mock('@/utils/toast', () => ({
   showToast: vi.fn(),
 }))

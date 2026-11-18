@@ -6,24 +6,16 @@ import time
 import torch
 
 # 导入路径助手
-from src.shared.path_helpers import resource_path
+from src.shared.model_catalog import model_directory, require_local_models
 from src.shared.memory_errors import is_memory_allocation_error
 from src.shared.user_logging import user_log
 
-# 设置缓存目录路径 - 新位置：models/manga_ocr/
-model_cache_dir = resource_path('models/manga_ocr')
-
-torch.hub.set_dir(model_cache_dir)
-os.environ['TRANSFORMERS_CACHE'] = model_cache_dir
-os.environ['TORCH_HOME'] = model_cache_dir
 # 强制使用离线模式，优先使用本地模型
 os.environ['HF_DATASETS_OFFLINE'] = '1'
 os.environ['TRANSFORMERS_OFFLINE'] = '1'
 os.environ['HF_HUB_OFFLINE'] = '1'
 os.environ['DISABLE_TELEMETRY'] = '1'
 os.environ['NO_GCE_CHECK'] = '1'  # 禁用Google Cloud检查
-os.environ['HF_DATASETS_DOWNLOADED_DATASETS_PATH'] = model_cache_dir
-os.environ['HF_DATASETS_DOWNLOADED_MODULES_PATH'] = model_cache_dir
 
 logger = logging.getLogger("MangaOCRInterface")
 
@@ -68,7 +60,10 @@ def get_manga_ocr_instance():
         if _manga_ocr_instance is not None:
             return _manga_ocr_instance
 
-        # 现代版本的MangaOCR会自动处理模型下载和路径
+        require_local_models(("manga_ocr",))
+        model_cache_dir = model_directory("manga_ocr")
+
+        # Model downloads are explicit; inference always uses local files.
         logger.debug("开始初始化 MangaOCR 实例...")
         start_time = time.time()
         # 检测GPU并设置使用

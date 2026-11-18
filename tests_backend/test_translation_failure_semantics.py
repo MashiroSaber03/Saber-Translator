@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 from unittest import mock
 
 from PIL import Image
@@ -39,7 +40,8 @@ def test_batch_parser_rejects_missing_translation_items() -> None:
 def test_paddle_ocr_strict_mode_propagates_per_bubble_failure() -> None:
     handler = PaddleOCRHandlerONNX()
     handler.initialized = True
-    handler.ocr = mock.Mock(side_effect=RuntimeError("rapidocr failed"))
+    handler.text_recognizer = mock.Mock(side_effect=RuntimeError("rapidocr failed"))
+    handler._global_config = SimpleNamespace(use_preprocess_img=False)
     image = Image.new("RGB", (16, 16), "white")
     try:
         with pytest.raises(RuntimeError, match="rapidocr failed"):

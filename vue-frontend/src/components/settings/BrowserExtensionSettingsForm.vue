@@ -20,6 +20,8 @@
           :model-value="style"
           :id-prefix="idPrefix"
           :font-select-options="fontOptions"
+          :inpaint-method-options="inpaintMethodOptions"
+          :auto-text-color-available="autoTextColorAvailable"
           @change="changeStyle"
           @font-change="updateFont"
         />
@@ -89,6 +91,7 @@
 <script setup lang="ts">
 import { useId, watch } from 'vue'
 import type { PluginSettingsApi } from '@/types/browserExtensionSettings'
+import type { UiSelectOption } from '@/components/ui/selectTypes'
 import { useBrowserExtensionSettings } from '@/composables/useBrowserExtensionSettings'
 import TextStyleForm from './TextStyleForm.vue'
 import AiProviderCredentialFields from './AiProviderCredentialFields.vue'
@@ -100,7 +103,7 @@ import UiSelect from '@/components/ui/UiSelect.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 
-const props = defineProps<{ api: PluginSettingsApi }>()
+const props = defineProps<{ api: PluginSettingsApi; inpaintMethodOptions?: UiSelectOption[]; autoTextColorAvailable?: boolean }>()
 const emit = defineEmits<{ saving: [value: boolean] }>()
 const idPrefix = `browserSettings-${useId()}-`
 const {

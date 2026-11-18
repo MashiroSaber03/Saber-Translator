@@ -1,13 +1,14 @@
 """PP-OCRv6 ONNX integration backed by RapidOCR 3.x.
 
-The desktop app ships the official PP-OCRv6 ``medium`` detection and
-recognition ONNX models.  PaddlePaddle itself is not required at runtime.
+Uses the locally installed official PP-OCRv6 ``medium`` detection and
+recognition models. PaddlePaddle itself is not required at runtime.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 import time
 from numbers import Real
 from typing import List, Tuple
@@ -19,7 +20,7 @@ from src.core.ocr_types import OcrResult, create_ocr_result
 from src.shared import constants
 from src.shared.image_helpers import image_to_rgb_array
 from src.shared.memory_errors import is_memory_allocation_error
-from src.shared.path_helpers import resource_path
+from src.shared.model_catalog import model_directory
 from src.shared.user_logging import inline_log_text, user_log
 
 logger = logging.getLogger("PaddleOCR_ONNX")
@@ -33,8 +34,10 @@ class PaddleOCRHandlerONNX:
     CUDA_EXECUTION_PROVIDER = "CUDAExecutionProvider"
 
     def __init__(self) -> None:
-        self.model_base_dir = resource_path(constants.PADDLE_OCR_MODEL_DIR)
-        self.ocr = None
+        self.model_base_dir = model_directory("paddle_ocr")
+        self.text_detector = None
+        self.text_recognizer = None
+        self._global_config = None
         self.initialized = False
 
     def _get_model_paths(self) -> Tuple[str, str, str]:
@@ -89,9 +92,14 @@ class PaddleOCRHandlerONNX:
 
     def initialize(self) -> bool:
         try:
-            if self.initialized and self.ocr is not None:
+            if (
+                self.initialized
+                and self.text_detector is not None
+                and self.text_recognizer is not None
+            ):
                 return True
 
+            self.model_base_dir = model_directory("paddle_ocr")
             det_path, rec_path, dict_path = self._get_model_paths()
 
             exists, missing = self._check_models_exist(
@@ -103,9 +111,7 @@ class PaddleOCRHandlerONNX:
                 for item in missing:
                     logger.error("缺少 %s", item)
                 logger.error(
-                    "请将单独发布的 %s %s 模型包完整解压到 %s",
-                    self.MODEL_VERSION,
-                    self.MODEL_TIER,
+                    "请在设置 → 更多 → 模型管理中安装 PP-OCRv6，下载目录: %s",
                     self.model_base_dir,
                 )
                 user_log(
@@ -121,8 +127,12 @@ class PaddleOCRHandlerONNX:
                 LangRec,
                 ModelType,
                 OCRVersion,
-                RapidOCR,
             )
+            import rapidocr
+            from rapidocr.ch_ppocr_det import TextDetector
+            from rapidocr.ch_ppocr_rec import TextRecognizer
+            from rapidocr.utils.parse_parameters import ParseParams
+
             use_cuda = self._cuda_execution_provider_available()
 
             logger.debug(
@@ -131,25 +141,36 @@ class PaddleOCRHandlerONNX:
                 self.MODEL_TIER,
                 "CUDA" if use_cuda else "CPU",
             )
-            self.ocr = RapidOCR(
-                params={
-                    "Global.use_cls": False,
-                    "EngineConfig.onnxruntime.intra_op_num_threads": 1,
-                    "EngineConfig.onnxruntime.inter_op_num_threads": 1,
-                    "EngineConfig.onnxruntime.use_cuda": use_cuda,
-                    "Det.engine_type": EngineType.ONNXRUNTIME,
-                    "Det.lang_type": LangDet.CH,
-                    "Det.model_type": ModelType.MEDIUM,
-                    "Det.ocr_version": OCRVersion.PPOCRV6,
-                    "Det.model_path": det_path,
-                    "Rec.engine_type": EngineType.ONNXRUNTIME,
-                    "Rec.lang_type": LangRec.CH,
-                    "Rec.model_type": ModelType.MEDIUM,
-                    "Rec.ocr_version": OCRVersion.PPOCRV6,
-                    "Rec.model_path": rec_path,
-                    "Rec.rec_keys_path": dict_path,
-                }
+            params = {
+                "EngineConfig.onnxruntime.intra_op_num_threads": 1,
+                "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+                "EngineConfig.onnxruntime.use_cuda": use_cuda,
+                "Det.engine_type": EngineType.ONNXRUNTIME,
+                "Det.lang_type": LangDet.CH,
+                "Det.model_type": ModelType.MEDIUM,
+                "Det.ocr_version": OCRVersion.PPOCRV6,
+                "Det.model_path": det_path,
+                "Rec.engine_type": EngineType.ONNXRUNTIME,
+                "Rec.lang_type": LangRec.CH,
+                "Rec.model_type": ModelType.MEDIUM,
+                "Rec.ocr_version": OCRVersion.PPOCRV6,
+                "Rec.model_path": rec_path,
+                "Rec.rec_keys_path": dict_path,
+            }
+            cfg = ParseParams.update_batch(
+                ParseParams.load(Path(rapidocr.__file__).with_name("config.yaml")), params,
             )
+            for section in (cfg.Det, cfg.Rec):
+                section.engine_cfg = cfg.EngineConfig[section.engine_type.value]
+                section.model_root_dir = self.model_base_dir
+            cfg.Rec.font_path = cfg.Global.font_path
+            # The project handles line crops itself. Load only the SDK's two
+            # required components; RapidOCR's full pipeline also loads CLS even
+            # when classification is disabled, which can silently download it.
+            detector = TextDetector(cfg.Det)
+            recognizer = TextRecognizer(cfg.Rec)
+            self.text_detector, self.text_recognizer = detector, recognizer
+            self._global_config = cfg.Global
             self.initialized = True
             logger.debug(
                 "%s %s 已初始化（%s）",
@@ -173,11 +194,35 @@ class PaddleOCRHandlerONNX:
             return False
         except Exception as error:
             logger.error("Paddle OCR 初始化失败: %s", error, exc_info=True)
-            self.ocr = None
+            self.text_detector = None
+            self.text_recognizer = None
+            self._global_config = None
             self.initialized = False
             if is_memory_allocation_error(error):
                 raise
             return False
+
+    def _prepare_image(self, image: np.ndarray, *, detection: bool = False):
+        """Keep the SDK's resizing, padding and coordinate mapping unchanged."""
+        from rapidocr.utils.process_img import (
+            apply_vertical_padding,
+            resize_image_within_bounds,
+        )
+
+        cfg = self._global_config
+        operations = {"preprocess": {"ratio_h": 1.0, "ratio_w": 1.0}}
+        if cfg.use_preprocess_img:
+            image, ratio_h, ratio_w = resize_image_within_bounds(
+                image, cfg.min_side_len, cfg.max_side_len,
+            )
+            operations["preprocess"] = {"ratio_h": ratio_h, "ratio_w": ratio_w}
+        if detection and cfg.use_vertical_padding:
+            image, operations = apply_vertical_padding(
+                image, operations, cfg.width_height_ratio, cfg.min_height,
+            )
+        else:
+            operations["padding_1"] = {"top": 0, "left": 0}
+        return image, operations
 
     def recognize_text(
         self,
@@ -229,7 +274,7 @@ class PaddleOCRHandlerONNX:
         coordinates before recognition.
         """
 
-        if not self.initialized or self.ocr is None:
+        if not self.initialized or self.text_detector is None:
             raise RuntimeError("Paddle OCR 未初始化")
         if not isinstance(image, Image.Image) or image.width <= 0 or image.height <= 0:
             raise ValueError("Paddle OCR 文本行检测图像无效")
@@ -237,12 +282,8 @@ class PaddleOCRHandlerONNX:
         try:
             rgb = image_to_rgb_array(image)
             image_bgr = np.ascontiguousarray(rgb[:, :, ::-1])
-            output = self.ocr(
-                image_bgr,
-                use_det=True,
-                use_cls=False,
-                use_rec=False,
-            )
+            prepared, operations = self._prepare_image(image_bgr, detection=True)
+            output = self.text_detector(prepared)
         except Exception as error:
             logger.error("Paddle OCR 文本行检测失败: %s", error, exc_info=True)
             raise
@@ -258,6 +299,9 @@ class PaddleOCRHandlerONNX:
             return []
         if boxes.ndim != 3 or boxes.shape[1:] != (4, 2) or not np.isfinite(boxes).all():
             raise RuntimeError("RapidOCR 检测框必须包含四个有效坐标点")
+
+        from rapidocr.utils.process_img import map_boxes_to_original
+        boxes = map_boxes_to_original(boxes, operations, image.height, image.width)
 
         scores_raw = getattr(output, "scores", None)
         if scores_raw is None:
@@ -382,7 +426,7 @@ class PaddleOCRHandlerONNX:
         primary_engine: str = "paddle_ocr",
         fallback_used: bool = False,
     ) -> List[OcrResult]:
-        if not self.initialized or self.ocr is None:
+        if not self.initialized or self.text_recognizer is None:
             raise RuntimeError("Paddle OCR 未初始化")
         if not bubble_coords:
             return []
@@ -430,11 +474,10 @@ class PaddleOCRHandlerONNX:
                         raise ValueError(
                             f"气泡 {index} 的文本行 {line_index} 图像区域无效"
                         )
-                    output = self.ocr(
-                        line_image,
-                        use_det=False,
-                        use_cls=False,
-                        use_rec=True,
+                    from rapidocr.ch_ppocr_rec import TextRecInput
+                    prepared, _ = self._prepare_image(line_image)
+                    output = self.text_recognizer(
+                        TextRecInput(img=[prepared], return_word_box=False),
                     )
                     line_texts, line_scores = self._extract_output_lines(output)
                     texts.extend(line_texts)
@@ -489,5 +532,7 @@ def reset_paddle_ocr_handler() -> None:
     _paddle_ocr_onnx_handler = None
     if handler is None:
         return
-    handler.ocr = None
+    handler.text_detector = None
+    handler.text_recognizer = None
+    handler._global_config = None
     handler.initialized = False

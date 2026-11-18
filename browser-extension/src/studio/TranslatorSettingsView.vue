@@ -6,6 +6,7 @@ import { getProviderManifest } from '../../../vue-frontend/src/config/aiProvider
 import ServiceFields, { type ServiceConfig } from './ServiceFields.vue'
 import { serviceDomains, useTranslatorSettings, type ServiceKey } from './useTranslatorSettings'
 import type { PluginSettingsApi } from '../../../vue-frontend/src/types/browserExtensionSettings'
+import { installedModelOptions, localModelInstalled, OCR_MODEL_KEYS, DETECTOR_MODEL_KEYS } from '../../../vue-frontend/src/utils/localModelAvailability'
 import {
   allOcrEngineOptions,
   baiduVersionOptions,
@@ -23,7 +24,9 @@ import {
   DEFAULT_SINGLE_BUBBLE_PROMPT,
   DEFAULT_SINGLE_BUBBLE_JSON_PROMPT,
 } from '../../../vue-frontend/src/constants/prompts'
-const props = defineProps<{ api: PluginSettingsApi; section: string; active: boolean }>()
+const props = defineProps<{ api: PluginSettingsApi; section: string; active: boolean; installedModels: string[] }>()
+const ocrOptions = computed(() => installedModelOptions(allOcrEngineOptions, OCR_MODEL_KEYS, props.installedModels))
+const hybridAvailable = computed(() => localModelInstalled('manga_ocr', props.installedModels) && localModelInstalled('ocr_48px', props.installedModels))
 const {
   settings: s,
   loading,
@@ -173,11 +176,11 @@ function resetPrompt() {
     translatePrompt(defaults[promptKey.value])
   }
 }
-const detectorOptions = [
+const detectorOptions = computed(() => installedModelOptions([
   { value: 'ctd', label: 'CTD (Comic Text Detector)' },
   { value: 'yolo', label: 'YOLO' },
   { value: 'default', label: 'Default (DBNet)' },
-]
+], DETECTOR_MODEL_KEYS, props.installedModels))
 const expansions = [
   { key: 'ratio', label: '整体扩展 (%)' },
   { key: 'top', label: '上方扩展 (%)' },
@@ -194,6 +197,7 @@ const expansions = [
     }}</span>
   </div>
   <p class="footnote">与翻译页面共用设置，修改会同时影响翻译器。新任务使用新配置。</p>
+  <p v-if="section === 'ocr' || section === 'detection'" class="footnote">仅显示已安装的本地模型；缺少的模型请在翻译器的设置 → 更多 → 模型管理中下载。CTD / YOLO 还需安装 Default。</p>
   <div v-if="error" class="notice error" role="status">{{ error }}</div>
   <div v-if="error" class="actions">
     <button v-if="dirty" class="button" :disabled="saving || loading" @click="save">重试保存</button
@@ -210,7 +214,7 @@ const expansions = [
           <label class="field"
             >OCR 引擎<SelectControl
               :model-value="s.ocrEngine"
-              :options="allOcrEngineOptions"
+              :options="ocrOptions"
               label="OCR 引擎"
               @update:model-value="ocrEngine"
           /></label>
@@ -219,6 +223,7 @@ const expansions = [
               class="switch"
               type="checkbox"
               :checked="s.hybridOcr.enabled"
+              :disabled="!hybridAvailable && !s.hybridOcr.enabled"
               @change="hybrid(($event.target as HTMLInputElement).checked)"
           /></label>
           <template v-if="s.hybridOcr.enabled"
@@ -227,7 +232,7 @@ const expansions = [
               >备用 OCR<SelectControl
                 v-model="s.hybridOcr.secondaryEngine"
                 :options="
-                  allOcrEngineOptions.filter(
+                  ocrOptions.filter(
                     o => ['manga_ocr', '48px_ocr'].includes(o.value) && o.value !== s!.ocrEngine
                   )
                 "
@@ -416,6 +421,7 @@ const expansions = [
               class="switch"
               type="checkbox"
               v-model="s.enableAuxYoloDetection"
+              :disabled="!localModelInstalled('aux_ysg_yolo', installedModels) && !s.enableAuxYoloDetection"
               @change="change()"
           /></label>
           <div class="field-grid">
@@ -440,6 +446,7 @@ const expansions = [
               class="switch"
               type="checkbox"
               v-model="s.enableSaberYoloRefine"
+              :disabled="!localModelInstalled('saber_yolo', installedModels) && !s.enableSaberYoloRefine"
               @change="change()" /></label
           ><NumberControl
             v-model="s.saberYoloRefineOverlapThreshold"

@@ -1,14 +1,30 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import SelectControl from './SelectControl.vue'
 import StyleSettingsView from './StyleSettingsView.vue'
 import TranslatorSettingsView from './TranslatorSettingsView.vue'
 import ConnectionView from './ConnectionView.vue'
 import type { StudioAction, StudioState } from './protocol'
 import type { PluginSettingsApi } from '../../../vue-frontend/src/types/browserExtensionSettings'
-defineProps<{ api: PluginSettingsApi; active?: boolean; state: StudioState | null; request: (action: StudioAction) => Promise<unknown> }>()
+const props = defineProps<{ api: PluginSettingsApi; active?: boolean; state: StudioState | null; request: (action: StudioAction) => Promise<unknown> }>()
 defineEmits<{ connectionSaved: [] }>()
 const section = ref('connection')
+const installedModels = ref<string[]>([])
+const modelSettingsActive = computed(() => (props.active ?? true) && section.value !== 'connection')
+watch(modelSettingsActive, (active, _previous, cleanup) => {
+  if (!active) return
+  let stopped = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  cleanup(() => { stopped = true; clearTimeout(timer) })
+  async function refreshModels() {
+    try {
+      const result = await props.api<{ installedModels: string[] }>('/system/models/installed')
+      if (!stopped) installedModels.value = result.installedModels
+    } catch { /* Keep the last inventory while the translator is disconnected. */ }
+    finally { if (!stopped) timer = setTimeout(refreshModels, 5000) }
+  }
+  void refreshModels()
+}, { immediate: true })
 const styleVisited = ref(false)
 const sharedVisited = ref(false)
 const sharedSection = ref('ocr')
@@ -49,11 +65,12 @@ const options = [
   <div v-show="section === 'connection'">
     <ConnectionView :active="(active ?? true) && section === 'connection'" :state="state" :request="request" @saved="$emit('connectionSaved')" />
   </div>
-  <div v-if="styleVisited" v-show="section === 'style'"><StyleSettingsView ref="styleEditor" :api="api" :active="(active ?? true) && section === 'style'" /></div>
+  <div v-if="styleVisited" v-show="section === 'style'"><StyleSettingsView ref="styleEditor" :api="api" :installed-models="installedModels" :active="(active ?? true) && section === 'style'" /></div>
   <div v-if="sharedVisited" v-show="section !== 'style' && section !== 'connection'" class="translator-settings">
     <TranslatorSettingsView
       ref="sharedEditor"
       :api="api"
+      :installed-models="installedModels"
       :section="sharedSection"
       :active="(active ?? true) && section !== 'style' && section !== 'connection'"
     />

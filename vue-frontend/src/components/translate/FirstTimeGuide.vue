@@ -54,6 +54,7 @@ function openSettingsAndClose() {
           点击右上角的 <span class="highlight">设置</span> 按钮，配置以下内容：
         </p>
         <ul class="guide-list">
+          <li>在“更多 → 模型管理”中下载所需本地模型，或一键安装全部</li>
           <li>选择 OCR 引擎（文字识别）</li>
           <li>配置翻译服务商和 API Key</li>
           <li>（可选）配置高质量翻译和 AI 校对</li>

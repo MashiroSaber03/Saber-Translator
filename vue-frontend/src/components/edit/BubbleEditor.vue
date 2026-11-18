@@ -396,7 +396,7 @@
       <div class="bubble-editor__repair-row">
         <UiField variant="editor" label="背景修复" control-id="bubbleInpaintMethod">
           <div class="bubble-editor__toolbar-inpaint-group">
-            <UiSelect id="bubbleInpaintMethod" v-model="localInpaintMethod" :options="inpaintMethodOptions" aria-label="背景修复方式" @change="handleInpaintMethodChange" />
+            <UiSelect id="bubbleInpaintMethod" v-model="localInpaintMethod" :options="inpaintMethodOptions" placeholder="请选择已安装的修复模型或纯色填充" aria-label="背景修复方式" @change="handleInpaintMethodChange" />
             <div v-if="localInpaintMethod === 'solid'" class="bubble-editor__toolbar-color-picker bubble-editor__toolbar-solid-color-options">
               <UiIconButton variant="soft" size="md" class="bubble-editor__toolbar-color-action" label="背景填充颜色" title="背景填充颜色" aria-haspopup="dialog" :aria-expanded="colorPopover?.field === 'fillColor'" @click="openColorPopover('fillColor', $event)">
                 <UiIcon name="square" size="16" /><span class="bubble-editor__color-indicator" :style="{ background: localFillColor }"></span>

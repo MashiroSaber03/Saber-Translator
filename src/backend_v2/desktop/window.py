@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
 from src.backend_v2.desktop.settings import DesktopSettings, LOG_LEVELS, PET_SCALES
 from src.backend_v2.launcher.entrypoint import LauncherState, LauncherStatus
 from src.backend_v2.local_models import LOCAL_MODEL_OPTIONS
+from src.shared.model_catalog import installed_model_ids
 from src.shared.user_logging import CATEGORY_LABELS, STREAM_FRAME_PREFIX, job_label
 
 
@@ -995,14 +996,18 @@ class SettingsPage(QWidget):
 
         selected_resident_models = set(settings.resident_models)
         self.resident_model_switches: dict[str, ToggleSwitch] = {}
+        self.resident_model_rows: dict[str, QWidget] = {}
         resident_rows: list[QWidget] = []
         for option in LOCAL_MODEL_OPTIONS:
             control = ToggleSwitch(option.model_id in selected_resident_models)
             control.setAccessibleName(f"常驻 {option.label}")
             self.resident_model_switches[option.model_id] = control
-            resident_rows.append(
-                _setting_row(option.label, option.description, control)
-            )
+            row = _setting_row(option.label, option.description, control)
+            self.resident_model_rows[option.model_id] = row
+            resident_rows.append(row)
+        self.resident_model_hint = QLabel("仅显示已安装模型；请在网页设置 → 更多 → 模型管理中下载。")
+        self.resident_model_hint.setWordWrap(True)
+        resident_rows.append(self.resident_model_hint)
         resident_card, self.resident_description = _settings_card(
             "常驻模型",
             "选中的模型会在后端启动时加载并保持驻留；会增加启动时间和内存或显存占用。",
@@ -1050,6 +1055,26 @@ class SettingsPage(QWidget):
         self.pet_enabled.toggled.connect(self._emit_settings)
         self.pet_top.toggled.connect(self._emit_settings)
         self.pet_scale.currentTextChanged.connect(self._emit_settings)
+        self._model_timer = QTimer(self)
+        self._model_timer.setInterval(5000)
+        self._model_timer.timeout.connect(self.refresh_installed_models)
+        self.refresh_installed_models()
+
+    def refresh_installed_models(self) -> None:
+        installed = set(installed_model_ids())
+        for model_id, row in self.resident_model_rows.items():
+            available = model_id in installed
+            row.setVisible(available)
+            self.resident_model_switches[model_id].setEnabled(available)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        self.refresh_installed_models()
+        self._model_timer.start()
+
+    def hideEvent(self, event) -> None:
+        self._model_timer.stop()
+        super().hideEvent(event)
 
     def _emit_settings(self, *_args: object) -> None:
         if self._applying:

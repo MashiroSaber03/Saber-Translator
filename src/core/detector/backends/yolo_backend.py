@@ -15,13 +15,12 @@ import numpy as np
 
 from ..base import BaseTextDetector
 from ..data_types import TextLine
-from src.shared.path_helpers import resource_path
+from src.shared.model_catalog import model_directory
 from src.shared.user_logging import user_log
 
 logger = logging.getLogger("YoloBackend")
 
 # 默认配置
-DEFAULT_MODEL_DIR = 'models/yolo'
 DEFAULT_MODEL_NAME = 'ysgyolo_1.2_OS1.0.pt'
 DEFAULT_CONF_THRESH = 0.3
 DEFAULT_IOU_THRESH = 0.5
@@ -68,7 +67,7 @@ class YoloBackend(BaseTextDetector):
             mask_dilate_size: 掩码膨胀大小
             labels: 标签配置
         """
-        self.model_dir = resource_path(DEFAULT_MODEL_DIR) if model_dir is None else model_dir
+        self.model_dir = model_directory("detector_yolo") if model_dir is None else model_dir
         for label, value in (("置信度", conf_thresh), ("IoU", iou_thresh)):
             if (
                 isinstance(value, bool)

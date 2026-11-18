@@ -15,13 +15,12 @@ import torch
 
 from ..base import BaseTextDetector
 from ..data_types import TextLine
-from src.shared.path_helpers import resource_path
+from src.shared.model_catalog import model_directory
 from src.shared.user_logging import user_log
 
 logger = logging.getLogger("CTDBackend")
 
 # 默认配置
-DEFAULT_MODEL_DIR = 'models/ctd'
 DEFAULT_INPUT_SIZE = 1024
 DEFAULT_TEXT_THRESHOLD = 0.3
 DEFAULT_BOX_THRESHOLD = 0.7
@@ -51,7 +50,7 @@ class CTDBackend(BaseTextDetector):
             text_threshold: 文本像素阈值
             box_threshold: 文本框置信度阈值
         """
-        self.model_dir = resource_path(DEFAULT_MODEL_DIR) if model_dir is None else model_dir
+        self.model_dir = model_directory("detector_ctd") if model_dir is None else model_dir
         if isinstance(input_size, bool) or not isinstance(input_size, int) or input_size <= 0:
             raise ValueError("CTD 输入尺寸必须是正整数")
         if not isinstance(half, bool):

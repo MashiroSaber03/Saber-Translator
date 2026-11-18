@@ -16,13 +16,12 @@ import einops
 
 from ..base import BaseTextDetector
 from ..data_types import TextLine
-from src.shared.path_helpers import resource_path
+from src.shared.model_catalog import model_directory
 from src.shared.user_logging import user_log
 
 logger = logging.getLogger("DefaultBackend")
 
 # 默认配置
-DEFAULT_MODEL_DIR = 'models/default'
 DEFAULT_MODEL_NAME = 'detect-20241225.ckpt'
 DEFAULT_DETECT_SIZE = 1536
 DEFAULT_TEXT_THRESHOLD = 0.5
@@ -56,7 +55,7 @@ class DefaultBackend(BaseTextDetector):
             text_threshold: 文本阈值
             unclip_ratio: 框扩展比例
         """
-        self.model_dir = resource_path(DEFAULT_MODEL_DIR) if model_dir is None else model_dir
+        self.model_dir = model_directory("detector_default") if model_dir is None else model_dir
         if isinstance(detect_size, bool) or not isinstance(detect_size, int) or detect_size <= 0:
             raise ValueError("Default 检测尺寸必须是正整数")
         if (

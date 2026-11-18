@@ -327,6 +327,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Local mode or public administrators only. Lists files without loading inference models or downloading anything. */
+        get: operations["getLocalModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/models/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicitly start one installation batch. Partial files survive cancellation or restart; repeating resumes and skips verified files. Public administrators only. */
+        post: operations["installLocalModels"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/models/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelLocalModelInstall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings": {
         parameters: {
             query?: never;
@@ -3086,6 +3136,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/browser-extension/manage/system/models/installed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Current installed model IDs. Uses the same local catalog as the Web app, behind the extension token gate. */
+        get: operations["browserManageInstalledModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/browser-extension/manage/settings": {
         parameters: {
             query?: never;
@@ -3608,6 +3675,8 @@ export interface components {
         /** Format: uuid */
         Uuid: string;
         RuntimeCapabilities: {
+            /** @description Complete local model installations detected on this request; excludes download caches. */
+            installedModels: string[];
             /** @enum {string} */
             profile: "local" | "public";
             requiresAuth: boolean;
@@ -3812,6 +3881,58 @@ export interface components {
             port: number;
             /** Format: uri */
             lanUrl: string | null;
+        };
+        LocalModelCatalog: {
+            directory: string;
+            sources: {
+                /** @enum {string} */
+                id: "auto" | "modelscope" | "github";
+                label: string;
+                configured: boolean;
+            }[];
+            models: {
+                id: string;
+                label: string;
+                description: string;
+                sizeBytes: number;
+                installed: boolean;
+                directory: string;
+                partialBytes: number;
+            }[];
+            task: components["schemas"]["LocalModelInstallTask"];
+        };
+        LocalModelInstallRequest: {
+            modelIds: string[];
+            /**
+             * @default auto
+             * @enum {string}
+             */
+            source: "auto" | "modelscope" | "github";
+            /** @default false */
+            verify: boolean;
+        };
+        LocalModelInstallTask: {
+            /** @enum {string} */
+            status: "idle" | "running" | "cancelling" | "cancelled" | "completed" | "failed";
+            modelIds: string[];
+            /** @enum {string} */
+            source?: "auto" | "modelscope" | "github";
+            verify?: boolean;
+            currentModelId?: string | null;
+            currentFile?: string | null;
+            downloadedBytes?: number;
+            totalBytes?: number;
+            /** @enum {string} */
+            phase?: "verifying" | "downloading" | "extracting";
+            downloadHost?: string | null;
+            error?: string | null;
+            results: {
+                [key: string]: {
+                    /** @enum {string} */
+                    status: "completed" | "failed";
+                    error: string | null;
+                };
+            };
         };
         WorkerCommandAccepted: {
             commandId: components["schemas"]["Uuid"];
@@ -6362,7 +6483,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Fixed capabilities for the selected runtime profile. */
+            /** @description Runtime profile, policy and currently installed local models. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -6916,6 +7037,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getLocalModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Model installation status and current download. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalModelCatalog"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    installLocalModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalModelInstallRequest"];
+            };
+        };
+        responses: {
+            /** @description Installation or verification started. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalModelInstallTask"];
+                };
+            };
+            /** @description Another installation is running. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancelLocalModelInstall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancellation requested; verified installed files remain usable. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalModelInstallTask"];
                 };
             };
         };
@@ -12629,6 +12824,30 @@ export interface operations {
             };
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    browserManageInstalledModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current complete model installations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        installedModels: string[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     browserManageGetSettings: {

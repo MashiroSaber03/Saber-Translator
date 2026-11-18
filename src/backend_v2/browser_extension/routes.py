@@ -26,6 +26,7 @@ from src.backend_v2.browser_extension.service import (
 from src.backend_v2.content.image_import import UnsupportedImage
 from src.backend_v2.jobs.repository import JobConflict
 from src.backend_v2.storage.assets import AssetQuotaExceeded
+from src.shared.model_catalog import installed_model_ids
 
 
 LOGGER = logging.getLogger("BrowserExtensionApi")
@@ -122,6 +123,10 @@ def create_browser_extension_blueprint(
         if request.path.startswith("/api/v2/browser-extension"):
             response.headers["Cache-Control"] = "no-store"
         return response
+
+    @blueprint.get("/manage/system/models/installed")
+    def installed_models():
+        return jsonify({"installedModels": installed_model_ids()})
 
     @blueprint.errorhandler(BrowserSessionNotFound)
     def session_not_found(error: BrowserSessionNotFound):

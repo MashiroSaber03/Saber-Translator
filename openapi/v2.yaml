@@ -47,7 +47,7 @@ paths:
       operationId: getRuntimeCapabilities
       responses:
         "200":
-          description: Fixed capabilities for the selected runtime profile.
+          description: Runtime profile, policy and currently installed local models.
           content:
             application/json:
               schema: {$ref: "#/components/schemas/RuntimeCapabilities"}
@@ -389,6 +389,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /system/models:
+    get:
+      tags: [system]
+      operationId: getLocalModels
+      description: Local mode or public administrators only. Lists files without loading inference models or downloading anything.
+      responses:
+        "200":
+          description: Model installation status and current download.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LocalModelCatalog"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+  /system/models/install:
+    post:
+      tags: [system]
+      operationId: installLocalModels
+      x-command-mode: transient
+      description: Explicitly start one installation batch. Partial files survive cancellation or restart; repeating resumes and skips verified files. Public administrators only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LocalModelInstallRequest"}
+      responses:
+        "202":
+          description: Installation or verification started.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LocalModelInstallTask"}
+        "409":
+          description: Another installation is running.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /system/models/cancel:
+    post:
+      tags: [system]
+      operationId: cancelLocalModelInstall
+      x-command-mode: transient
+      responses:
+        "202":
+          description: Cancellation requested; verified installed files remain usable.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LocalModelInstallTask"}
   /settings:
     get:
       tags: [settings]
@@ -4333,6 +4378,27 @@ paths:
               schema: {type: string, format: binary}
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
+  /browser-extension/manage/system/models/installed:
+    get:
+      tags: [browser-extension]
+      operationId: browserManageInstalledModels
+      description: Current installed model IDs. Uses the same local catalog as the Web app, behind the extension token gate.
+      responses:
+        "200":
+          description: Current complete model installations.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [installedModels]
+                properties:
+                  installedModels:
+                    type: array
+                    items: {type: string}
+                    uniqueItems: true
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
   /browser-extension/manage/settings:
     get:
       description: Without scope, reads independent plugin text_style_defaults and browser_dom_agent. With scope=global, reads the same translator settings and provider credentials used by the Web settings menu; no plugin copy is created.
@@ -5371,8 +5437,13 @@ components:
     RuntimeCapabilities:
       type: object
       additionalProperties: false
-      required: [profile, requiresAuth, browserCredentials, registrationRequiresInvite, publicUserPolicy, scheduling, features]
+      required: [profile, requiresAuth, browserCredentials, registrationRequiresInvite, publicUserPolicy, scheduling, features, installedModels]
       properties:
+        installedModels:
+          type: array
+          uniqueItems: true
+          items: {type: string}
+          description: Complete local model installations detected on this request; excludes download caches.
         profile: {type: string, enum: [local, public]}
         requiresAuth: {type: boolean}
         browserCredentials: {type: boolean}
@@ -5749,6 +5820,75 @@ components:
         lanUrl:
           type: [string, "null"]
           format: uri
+    LocalModelCatalog:
+      type: object
+      additionalProperties: false
+      required: [directory, sources, models, task]
+      properties:
+        directory: {type: string}
+        sources:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, label, configured]
+            properties:
+              id: {type: string, enum: [auto, modelscope, github]}
+              label: {type: string}
+              configured: {type: boolean}
+        models:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, label, description, sizeBytes, installed, directory, partialBytes]
+            properties:
+              id: {type: string}
+              label: {type: string}
+              description: {type: string}
+              sizeBytes: {type: integer, minimum: 0}
+              installed: {type: boolean}
+              directory: {type: string}
+              partialBytes: {type: integer, minimum: 0}
+        task: {$ref: "#/components/schemas/LocalModelInstallTask"}
+    LocalModelInstallRequest:
+      type: object
+      additionalProperties: false
+      required: [modelIds]
+      properties:
+        modelIds:
+          type: array
+          minItems: 1
+          items: {type: string}
+        source: {type: string, enum: [auto, modelscope, github], default: auto}
+        verify: {type: boolean, default: false}
+    LocalModelInstallTask:
+      type: object
+      additionalProperties: false
+      required: [status, modelIds, results]
+      properties:
+        status: {type: string, enum: [idle, running, cancelling, cancelled, completed, failed]}
+        modelIds:
+          type: array
+          items: {type: string}
+        source: {type: string, enum: [auto, modelscope, github]}
+        verify: {type: boolean}
+        currentModelId: {type: [string, "null"]}
+        currentFile: {type: [string, "null"]}
+        downloadedBytes: {type: integer, minimum: 0}
+        totalBytes: {type: integer, minimum: 0}
+        phase: {type: string, enum: [verifying, downloading, extracting]}
+        downloadHost: {type: [string, "null"]}
+        error: {type: [string, "null"]}
+        results:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            required: [status, error]
+            properties:
+              status: {type: string, enum: [completed, failed]}
+              error: {type: [string, "null"]}
     WorkerCommandAccepted:
       type: object
       additionalProperties: false

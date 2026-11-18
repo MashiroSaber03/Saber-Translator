@@ -57,12 +57,15 @@ from src.backend_v2.storage.schema import (
 from src.backend_v2.settings.validation import setting_storage_payload
 from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.settings.resolver import SettingsResolver
+from src.shared import model_catalog
 from src.backend_v2.translation.commands import (
     TranslationJobCommandService,
     _validate_ai_provider_section,
     normalize_translation_command,
     step_kinds_for_mode,
 )
+
+
 from src.backend_v2.translation.auxiliary import (
     AuxiliaryTranslationCommands,
     StyleApplyWorkerService,
@@ -86,6 +89,12 @@ LOCAL_PROFILE = resolve_runtime_profile("local")
 from src.shared.ai_providers import VISION_OCR_CAPABILITY
 from src.core.config_models import BubbleState
 from src.shared.text_style_defaults import get_text_style_factory_defaults
+
+
+@pytest.fixture(autouse=True)
+def local_model_files_for_pipeline_contracts(monkeypatch):
+    """These contracts stub inference; real model installation is tested separately."""
+    monkeypatch.setattr(model_catalog, "model_available", lambda _model_id: True)
 
 
 def _page_style(**overrides: object) -> dict[str, object]:

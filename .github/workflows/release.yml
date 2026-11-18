@@ -5,7 +5,8 @@
 #   1. 在要发布的提交上推送版本标签:
 #      git tag v3.3.0
 #      git push origin v3.3.0
-#   2. 手动触发: GitHub Actions 页面 -> 选择要发布的分支 -> Run workflow
+#   2. dev 推送、PR 或手动触发：运行相同的构建验证，不发布
+#   3. 手动发布：Run workflow 勾选 publish
 #
 # 流程:
 #   1. 先创建 Draft Release
@@ -17,23 +18,29 @@ name: Build and Release
 
 on:
   push:
+    branches: [dev]
     tags:
       - 'v*'
+  pull_request:
+    branches: [dev]
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号 (不带v前缀，如 3.3.0)'
-        required: true
+        description: '版本号（留空使用 version.json）'
+        required: false
+      publish:
+        description: '创建或更新 Draft Release（仅验证时不勾选）'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref_name }}
-  cancel-in-progress: false
+  group: build-${{ github.ref_type == 'tag' || inputs.publish == true }}-${{ github.event.inputs.version || github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' && inputs.publish != true }}
 
 env:
-  MODELS_RELEASE_TAG: models-storage
   PYTHON_VERSION: '3.12'
   PIP_NO_CACHE_DIR: '1'
 
@@ -48,9 +55,20 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
       tag_name: ${{ steps.version.outputs.TAG_NAME }}
+      publish: ${{ steps.version.outputs.PUBLISH }}
     
     steps:
       - uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Verify published model files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python .github/scripts/check_model_release.py
 
       - name: Verify release guard
         run: node --test .github/scripts/prepare_release.test.cjs
@@ -67,13 +85,20 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_VERSION: ${{ github.event.inputs.version }}
           REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
         run: |
-          if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
+          MANIFEST_VERSION=$(jq -er .version version.json)
+          PUBLISH=false
+          VERSION="$MANIFEST_VERSION"
+          if [ "$EVENT_NAME" == "workflow_dispatch" ] && [ -n "$INPUT_VERSION" ]; then
             VERSION="$INPUT_VERSION"
-            TAG_NAME="v${VERSION}"
-          else
-            TAG_NAME="$REF_NAME"
-            VERSION="${TAG_NAME#v}"
+          elif [ "$REF_TYPE" == "tag" ]; then
+            VERSION="${REF_NAME#v}"
+          fi
+          TAG_NAME="v${VERSION}"
+          if [ "$REF_TYPE" == "tag" ] || { [ "$EVENT_NAME" == "workflow_dispatch" ] && [ "$INPUT_PUBLISH" == "true" ]; }; then
+            PUBLISH=true
           fi
           if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "Invalid release version: $VERSION" >&2
@@ -92,9 +117,11 @@ jobs:
           test -f "src/storage_migrator/schemas/$STORAGE_VERSION.sql"
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_OUTPUT"
-          echo "Version: $VERSION, Tag: $TAG_NAME"
+          echo "PUBLISH=$PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION, Tag: $TAG_NAME, Publish: $PUBLISH"
 
       - name: Verify release target
+        if: steps.version.outputs.PUBLISH == 'true'
         id: release_target
         uses: actions/github-script@v8
         env:
@@ -128,8 +155,8 @@ jobs:
             - 将所有分卷放在同一目录，使用 **7-Zip** 或 **Bandzip** 解压 `.7z.001` 文件即可
             - 浏览器漫画翻译：下载 `saber-translator-browser-extension-v${{ steps.extension.outputs.version }}.zip` 和对应 `.sha256` 文件，按 ZIP 内 README 安装
             
-            🔧 **源码部署用户：**
-            - 下载所有 `models.z*` 分卷并放在同一目录，从 `models.zip` 解压到项目根目录，得到 `models/` 文件夹
+            🧠 **模型按需安装（源码版和打包版相同）：**
+            - 主程序不附带模型权重。启动后打开「设置 → 更多 → 模型管理」按需下载，或一键安装全部。已有的 models 目录可继续使用。
             
             > ⚠️ 程序包采用 7z 分卷压缩格式，请使用 [7-Zip](https://www.7-zip.org/) 或 [Bandzip](https://www.bandisoft.com/bandizip/) 解压，Windows 内置解压和 WinRAR 可能无法正确识别
           draft: true
@@ -142,12 +169,14 @@ jobs:
   # ============================================================================
   editor_runtime:
     needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
     permissions:
       contents: write
     uses: ./.github/workflows/editor-runtime.yml
 
   build:
     needs: [prepare, editor_runtime]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && (needs.editor_runtime.result == 'success' || needs.editor_runtime.result == 'skipped') }}
     runs-on: windows-latest
     permissions:
       contents: write
@@ -168,7 +197,7 @@ jobs:
         uses: actions/checkout@v6
 
       # --------------------------------------------------
-      # 2. 从 models-storage Release 下载模型文件
+      # 2. 准备无模型权重的构建环境
       # --------------------------------------------------
       - name: Prepare build disk
         run: |
@@ -188,50 +217,6 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Download models from storage release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          Write-Host "Downloading models from release: ${{ env.MODELS_RELEASE_TAG }}"
-          gh release download ${{ env.MODELS_RELEASE_TAG }} --pattern "models.z*" --dir .
-          
-          Write-Host "Downloaded files:"
-          Get-ChildItem -Filter "models.z*" | Format-Table Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
-
-      # --------------------------------------------------
-      # 3. 解压模型文件
-      # --------------------------------------------------
-      - name: Extract models
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          Write-Host "Extracting models..."
-          7z x models.zip -y
-          
-          Write-Host "Models extracted. Directory contents:"
-          Get-ChildItem -Path models/ | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
-
-      - name: Verify required model files
-        run: python .github/scripts/check_models.py models
-
-      - name: Upload models to draft
-        if: matrix.variant == 'cpu'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python .github/scripts/upload_release_assets.py "${{ needs.prepare.outputs.tag_name }}" . "models.z*"
-
-      # --------------------------------------------------
-      # 4. 清理模型压缩包（节省磁盘空间）
-      # --------------------------------------------------
-      - name: Clean up model archives
-        run: |
-          Write-Host "Cleaning up model archives to save disk space..."
-          $workspace = (Resolve-Path -LiteralPath $env:GITHUB_WORKSPACE).Path
-          Get-ChildItem -LiteralPath $workspace -Filter 'models.z*' -File | Remove-Item -Force
-
-      # --------------------------------------------------
-      # 6. 安装依赖 (CPU 和 GPU 流程不同)
-      # --------------------------------------------------
       - name: Install dependencies
         env:
           TORCH_VARIANT: ${{ matrix.variant == 'gpu' && 'cu130' || 'cpu' }}
@@ -320,8 +305,6 @@ jobs:
       # 8. 使用 PyInstaller 打包
       # --------------------------------------------------
       - name: Build with PyInstaller
-        env:
-          SABER_BUILD_MOVE_MODELS: '1'
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           Write-Host "Building with PyInstaller..."
@@ -351,8 +334,11 @@ jobs:
       - name: Probe packaged runtime
         run: python .github/scripts/probe_package.py dist/Saber-Translator/Saber-Translator.exe
 
-      - name: Verify bundled model files
-        run: python .github/scripts/check_models.py dist/Saber-Translator/_internal/models
+      - name: Verify weights are not bundled
+        run: |
+          if (Test-Path dist/Saber-Translator/_internal/models) { throw "Model weights must not be bundled" }
+          if (Test-Path dist/Saber-Translator/models) { throw "Model weights must not be bundled" }
+          if (Test-Path dist/Saber-Translator/_internal/rapidocr/models) { throw "SDK model caches must not be bundled" }
 
       # --------------------------------------------------
       # 10. 7z 分卷压缩（最高压缩率）
@@ -408,12 +394,13 @@ jobs:
       # 12. 直接上传到 Release（不通过 artifacts）
       # --------------------------------------------------
       - name: Upload to Release
+        if: needs.prepare.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python .github/scripts/upload_release_assets.py "${{ needs.prepare.outputs.tag_name }}" . "Saber-Translator-${{ needs.prepare.outputs.version }}-${{ matrix.variant }}.7z*"
 
       - name: Upload browser extension to Release
-        if: matrix.variant == 'cpu'
+        if: matrix.variant == 'cpu' && needs.prepare.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python .github/scripts/upload_release_assets.py "${{ needs.prepare.outputs.tag_name }}" browser-extension/release "saber-translator-*.zip*"
@@ -438,11 +425,11 @@ jobs:
           echo "Build result: ${{ needs.build.result }}"
           echo ""
           if [ "${{ needs.build.result }}" = "success" ]; then
-            echo "Next steps:"
-            echo "  1. Go to GitHub Releases page"
-            echo "  2. Edit the draft release v${{ needs.prepare.outputs.version }}"
-            echo "  3. Write your changelog"
-            echo "  4. Click 'Publish release'"
+            if [ "${{ needs.prepare.outputs.publish }}" = "true" ]; then
+              echo "Review the draft release and publish it when ready."
+            else
+              echo "CPU/GPU packages verified. No version tag or release was created."
+            fi
           else
             echo "The build failed or was cancelled. Keep the release as a draft and inspect the failed job."
           fi

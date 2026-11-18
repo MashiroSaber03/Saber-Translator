@@ -7,6 +7,7 @@
           id="settingsOcrEngine"
           :model-value="settings.ocrEngine"
           :options="ocrEngineOptions"
+          placeholder="请选择 OCR；本地模型需先在更多 → 模型管理中安装"
           @change="handleOcrEngineChange"
         />
       </UiField>
@@ -21,12 +22,13 @@
         :hint="
           settings.hybridOcr.enabled
             ? '首批混合OCR仅支持 MangaOCR / 48px OCR，推荐顺序为 48px OCR → MangaOCR。启用后会优先走 textline 级专用链路。'
-            : ''
+            : '需要同时安装 MangaOCR 和 48px OCR'
         "
       >
         <UiCheckbox
           input-id="settingsHybridOcrEnabled"
           :model-value="settings.hybridOcr.enabled"
+          :disabled="!hybridAvailable && !settings.hybridOcr.enabled"
           @change="handleHybridOcrEnabledChange"
         />
       </UiField>
@@ -355,6 +357,7 @@ import {
   type AiModelDiscoveryMessageTone,
 } from '@/composables/useAiModelDiscovery'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
+import { OCR_MODEL_KEYS } from '@/utils/localModelAvailability'
 const settingsStore = useSettingsStore()
 const toast = useToast()
 const publicAccess = usePublicUserAccess()
@@ -392,12 +395,9 @@ const aiVisionModelOptions = computed(() => {
   })
   return options
 })
-const policyOcrEngineOptions = computed(() => publicAccess.modelOptions(allOcrEngineOptions, {
-  manga_ocr: 'manga_ocr',
-  paddle_ocr: 'paddle_ocr',
-  paddleocr_vl: 'paddleocr_vl',
-  '48px_ocr': 'ocr_48px',
-}))
+const policyOcrEngineOptions = computed(() => publicAccess.modelOptions(allOcrEngineOptions, OCR_MODEL_KEYS))
+const hybridAvailable = computed(() =>
+  publicAccess.modelAllowed('manga_ocr') && publicAccess.modelAllowed('ocr_48px'))
 const ocrEngineOptions = computed(() => {
   if (!settings.value.hybridOcr.enabled) {
     return policyOcrEngineOptions.value
@@ -422,6 +422,7 @@ function handleOcrEngineChange(value: UiSelectValue) {
   }
 }
 function handleHybridOcrEnabledChange(value: boolean) {
+  if (value && !hybridAvailable.value) return
   settingsStore.updateHybridOcr({ enabled: value })
 }
 function handleHybridSecondaryEngineChange(value: UiSelectValue) {

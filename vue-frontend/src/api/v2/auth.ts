@@ -1,33 +1,9 @@
 import { apiClient } from '@/api/client'
+import type { components } from '@/api/generated/v2'
 
-export type PublicFeatureKey = 'translation' | 'insight' | 'characterStudio' | 'editMode'
-export type PublicModelKey =
-  | 'detector_default'
-  | 'detector_ctd'
-  | 'detector_yolo'
-  | 'aux_ysg_yolo'
-  | 'saber_yolo'
-  | 'manga_ocr'
-  | 'ocr_48px'
-  | 'paddle_ocr'
-  | 'paddleocr_vl'
-  | 'lama_mpe'
-  | 'litelama'
-  | 'lama_manga'
-
-export interface PublicUserPolicy {
-  features: Record<PublicFeatureKey, boolean>
-  models: Record<PublicModelKey, boolean>
-  settings: {
-    lamaDisableResize: {
-      editable: boolean
-      value: boolean
-    }
-    parallel: {
-      allowed: boolean
-    }
-  }
-}
+export type PublicUserPolicy = components['schemas']['PublicUserPolicy']
+export type PublicFeatureKey = keyof PublicUserPolicy['features']
+export type PublicModelKey = keyof PublicUserPolicy['models']
 
 export type QueueDiscipline = 'owner_round_robin' | 'fifo'
 
@@ -64,21 +40,7 @@ export interface SchedulingOverview {
   status: SchedulingStatus
 }
 
-export interface RuntimeCapabilities {
-  profile: 'local' | 'public'
-  requiresAuth: boolean
-  browserCredentials: boolean
-  registrationRequiresInvite: boolean
-  publicUserPolicy: PublicUserPolicy
-  scheduling: {
-    maxDeepLearningConcurrency: number | null
-  }
-  features: {
-    plugins: boolean
-    webImport: boolean
-    localProviders: boolean
-  }
-}
+export type RuntimeCapabilities = components['schemas']['RuntimeCapabilities']
 
 export interface AuthUser {
   id: string

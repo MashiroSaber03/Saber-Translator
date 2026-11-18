@@ -260,7 +260,8 @@ def test_browser_extension_controls_emit_and_regenerate_a_masked_token(tmp_path)
     assert changes[-1].browser_extension_token == regenerated
 
 
-def test_settings_page_emits_resident_models_in_catalog_order(tmp_path) -> None:
+def test_settings_page_emits_resident_models_in_catalog_order(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("src.backend_v2.desktop.window.installed_model_ids", lambda: ["detector_yolo", "paddle_ocr"])
     _app()
     page = SettingsPage(
         DesktopSettings(resident_models=("paddle_ocr",)),
@@ -273,6 +274,34 @@ def test_settings_page_emits_resident_models_in_catalog_order(tmp_path) -> None:
     page.resident_model_switches["detector_yolo"].click()
 
     assert changes[-1].resident_models == ("detector_yolo", "paddle_ocr")
+
+
+def test_resident_options_refresh_without_rewriting_missing_preferences(tmp_path, monkeypatch):
+    application = _app()
+    installed = []
+    monkeypatch.setattr("src.backend_v2.desktop.window.installed_model_ids", lambda: installed)
+    page = SettingsPage(DesktopSettings(resident_models=("paddle_ocr",)), tmp_path)
+    changes = []
+    page.settings_changed.connect(changes.append)
+    try:
+        assert all(row.isHidden() for row in page.resident_model_rows.values())
+        assert not page.resident_model_switches["paddle_ocr"].isEnabled()
+        installed.append("paddle_ocr")
+        page.show()
+        application.processEvents()
+        assert not page.resident_model_rows["paddle_ocr"].isHidden()
+        assert page.resident_model_switches["paddle_ocr"].isChecked()
+        assert page._model_timer.isActive()
+        installed.clear()
+        page.refresh_installed_models()
+        assert page.resident_model_rows["paddle_ocr"].isHidden()
+        assert changes == []
+        page.hide()
+        assert not page._model_timer.isActive()
+    finally:
+        page.close()
+        page.deleteLater()
+        application.processEvents()
 
 
 def test_port_field_keeps_native_stepper_buttons(tmp_path) -> None:

@@ -20,6 +20,7 @@ import { copyTextToClipboard } from '@/utils/clipboard'
 import { inpaintMethodOptions as rawInpaintMethodOptions } from '@/utils/textStyleForm'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
+import { INPAINT_MODEL_KEYS } from '@/utils/localModelAvailability'
 
 export interface BubbleEditorProps {
   bubble: BubbleState | null
@@ -57,11 +58,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const { favorites, name: favoriteName, selected: favoriteSelected, save: saveFavorite, remove: removeFavorite } = useTextStyleFavorites()
   const inpaintMethodOptions = computed(() => publicAccess.modelOptions(
     rawInpaintMethodOptions,
-    {
-      lama_mpe: 'lama_mpe',
-      litelama: 'litelama',
-      lama_manga: 'lama_manga',
-    },
+    INPAINT_MODEL_KEYS,
   ))
   const defaultBubble: BubbleState = createBubbleState({
     coords: [0, 0, 0, 0],

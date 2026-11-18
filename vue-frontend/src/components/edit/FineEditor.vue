@@ -6,9 +6,9 @@
         <UiIconButton size="sm" variant="inverse" label="撤销" title="撤销 (Ctrl+Z)" :disabled="loading || loadFailed || repairing || !canUndo" @click="command('edit.undo')"><UiIcon name="rotate-ccw" :size="16" /></UiIconButton>
         <UiIconButton size="sm" variant="inverse" label="重做" title="重做 (Ctrl+Shift+Z)" :disabled="loading || loadFailed || repairing || !canRedo" @click="command('edit.redo')"><UiIcon name="rotate-cw" :size="16" /></UiIconButton>
       </div>
-      <div class="fine-editor__method"><UiSelect size="sm" aria-label="背景修复方式" teleport-to=".fine-editor" :options="repairMethods" :model-value="inpaintMethod" :disabled="loading || loadFailed || repairing" @update:model-value="emit('method', $event as InpaintMethod)" /></div>
+      <div class="fine-editor__method"><UiSelect size="sm" aria-label="背景修复方式" placeholder="请选择修复模型或纯色填充" teleport-to=".fine-editor" :options="repairMethods" :model-value="inpaintMethod" :disabled="loading || loadFailed || repairing" @update:model-value="emit('method', $event as InpaintMethod)" /></div>
       <UiColorInput v-if="inpaintMethod === 'solid'" aria-label="填充颜色" :model-value="fillColor" :disabled="loading || loadFailed || repairing" @update:model-value="emit('fillColor', $event)" />
-      <UiButton size="sm" variant="inverse" :disabled="loading || loadFailed || repairing" title="使用当前背景修复方式修复选区" @click="repairSelection"><UiIcon name="wand-sparkles" :size="15" />修复选区</UiButton>
+      <UiButton size="sm" variant="inverse" :disabled="loading || loadFailed || repairing || !repairAvailable" title="使用当前背景修复方式修复选区" @click="repairSelection"><UiIcon name="wand-sparkles" :size="15" />修复选区</UiButton>
       <span class="fine-editor__status" :class="{ 'fine-editor__status--error': error }" role="status" :title="error || '修改会自动保存；也可按 Ctrl+S 保存'">
         <UiIcon :name="error ? 'alert-triangle' : loading || saving || repairing ? 'loading' : 'check'" :size="14" :class="{ 'fine-editor__spinner': loading || saving || repairing }" />
         <span>{{ loading ? '正在加载…' : error || (repairing ? '正在修复…' : saving ? '正在保存…' : '已自动保存') }}</span>
@@ -32,6 +32,7 @@ import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiColorInput from '@/components/ui/UiColorInput.vue'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
+import { INPAINT_MODEL_KEYS } from '@/utils/localModelAvailability'
 import { inpaintMethodOptions } from '@/utils/textStyleForm'
 import { apiClient } from '@/api/client'
 import { getPageDocument, type V2PageDocumentMutationResponse } from '@/api/v2/content'
@@ -46,7 +47,8 @@ import { useImageStore } from '@/stores/imageStore'
 const props = defineProps<{ pageId: string; active: boolean; inpaintMethod: InpaintMethod; fillColor: string }>()
 const emit = defineEmits<{ busy: [value: boolean]; method: [value: InpaintMethod]; fillColor: [value: string]; 'document-loaded': [pageId: string] }>()
 const access = usePublicUserAccess()
-const repairMethods = computed(() => access.modelOptions(inpaintMethodOptions, { lama_mpe: 'lama_mpe', litelama: 'litelama', lama_manga: 'lama_manga' }))
+const repairMethods = computed(() => access.modelOptions(inpaintMethodOptions, INPAINT_MODEL_KEYS))
+const repairAvailable = computed(() => repairMethods.value.some(option => option.value === props.inpaintMethod && !option.disabled))
 const frame = ref<HTMLIFrameElement>()
 const loading = ref(true)
 const loadFailed = ref(false)

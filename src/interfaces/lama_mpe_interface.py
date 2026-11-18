@@ -12,7 +12,7 @@ import logging
 from torch import Tensor
 from typing import Optional
 
-from src.shared.path_helpers import resource_path
+from src.shared.model_catalog import model_directory, require_local_models
 from src.shared.user_logging import user_log
 
 logger = logging.getLogger("LAMAMPEInterface")
@@ -589,7 +589,7 @@ class LamaMPEInpainter:
     
     def __init__(self):
         # 注意：单例模式下 __init__ 会被多次调用，所以不要在这里重置状态
-        self.model_path = resource_path("models/lama/inpainting_lama_mpe.ckpt")
+        self.model_path = os.path.join(model_directory("lama_mpe"), "inpainting_lama_mpe.ckpt")
     
     def load(self, device: str = None):
         """加载模型"""
@@ -602,12 +602,8 @@ class LamaMPEInpainter:
         if device is None:
             device = "cuda:0" if torch.cuda.is_available() else "cpu"
         
-        if not os.path.exists(self.model_path):
-            raise FileNotFoundError(
-                f"LAMA MPE 模型文件不存在: {self.model_path}\n"
-                f"请下载模型文件: inpainting_lama_mpe.ckpt\n"
-                f"并放置到: models/lama/inpainting_lama_mpe.ckpt"
-            )
+        self.model_path = os.path.join(model_directory("lama_mpe"), "inpainting_lama_mpe.ckpt")
+        require_local_models(("lama_mpe",))
         
         logger.debug(f"加载 LAMA MPE 模型: {self.model_path}，设备: {device}")
         
@@ -806,12 +802,6 @@ def reset_lama_mpe_inpainter():
         _inpainter.unload()
     _inpainter = None
     LamaMPEInpainter._instance = None
-
-
-def is_lama_mpe_available() -> bool:
-    """检查 LAMA MPE 是否可用"""
-    model_path = resource_path("models/lama/inpainting_lama_mpe.ckpt")
-    return os.path.exists(model_path)
 
 
 def inpaint_with_lama_mpe(image: np.ndarray, mask: np.ndarray, inpainting_size: int = 1024, disable_resize: bool = False) -> np.ndarray:

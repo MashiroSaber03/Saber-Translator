@@ -8,6 +8,7 @@ import UiField from '@/components/ui/UiField.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { useSettingsStore } from '@/stores/settings'
+import { useRuntimeStore } from '@/stores/runtimeStore'
 import { createDefaultSettings } from '@/stores/settings/defaults'
 import { getTextStyleDefaults } from '@/defaults/textStyleDefaults'
 
@@ -60,6 +61,7 @@ const uiComboboxStub = {
 describe('TextStyleDefaultsSettings', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    useRuntimeStore().assumeLocalForTests()
     getV2SettingsMock.mockReset()
     listV2FontsMock.mockReset()
     saveV2SettingsTransactionMock.mockReset()

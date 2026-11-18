@@ -16,6 +16,7 @@ import {
   layoutDirectionOptions,
 } from '@/utils/textStyleForm'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
+import { INPAINT_MODEL_KEYS } from '@/utils/localModelAvailability'
 import {
   DEFAULT_WORKFLOW_MODE,
   WORKFLOW_MODE_CONFIGS,
@@ -68,11 +69,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
 
   const inpaintMethodOptions = computed(() => publicAccess.modelOptions(
     rawInpaintMethodOptions,
-    {
-      lama_mpe: 'lama_mpe',
-      litelama: 'litelama',
-      lama_manga: 'lama_manga',
-    },
+    INPAINT_MODEL_KEYS,
   ))
 
   const showApplyOptions = ref(false)
@@ -521,6 +518,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   }
 
   return {
+    autoTextColorAvailable: computed(() => publicAccess.modelAllowed('ocr_48px')),
     showApplyOptions,
     applyOptions,
     isPageSelectionEnabled,

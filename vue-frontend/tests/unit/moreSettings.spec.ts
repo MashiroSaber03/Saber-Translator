@@ -14,6 +14,7 @@ function deferred<T>() {
 
 const mocks = vi.hoisted(() => ({
   cleanTemp: vi.fn(),
+  restricted: false,
   listFonts: vi.fn(),
   uploadFont: vi.fn(),
   toast: {
@@ -55,6 +56,7 @@ vi.mock('@/utils/toast', () => ({
 
 vi.mock('@/composables/usePublicUserAccess', () => ({
   usePublicUserAccess: () => ({
+    restricted: () => mocks.restricted,
     lamaDisableResizeEditable: () => true,
     lamaDisableResizeValue: () => false,
   }),
@@ -65,6 +67,7 @@ function mountSettings() {
     global: {
       stubs: {
         ParallelSettings: true,
+        LocalModelsSettings: true,
         CustomAiProfileManager: true,
       },
     },
@@ -72,8 +75,22 @@ function mountSettings() {
 }
 
 describe('MoreSettings backend controls', () => {
+  it('shows model management to local users and admins, and follows pane activity', async () => {
+    const wrapper = mountSettings()
+    const models = wrapper.findComponent({ name: 'LocalModelsSettings' })
+    expect(models.exists()).toBe(true)
+    expect(models.props('active')).toBe(false)
+    await wrapper.setProps({ active: true })
+    expect(models.props('active')).toBe(true)
+    wrapper.unmount()
+    mocks.restricted = true
+    const restricted = mountSettings()
+    expect(restricted.findComponent({ name: 'LocalModelsSettings' }).exists()).toBe(false)
+    restricted.unmount()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.restricted = false
     mocks.settings.fontCatalog = []
     mocks.settings.promptCatalog = []
     mocks.settings.hydrateResourceCatalogs.mockImplementation((fonts, prompts) => {

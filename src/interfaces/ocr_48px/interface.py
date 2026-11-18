@@ -22,7 +22,7 @@ import os
 import cv2
 import einops
 
-from src.shared.path_helpers import resource_path
+from src.shared.model_catalog import model_directory
 from src.shared import constants
 from src.shared.image_helpers import image_to_rgb_array
 from src.shared.memory_errors import is_memory_allocation_error
@@ -148,13 +148,13 @@ class Model48pxOCR:
             
         try:
             # 检查模型文件
-            model_dir = resource_path(constants.MODEL_48PX_DIR)
+            model_dir = model_directory("ocr_48px")
             ckpt_path = os.path.join(model_dir, constants.MODEL_48PX_CHECKPOINT)
             dict_path = os.path.join(model_dir, constants.MODEL_48PX_DICT)
             
             if not os.path.exists(ckpt_path) or not os.path.exists(dict_path):
                 logger.error(
-                    "48px OCR 模型文件不存在，请运行 scripts/download_48px_model.py"
+                    "48px OCR 模型文件不存在，请在设置 → 更多 → 模型管理中安装 48px OCR"
                 )
                 return False
             
