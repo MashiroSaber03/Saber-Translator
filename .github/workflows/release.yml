@@ -42,6 +42,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.12'
+  PYTHONUTF8: '1'
   PIP_NO_CACHE_DIR: '1'
 
 jobs:
