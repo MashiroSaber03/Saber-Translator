@@ -96,9 +96,10 @@ function number(event: Event, field: 'fontSize' | 'lineSpacing') {
             :options="fontOptions"
             label="文本字体"
             searchable
+            single-line-options
             @update:model-value="updateFont"
         /></label>
-        <div class="field-grid">
+        <div class="style-font-size">
           <label class="field"
             >字号<input
               type="number"

@@ -296,10 +296,9 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
                 .ok_or("无法建立文字层")?
         };
         let old = prior.and_then(|v| v.get("payload")).unwrap_or(&Value::Null);
-        let changed = |key: &str| {
-            bubble.get("fields").and_then(Value::as_array).is_some_and(|fields| fields.iter().any(|field| field.as_str() == Some(key)))
-                || old.get(key) != payload.get(key)
-        };
+        let requested = |key: &str| bubble.get("fields").and_then(Value::as_array)
+            .is_some_and(|fields| fields.iter().any(|field| field.as_str() == Some(key)));
+        let changed = |key: &str| requested(key) || old.get(key) != payload.get(key);
         if changed("translatedText") && existing.is_some() {
             // Reuse the engine's range edit so unchanged characters keep their styles.
             let before = old.get("translatedText").and_then(Value::as_str).unwrap_or("");
@@ -310,7 +309,7 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
             session.execute("type.edit", json!({"layer":layer,"replace":{"start":prefix,"end":old_len-suffix,"text":inserted}})).map_err(|e| e.to_string())?;
         }
         let rich = payload.get("richText").filter(|v| !v.is_null());
-        if (rich != old.get("richText").filter(|v| !v.is_null()) || existing.is_none())
+        if (changed("richText") || existing.is_none())
             && let Some(rich) = rich
         {
             let runs = serde_json::from_value(rich.get("runs").cloned().unwrap_or(json!([]))).map_err(|e| format!("无效字符样式：{e}"))?;
@@ -333,9 +332,11 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
                 style[param] = payload.get(field).cloned().unwrap_or(Value::Null);
             }
         }
-        let font_changed = bubble.get("fields").and_then(Value::as_array).is_some_and(|fields| fields.iter().any(|field| field.as_str() == Some("fontId")))
+        let font_changed = requested("fontId")
             || prior.and_then(|v| v.get("fontId")) != bubble.get("fontId");
-        if font_changed && (existing.is_some() || rich.is_none()) {
+        // A document patch may restore the font ID and its exact character runs together.
+        let keep_rich_faces = rich.is_some() && (existing.is_none() || requested("richText"));
+        if font_changed && !keep_rich_faces {
             style["font"] = json!(family);
             for key in ["fontStyle", "postscriptName", "weight", "italic"] {
                 if let Some(value) = font.get(key) {

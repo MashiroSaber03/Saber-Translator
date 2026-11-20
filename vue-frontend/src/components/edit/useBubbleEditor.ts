@@ -12,7 +12,7 @@ import type {
   LogicalAlign,
 } from '@/types/bubble'
 import { apiClient } from '@/api/client'
-import { defaultRun, plainRun, nativeColor, textColor, type EditorFont, type RunStyle } from './richTextDocument'
+import { defaultRun, plainRun, nativeColor, textColor, type EditorFont, type FontStyleSnapshot, type RunStyle } from './richTextDocument'
 import { copiedTextStyle, copyTextStyle, textStyleTemplate, type TextStyleTemplate } from './textStyleClipboard'
 import { useTextStyleFavorites } from './useTextStyleFavorites'
 import { createBubbleState } from '@/utils/bubbleFactory'
@@ -30,11 +30,14 @@ export interface BubbleEditorProps {
   isTranslateLoading?: boolean
   selectedCount?: number
   selectedBubbles?: BubbleState[]
+  fontMatchActive?: boolean
 }
 
 export type BubbleEditorEmit = {
+  (e: 'openFontMatchingSettings'): void
   (e: 'update', updates: Partial<BubbleState>): void
   (e: 'formatText', style: RunStyle, reset?: boolean): void
+  (e: 'restoreFonts', originals: FontStyleSnapshot[]): void
   (e: 'fitText'): void
   (e: 'moveText', dx: number, dy: number): void
   (e: 'applyStyle', scope: 'selected' | 'page', template?: TextStyleTemplate): void
@@ -48,6 +51,7 @@ type TextareaFieldRef = {
   selectionStart: number | null
   selectionEnd: number | null
   format?: (patch: RunStyle, replace?: boolean) => void
+  captureFontUndo?: () => (() => void) | undefined
   insertText?: (text: string) => void
   deleteBackward?: () => void
   getSelectedText?: () => string
@@ -85,7 +89,12 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const originalTextInput = ref<TextareaFieldRef | null>(null)
   const translatedTextInput = ref<TextareaFieldRef | null>(null)
   const editorFonts = ref<EditorFont[]>([])
-  const textSelection = ref<{ active: boolean; count: number; styles: RunStyle[] }>({ active: false, count: 0, styles: [] })
+  const textSelection = ref<{ active: boolean; count: number; range?: [number, number]; styles: RunStyle[] }>({ active: false, count: 0, styles: [] })
+  const fontMatchScope = computed(() => JSON.stringify([
+    props.bubbleIndex, props.bubble?.backendBubbleId ?? props.bubble?.clientMutationId,
+    localTranslatedText.value, textSelection.value.range,
+    ...(props.selectedBubbles ?? []).map(bubble => [bubble.backendBubbleId ?? bubble.clientMutationId, bubble.translatedText]),
+  ]))
   const textScope = computed(() => textSelection.value.active
     ? `已选 ${textSelection.value.count} 个字`
     : (props.selectedBubbles?.length ?? 0) > 1 ? `已选 ${props.selectedBubbles!.length} 个框` : '整框文字')
@@ -279,9 +288,31 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     formatText({ size_pt: size })
   }
 
-  function handleFontFamilyChange(): void {
-    const font = editorFonts.value.find(item => item.id === localFontFamily.value)
-    if (font) formatText(font.style)
+  function handleFontFamilyChange(fontId = localFontFamily.value): void {
+    const font = editorFonts.value.find(item => item.id === fontId)
+    if (font) {
+      localFontFamily.value = fontId
+      formatText(font.style)
+    }
+  }
+
+  function applyFontMatch(fontId: string): (() => void) | null {
+    if (!editorFonts.value.some(font => font.id === fontId)) return null
+    let restore = translatedTextInput.value?.captureFontUndo?.()
+    if (!textSelection.value.active && (props.selectedBubbles?.length ?? 0) > 1) {
+      const originals = props.selectedBubbles!.map(bubble => ({
+        id: bubble.backendBubbleId ?? bubble.clientMutationId ?? '',
+        text: bubble.translatedText,
+        runs: bubble.richText?.runs.map(run => ({ len: run.len, style: { ...run.style } })) ?? [{
+          len: new TextEncoder().encode(bubble.translatedText).length,
+          style: defaultRun(bubble, editorFonts.value.find(font => font.id === bubble.fontFamily)?.style),
+        }],
+      }))
+      restore = () => emit('restoreFonts', originals)
+    }
+    if (!restore) return null
+    handleFontFamilyChange(fontId)
+    return restore
   }
 
   function setTextDirection(direction: ResolvedTextDirection): void {
@@ -519,6 +550,8 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     handleFontSizeChange,
     setFontSize,
     handleFontFamilyChange,
+    fontMatchScope,
+    applyFontMatch,
     setTextDirection,
     openColorPopover,
     toggleStroke,

@@ -45,6 +45,8 @@ vi.mock('@/stores/taskCenterStore', () => ({
 import { useTextStyleSync } from './useTextStyleSync'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
+import { createBubbleState } from '@/utils/bubbleFactory'
+import type { NativeRichText } from '@/components/edit/richTextDocument'
 
 describe('useTextStyleSync page defaults', () => {
   beforeEach(() => {
@@ -113,6 +115,48 @@ describe('useTextStyleSync page defaults', () => {
         propagateStyleFields: [],
       },
     )
+  })
+
+  it.each(['matched', 'page-default'])('undoes matching %s in one save, preserving each original face and current styling', async (matchedFont) => {
+    const imageStore = useImageStore()
+    const makeBubble = (id: string, family: string, runs: NativeRichText['runs'] = [{ len: 6, style: { font_family: family } }]) => ({
+      ...createBubbleState([0, 0, 40, 70]),
+      backendBubbleId: id, translatedText: '汉字', fontFamily: family,
+      richText: { runs, paragraphs: [] },
+    })
+    const original = [
+      makeBubble('bubble-a', 'serif', [{ len: 3, style: { font_family: 'Serif' } }, { len: 3, style: { font_family: 'Round' } }]),
+      makeBubble('bubble-b', 'handwriting'),
+    ]
+    imageStore.setImages([{
+      id: 'page-1', chapterId: 'chapter-1', documentRevision: 3, fileName: 'page.png',
+      sourceAssetUrl: '/source', bubbleStates: original, fontFamily: 'page-default',
+      hasUnsavedChanges: false, translationStatus: 'pending',
+    }])
+    const undo = useTextStyleSync().handleMatchedFont(matchedFont)
+    expect(persistenceMocks.queuePageDocumentMutation).toHaveBeenLastCalledWith('page-1', 3, original, {
+      defaultFontId: matchedFont, pageStyleDefaultsPatch: {}, propagateStyleFields: ['fontFamily'],
+    })
+    const newBubble = makeBubble('new', 'new-font')
+    imageStore.updateCurrentImage({
+      documentRevision: 4,
+      bubbleStates: [
+        makeBubble('bubble-a', matchedFont, [{ len: 6, style: { font_family: 'Matched', size_pt: 42 } }]),
+        makeBubble('bubble-b', matchedFont),
+        newBubble,
+      ],
+    })
+    await undo?.()
+
+    const [, revision, restored, change] = persistenceMocks.queuePageDocumentMutation.mock.calls[1]!
+    expect(revision).toBe(4)
+    expect(change).toEqual({ defaultFontId: 'page-default', pageStyleDefaultsPatch: {}, propagateStyleFields: [] })
+    expect(restored.map((bubble: ReturnType<typeof makeBubble>) => bubble.fontFamily)).toEqual(['serif', 'handwriting', 'new-font'])
+    expect(restored[0].richText.runs).toEqual([
+      { len: 3, style: { font_family: 'Serif', size_pt: 42 } },
+      { len: 3, style: { font_family: 'Round', size_pt: 42 } },
+    ])
+    expect(restored[2]).toEqual(newBubble)
   })
 
   it.each([

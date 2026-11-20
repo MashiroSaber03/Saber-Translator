@@ -38,6 +38,10 @@ class LocalModel:
     directory: str
     files: tuple[ModelFile, ...]
     archive: ModelFile
+    repository: str | None = None
+    revision: str | None = None
+    github_parts: tuple[ModelFile, ...] = ()
+    archive_docs: tuple[ModelFile, ...] = ()
 
     @property
     def size(self) -> int:
@@ -64,7 +68,19 @@ def model_catalog() -> tuple[LocalModel, ...]:
 MODEL_RELEASE_TAG = _manifest()["releaseTag"]
 MODEL_REPOSITORY = _manifest()["githubRepository"]
 LOCAL_MODELS = model_catalog()
-MODELS_BY_ID = {model.model_id: model for model in LOCAL_MODELS}
+# Valen stays outside the one-click translation bundle. Its pinned weights
+# are mirrored as a ZIP and GitHub stores that ZIP in numbered parts.
+VALEN_MODELS = tuple(
+    LocalModel(
+        model_id=item["id"], label=item["label"], description=item["description"],
+        directory=item["directory"], files=tuple(ModelFile(**file) for file in item["files"]),
+        archive=ModelFile(**item["archive"]), repository=item["repository"], revision=item["revision"],
+        github_parts=tuple(ModelFile(**file) for file in item["githubParts"]),
+        archive_docs=tuple(ModelFile(**file) for file in item["archiveDocs"]),
+    )
+    for item in json.loads(Path(resource_path("src/shared/valen_manifest.json")).read_text("utf-8"))
+)
+MODELS_BY_ID = {model.model_id: model for model in (*LOCAL_MODELS, *VALEN_MODELS)}
 
 DETECTOR_MODELS = {"default": "detector_default", "ctd": "detector_ctd", "yolo": "detector_yolo"}
 OCR_MODELS = {"manga_ocr": "manga_ocr", "48px_ocr": "ocr_48px", "paddle_ocr": "paddle_ocr", "paddleocr_vl": "paddleocr_vl"}
@@ -102,7 +118,10 @@ def models_root() -> Path:
 
 def files_present(model: LocalModel, root: Path) -> bool:
     try:
-        return all((root / file.path).is_file() and (root / file.path).stat().st_size > 0 for file in model.files)
+        return all((root / file.path).is_file() and (
+            (root / file.path).stat().st_size == file.size if model.repository else
+            (root / file.path).stat().st_size > 0
+        ) for file in model.files)
     except OSError:
         return False
 
@@ -126,7 +145,7 @@ def model_available(model_id: str) -> bool:
 
 def installed_model_ids() -> list[str]:
     """Read the current installation without loading weights or hashing large files."""
-    return [model.model_id for model in LOCAL_MODELS if model_available(model.model_id)]
+    return [model_id for model_id in MODELS_BY_ID if model_available(model_id)]
 
 
 class MissingModelsError(FileNotFoundError):

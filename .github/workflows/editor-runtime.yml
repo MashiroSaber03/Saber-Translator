@@ -1,15 +1,6 @@
 name: Publish Editor Runtime
 
 on:
-  push:
-    branches: [dev]
-    paths:
-      - third_party/photocraft/**
-      - scripts/build_editor.py
-      - scripts/editor/**
-      - src/backend_v2/editor_runtime.py
-      - editor-runtime.json
-      - .github/workflows/editor-runtime.yml
   workflow_dispatch:
   workflow_call:
 

@@ -40,17 +40,17 @@ def catalog(tmp_path, monkeypatch):
         LocalModel("detector_yolo", "检测模型", "测试检测模型", "one", (file("one/weight.bin"), file("one/config.json")), package("detector_yolo", ("one/weight.bin", "one/config.json"))),
         LocalModel("manga_ocr", "识别模型", "测试识别模型", "two", (file("two/weight.bin"),), package("manga_ocr", ("two/weight.bin",))),
     )
+    monkeypatch.setattr(model_catalog, "LOCAL_MODELS", models)
     for module in (model_catalog, model_installer):
-        monkeypatch.setattr(module, "LOCAL_MODELS", models)
         monkeypatch.setattr(module, "MODELS_BY_ID", {model.model_id: model for model in models})
     monkeypatch.setenv("SABER_MODELS_DIR", str(tmp_path / "models"))
     return models, contents
 
 
 @contextmanager
-def server(catalog, monkeypatch, *, ignore_range=False, range_status=206, corrupt=False, truncate_once=False, not_found=False, slow=False):
-    models, contents = catalog
-    by_name = {model.archive.asset_name: contents[model.archive.path] for model in models}
+def server(catalog, monkeypatch, *, ignore_range=False, range_status=206, corrupt=False, truncate_once=False, not_found=False, slow=False, unavailable_source=None):
+    _, contents = catalog
+    by_name = {Path(path).name: data for path, data in contents.items()}
     requests = []
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -60,7 +60,7 @@ def server(catalog, monkeypatch, *, ignore_range=False, range_status=206, corrup
             data = by_name[self.path.rsplit("/", 1)[-1]]
             requested = self.headers.get("Range")
             requests.append(requested)
-            if not_found:
+            if not_found or self.path.startswith(f"/{unavailable_source}/"):
                 self.send_error(404)
                 return
             offset = int(requested.split("=")[1].split("-")[0]) if requested and not ignore_range else 0
@@ -85,7 +85,7 @@ def server(catalog, monkeypatch, *, ignore_range=False, range_status=206, corrup
     thread = threading.Thread(target=http.serve_forever, daemon=True)
     thread.start()
     base = f"http://127.0.0.1:{http.server_port}"
-    monkeypatch.setattr(model_installer, "download_urls", lambda file, source: (base + "/" + file.asset_name,))
+    monkeypatch.setattr(model_installer, "download_urls", lambda file, source: (base + f"/{source}/{file.asset_name}",))
     try:
         yield requests
     finally:
@@ -104,6 +104,45 @@ def wait(installer):
             return snapshot
         time.sleep(.01)
     raise AssertionError(installer.snapshot())
+
+
+@pytest.mark.parametrize("ignore_range", (False, True))
+def test_split_download_resumes_a_mirror_prefix_and_installs_the_same_zip(catalog, monkeypatch, ignore_range):
+    models, contents = catalog
+    model = models[0]
+    archive = contents[model.archive.path]
+    boundary = len(archive) // 3
+    segments = (archive[:boundary], archive[boundary:2 * boundary], archive[2 * boundary:])
+    parts = tuple(
+        ModelFile(f"chunk.{i:03}", len(segment), hashlib.sha256(segment).hexdigest())
+        for i, segment in enumerate(segments, 1)
+    )
+    contents.update((part.path, segment) for part, segment in zip(parts, segments))
+    updated = replace(model, github_parts=parts)
+    for module in (model_catalog, model_installer):
+        monkeypatch.setitem(module.MODELS_BY_ID, model.model_id, updated)
+    root = model_catalog.models_root()
+    partial = model_installer._partial_path(root, updated.archive)
+    partial.parent.mkdir(parents=True)
+    partial.write_bytes(archive[:boundary + 4096])
+    with server(catalog, monkeypatch, ignore_range=ignore_range, unavailable_source="modelscope") as requests:
+        installer = ModelInstaller()
+        try:
+            installer.install([model.model_id], source="auto")
+            assert wait(installer)["task"]["status"] == "completed"
+            assert requests == [f"bytes={boundary + 4096}-", "bytes=4096-", None]
+            assert all(model_catalog.file_matches(root / file.path, file) for file in model.files)
+            assert not partial.exists()
+        finally:
+            installer.close()
+
+
+def test_valen_release_parts_cover_the_pinned_zip():
+    for model in model_catalog.VALEN_MODELS:
+        assert sum(part.size for part in model.github_parts) == model.archive.size
+        assert [part.asset_name for part in model.github_parts] == [
+            f"{model.archive.asset_name}.{index:03}" for index in range(1, len(model.github_parts) + 1)
+        ]
 
 
 def test_catalog_is_single_authority_and_contains_only_safe_unique_paths():
@@ -452,8 +491,8 @@ def test_invalid_zip_never_replaces_existing_model_files(catalog, monkeypatch, p
     package = output.getvalue()
     contents[model.archive.path] = package
     changed = replace(model, archive=replace(model.archive, size=len(package), sha256=hashlib.sha256(package).hexdigest()))
+    monkeypatch.setattr(model_catalog, "LOCAL_MODELS", (changed, models[1]))
     for module in (model_catalog, model_installer):
-        monkeypatch.setattr(module, "LOCAL_MODELS", (changed, models[1]))
         monkeypatch.setattr(module, "MODELS_BY_ID", {changed.model_id: changed, models[1].model_id: models[1]})
     with server(((changed, models[1]), contents), monkeypatch):
         installer = ModelInstaller()

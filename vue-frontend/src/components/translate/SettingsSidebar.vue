@@ -11,6 +11,8 @@ import WorkflowSection from './settings-sidebar/WorkflowSection.vue'
 
 withDefaults(defineProps<{
   disabled?: boolean
+  active?: boolean
+  selectMatchedFont?: (fontId: string) => (() => void | Promise<void>) | null
 }>(), {
   disabled: false,
 })
@@ -34,6 +36,7 @@ const {
   canRunWorkflow,
   isCurrentPageReady,
   textStyle,
+  currentImage,
   supportsPageSelectionForCurrentMode,
   isPageSelectionActiveForCurrentMode,
   workflowModeOptions,
@@ -97,6 +100,9 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
       <TextStyleSection
         :apply-options="applyOptions"
         :font-select-options="fontSelectOptions"
+        :font-match-scope="currentImage?.id ?? 'quick-translation-default'"
+        :font-match-active="active"
+        :select-matched-font="selectMatchedFont"
         :has-images="hasImages"
         :disabled="disabled || (hasImages && !isCurrentPageReady)"
         :inpaint-method-options="inpaintMethodOptions"
@@ -108,6 +114,7 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
         :text-style="textStyle"
         @apply="handleApplyToAll"
         @font-select-change="handleFontSelectChange"
+        @open-font-matching-settings="emit('openFontMatchingSettings')"
         @inpaint-method-change="handleInpaintMethodChange"
         @layout-direction-change="handleLayoutDirectionChange"
         @select-all="toggleSelectAll"

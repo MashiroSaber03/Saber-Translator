@@ -423,6 +423,24 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /system/models/prepare-valen:
+    post:
+      tags: [system]
+      operationId: prepareValenRuntime
+      x-command-mode: transient
+      description: Prepare the isolated Valen runtime on demand. Public administrators only.
+      responses:
+        "202":
+          description: Preparation started.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LocalModelInstallTask"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409":
+          description: Another installation is running.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
   /system/models/cancel:
     post:
       tags: [system]
@@ -682,6 +700,7 @@ paths:
               - llm
               - embedding
               - reranker
+              - font_matching
       requestBody:
         required: true
         content:
@@ -977,6 +996,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/JobList"
+  /font-matching/configuration:
+    get:
+      tags: [settings]
+      operationId: getFontMatchConfiguration
+      responses:
+        "200":
+          description: Readiness of the current user's saved font matching configuration.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FontMatchConfiguration"}
+  /font-matching/jobs:
+    post:
+      tags: [jobs]
+      operationId: startFontMatch
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reference]
+              properties:
+                reference: {type: string, format: binary}
+      responses:
+        "202":
+          description: Match admitted to the regular job queue. Cancel with the existing jobs endpoint.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /font-matching/jobs/{job_id}:
+    get:
+      tags: [jobs]
+      operationId: getFontMatch
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Compact progress and result for the initiating font control.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FontMatchStatus"}
+        "404":
+          description: Match unavailable to this user.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
   /jobs/events:
     get:
       tags: [jobs]
@@ -5823,9 +5892,10 @@ components:
     LocalModelCatalog:
       type: object
       additionalProperties: false
-      required: [directory, sources, models, task]
+      required: [directory, sources, models, task, valenRuntimeReady]
       properties:
         directory: {type: string}
+        valenRuntimeReady: {type: boolean}
         sources:
           type: array
           items:
@@ -5850,6 +5920,7 @@ components:
               installed: {type: boolean}
               directory: {type: string}
               partialBytes: {type: integer, minimum: 0}
+              optional: {type: boolean}
         task: {$ref: "#/components/schemas/LocalModelInstallTask"}
     LocalModelInstallRequest:
       type: object
@@ -5877,7 +5948,7 @@ components:
         currentFile: {type: [string, "null"]}
         downloadedBytes: {type: integer, minimum: 0}
         totalBytes: {type: integer, minimum: 0}
-        phase: {type: string, enum: [verifying, downloading, extracting]}
+        phase: {type: string, enum: [verifying, downloading, extracting, preparing_runtime]}
         downloadHost: {type: [string, "null"]}
         error: {type: [string, "null"]}
         results:
@@ -6201,6 +6272,39 @@ components:
         - completed_with_errors
         - failed
         - interrupted
+    FontMatchConfiguration:
+      type: object
+      additionalProperties: false
+      required: [ready, valenRuntimeReady, installedValen]
+      properties:
+        ready: {type: boolean}
+        message: {type: string}
+        valenRuntimeReady: {type: boolean}
+        installedValen:
+          type: array
+          items: {type: string, enum: [Valen-0.8B, Valen-2B]}
+    FontMatchStatus:
+      type: object
+      additionalProperties: false
+      required: [status, progress]
+      properties:
+        status: {$ref: "#/components/schemas/JobStatus"}
+        error: {type: string}
+        progress:
+          type: [object, "null"]
+          required: [phase, done, total]
+          properties:
+            phase: {type: string, enum: [samples, loading_model, style, attributes]}
+            done: {type: integer, minimum: 0}
+            total: {type: integer, minimum: 1}
+        result:
+          type: object
+          required: [fontId, method, validCandidateCount, elapsedSeconds]
+          properties:
+            fontId: {$ref: "#/components/schemas/Uuid"}
+            method: {type: string, enum: [m7, style_only]}
+            validCandidateCount: {type: integer, minimum: 1}
+            elapsedSeconds: {type: number, minimum: 0}
     JobKind:
       type: string
       enum:
@@ -6219,6 +6323,7 @@ components:
         - continuation
         - derived_rebuild
         - plugin_agent
+        - font_matching
     JobProgressCurrentStep:
       type: object
       additionalProperties: false

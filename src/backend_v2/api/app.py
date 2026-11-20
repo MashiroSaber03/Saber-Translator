@@ -509,10 +509,14 @@ def create_api_app(settings: ApiSettings) -> Flask:
             url_prefix="/manage",
         )
     from src.backend_v2.api.model_routes import create_model_blueprint
+    from src.backend_v2.font_matching.jobs import create_font_matching_blueprint
     from src.backend_v2.model_installer import ModelInstaller
 
     model_installer = ModelInstaller()
     app.register_blueprint(create_model_blueprint(installer=model_installer, profile=settings.profile))
+    app.register_blueprint(create_font_matching_blueprint(
+        engine=engine, data_root=settings.data_root, profile=settings.profile,
+    ))
     app.extensions["saber_v2_runtime"] = ApiRuntimeServices(
         job_events=broadcaster,
         executors=(cpu_operation_executor, render_executor, model_installer),

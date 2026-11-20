@@ -44,6 +44,7 @@ JOB_LABELS: Final = {
     "insight_export": "分析报告导出",
     "continuation": "漫画续写",
     "plugin_agent": "插件任务",
+    "font_matching": "以图匹配字体",
 }
 
 STEP_LABELS: Final = {
@@ -91,6 +92,8 @@ STEP_LABELS: Final = {
     "insight_qa_retrieve": "检索问答资料",
     "insight_qa_answer": "生成问答回复",
     "plugin_agent_execute": "执行插件任务",
+    "font_matching_local": "本地字体匹配",
+    "font_matching_online": "在线字体匹配",
     "bubble_ocr": "单气泡文字识别",
     "bubble_color": "单气泡颜色分析",
     "bubble_translate": "单气泡翻译",

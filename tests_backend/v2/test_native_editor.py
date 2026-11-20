@@ -972,6 +972,16 @@ def test_partial_character_font_is_protected_until_the_whole_box_changes_font(co
                         fields={'fontId': document['bubbles'][0]['fontId']})], idempotency_key='same-font')
     assert all(r['style']['font_family'] != 'AuditSecondaryFace'
                for r in changed['document']['bubbles'][0]['payload']['richText']['runs'])
+    original_bubble = document['bubbles'][0]
+    original_rich = original_bubble['payload']['richText']
+    restored, _ = repository.mutate_page_document(page_id=page, base_revision=changed['document']['documentRevision'],
+        mutations=[dict(op='patch', clientMutationId='undo-font', bubbleId=original_bubble['bubbleId'],
+                        fields={'fontId': original_bubble['fontId'], 'richText': original_rich})],
+        idempotency_key='restore-mixed-font')
+    assert repository.get_page_document(page)['bubbles'][0]['payload']['richText'] == original_rich
+    repository.mutate_page_document(page_id=page, base_revision=restored['document']['documentRevision'],
+        mutations=[dict(op='patch', clientMutationId='clear-font', bubbleId=original_bubble['bubbleId'],
+                        fields={'fontId': original_bubble['fontId']})], idempotency_key='clear-mixed-font')
     assert catalog.delete(font_id=uploaded['id'], idempotency_key='unused')[0]['deleted']
 
 

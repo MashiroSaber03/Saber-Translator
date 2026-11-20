@@ -45,6 +45,7 @@
         :active-tab="activeTab"
         aria-label="设置分类"
         appearance="underline"
+        layout="scroll"
         class="settings-modal__tabs"
         @update:active-tab="setActiveTab"
       />
@@ -119,7 +120,15 @@
           v-show="activeTab === 'text-defaults'"
           class="settings-modal__tab-pane"
         >
-          <TextStyleDefaultsSettings />
+          <TextStyleDefaultsSettings :active="isOpen && activeTab === 'text-defaults'" @open-font-matching-settings="setActiveTab('font-matching')" />
+        </div>
+
+        <div
+          v-if="hasVisitedTab('font-matching')"
+          v-show="activeTab === 'font-matching'"
+          class="settings-modal__tab-pane"
+        >
+          <FontMatchingSettings :active="isOpen && activeTab === 'font-matching'" @manage-models="setActiveTab('more')" />
         </div>
 
         <div
@@ -168,6 +177,7 @@ import PromptLibrary from './PromptLibrary.vue'
 import PluginManager from './PluginManager.vue'
 import MoreSettings from './MoreSettings.vue'
 import TextStyleDefaultsSettings from './TextStyleDefaultsSettings.vue'
+import FontMatchingSettings from './FontMatchingSettings.vue'
 import BrowserExtensionSettings from './BrowserExtensionSettings.vue'
 import { showToast } from '@/utils/toast'
 import { useSettingsAutoSave } from '@/composables/useSettingsAutoSave'
@@ -196,6 +206,7 @@ type SettingsTabId =
   | 'plugins'
   | 'browser-extension'
   | 'text-defaults'
+  | 'font-matching'
   | 'more'
 
 const activeTab = ref<SettingsTabId>('ocr')
@@ -203,7 +214,7 @@ const visitedTabs = ref<Set<SettingsTabId>>(new Set(['ocr']))
 const contentReady = ref(false)
 const { isSaving: globalSaving, hasUnsavedChanges, persistChanges } = useSettingsAutoSave({
   source: () => [settingsStore.settings, settingsStore.textStyleDefaults,
-    settingsStore.exportPreferences, settingsStore.providerConfigs],
+    settingsStore.exportPreferences, settingsStore.providerConfigs, settingsStore.fontMatchingProvider],
   ready: () => isOpen.value && contentReady.value,
   save: async () => {
     if (!(await settingsStore.saveToBackend())) {
@@ -232,6 +243,7 @@ const allTabs = [
   { id: 'plugins', label: '插件管理' },
   { id: 'browser-extension', label: '浏览器插件' },
   { id: 'text-defaults', label: '文本默认值' },
+  { id: 'font-matching', label: '字体匹配' },
   { id: 'more', label: '更多' },
 ] satisfies Array<{ id: SettingsTabId; label: string }>
 
@@ -339,7 +351,8 @@ onBeforeUnmount(() => {
 }
 
 .settings-modal__tabs {
-  --product-segmented-tabs-tab-padding: 12px 10px;
+  --product-segmented-tabs-tab-padding: 12px 7px;
+  --product-segmented-tabs-tab-font-size: var(--font-size-sm);
 
   flex: 0 0 auto;
   margin: 14px 15px 0;

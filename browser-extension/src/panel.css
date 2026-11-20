@@ -473,6 +473,11 @@ input::placeholder {
   text-align: left;
   font-size: 12px;
 }
+.select-menu--single-line-options button > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .select-menu button[data-active='true'],
 .select-menu button:hover {
   background: var(--s-inset);
@@ -500,6 +505,23 @@ input::placeholder {
   margin-bottom: 12px;
   padding: 0;
   min-height: 37px;
+  font-size: 11px;
+}
+.style-font-size {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+}
+.style-font-size .field {
+  width: 68px;
+  margin: 0;
+}
+.style-font-size .switch-field {
+  min-height: 37px;
+  margin: 0;
+  padding: 0;
   font-size: 11px;
 }
 .switch {

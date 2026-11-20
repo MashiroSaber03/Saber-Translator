@@ -14,6 +14,8 @@ import uuid
 import httpx
 from PIL import Image, ImageDraw
 
+from src.backend_v2.font_matching.config import DOMAIN as FONT_MATCHING, ONLINE_PROVIDERS, model_supported
+from src.backend_v2.font_matching.decisions import DecisionError, OnlineDecisions
 from src.backend_v2.paths import project_root
 from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.storage.platform_repositories import SettingsRepository
@@ -65,6 +67,7 @@ CONNECTION_TEST_KINDS = frozenset(
         "llm",
         "embedding",
         "reranker",
+        FONT_MATCHING,
     }
 )
 
@@ -83,6 +86,7 @@ _CONNECTION_TEST_LABELS = {
     "llm": "对话模型",
     "embedding": "文本向量模型",
     "reranker": "重排模型",
+    FONT_MATCHING: "字体匹配",
 }
 
 _MODEL_CATALOG_FIELDS = frozenset(
@@ -113,6 +117,7 @@ _CONNECTION_TEST_FIELDS = {
     "reranker": frozenset(
         {"provider", "domain", "baseUrl", "model", "secret"}
     ),
+    FONT_MATCHING: frozenset({"provider", "domain", "baseUrl", "model", "secret"}),
 }
 
 
@@ -133,6 +138,12 @@ class ProviderDiagnostics:
 
     def model_catalog(self, body: Mapping[str, object]) -> dict[str, object]:
         self._validate_fields(body, _MODEL_CATALOG_FIELDS)
+        if body.get("domain") == FONT_MATCHING:
+            adapter = self._font_matching_adapter(body)
+            try:
+                return {"models": [{"id": name, "name": name} for name in adapter.models()]}
+            except DecisionError as exc:
+                raise ProviderDiagnosticUnavailable(str(exc)) from exc
         provider = self._provider(body)
         if not provider_supports_capability(provider, MODEL_FETCH_CAPABILITY):
             raise DiagnosticRequestError(f"provider does not support model discovery: {provider}")
@@ -201,6 +212,10 @@ class ProviderDiagnostics:
         return {"success": True, "message": message}
 
     def _run_test(self, kind: str, body: Mapping[str, object]) -> str:
+        if kind == FONT_MATCHING:
+            adapter = self._font_matching_adapter(body, require_model=True)
+            adapter.test()
+            return "已收到图片的原生 Score"
         if kind == "lama_repair":
             return self._test_lama_assets()
         if kind == "firecrawl":
@@ -587,6 +602,23 @@ class ProviderDiagnostics:
             raise RuntimeError("LaMA model files are not installed")
         return f"Worker 模型资源可用：{', '.join(available)}"
 
+    def _font_matching_adapter(self, body: Mapping[str, object], *, require_model: bool = False) -> OnlineDecisions:
+        provider = self._optional_string(body, "provider")
+        if provider not in ONLINE_PROVIDERS or body.get("domain") != FONT_MATCHING:
+            raise DiagnosticRequestError("无效的字体匹配服务商")
+        model = self._optional_string(body, "model")
+        if require_model and not model_supported(provider, model or ""):
+            raise DiagnosticRequestError("请选择支持图片和原生 Score 的模型")
+        try:
+            secret = self._secret(body, provider=provider)
+            key = self._api_key(secret)
+            return OnlineDecisions(provider, model or ONLINE_PROVIDERS[provider][1],
+                                   self._optional_string(body, "baseUrl") or "", key)
+        except LookupError:
+            raise DiagnosticRequestError("请先填写 API Key") from None
+        except ValueError as exc:
+            raise DiagnosticRequestError(str(exc)) from exc
+
     def _secret(
         self,
         body: Mapping[str, object],
@@ -606,7 +638,7 @@ class ProviderDiagnostics:
                     provider=provider,
                 )
             except LookupError:
-                if not provider_requires_api_key(
+                if domain != FONT_MATCHING and not provider_requires_api_key(
                     provider,
                     self._optional_string(body, "baseUrl"),
                 ):

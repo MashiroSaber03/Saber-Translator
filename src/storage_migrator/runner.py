@@ -12,7 +12,7 @@ import uuid
 
 from src.version import STORAGE_VERSION
 from .contracts import StorageError, contract_sql, file_hash, read_database, read_identity, validate_data
-from .control import DataRootLock, atomic_json, control_root, reject_links, wait_for_children, is_empty_root
+from .control import DataRootLock, atomic_json, control_root, reject_links, replace_after_sharing_error, wait_for_children, is_empty_root
 from .registry import MIGRATIONS, SOURCE_PREPARERS, VERSION_VALIDATORS, migration_chain
 from .paths import filesystem_path
 
@@ -289,7 +289,7 @@ class StorageManager:
             self._marker(self.root, state)
             os.replace(self.root, op / "backup")
             self._state(op, state, "old_moved")
-            os.replace(work, self.root)
+            replace_after_sharing_error(work, self.root)
             atomic_json(self.pending, {"id": state["id"]})
             self._state(op, state, "installed")
             return {**result, "status": "awaiting_health"}

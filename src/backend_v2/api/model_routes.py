@@ -49,6 +49,12 @@ def create_model_blueprint(*, installer: ModelInstaller, profile: RuntimeProfile
             raise ValueError("source 必须是字符串")
         return jsonify(installer.install(body.get("modelIds"), source=source, verify=verify)), 202
 
+    @blueprint.post("/prepare-valen")
+    def prepare_valen():
+        require_management()
+        json_body(allowed_keys=(), optional=True)
+        return jsonify(installer.prepare_valen()), 202
+
     @blueprint.post("/cancel")
     def cancel_install():
         require_management()

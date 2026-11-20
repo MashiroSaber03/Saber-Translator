@@ -10,7 +10,7 @@ import type { MaskOverlay } from '@/utils/maskPreview'
 import BubbleEditor from './BubbleEditor.vue'
 import BubbleOverlay from './BubbleOverlay.vue'
 import type { TextStyleTemplate } from './textStyleClipboard'
-import type { RunStyle } from './richTextDocument'
+import type { FontStyleSnapshot, RunStyle } from './richTextDocument'
 
 type ViewMode = 'dual' | 'original' | 'translated'
 type LayoutMode = 'horizontal' | 'vertical'
@@ -18,6 +18,7 @@ type ViewportName = 'original' | 'translated'
 
 const props = defineProps<{
   viewMode: ViewMode
+  fontMatchActive?: boolean
   layoutMode: LayoutMode
   currentImage: ImageData | null | undefined
   bubbles: BubbleState[]
@@ -130,6 +131,8 @@ const emit = defineEmits<{
   bubbleRotateEnd: [index: number, angle: number]
   bubbleUpdate: [updates: Partial<BubbleState>]
   formatText: [style: RunStyle, reset?: boolean]
+  restoreFonts: [originals: FontStyleSnapshot[]]
+  openFontMatchingSettings: []
   fitText: []
   moveText: [dx: number, dy: number]
   applyStyle: [scope: 'selected' | 'page', template?: TextStyleTemplate]
@@ -395,10 +398,13 @@ defineExpose({
         :is-ocr-loading="isOcrLoading"
         :is-translate-loading="isTranslateLoading"
         :disabled="isBusy"
+        :font-match-active="fontMatchActive"
         @update="emit('bubbleUpdate', $event)"
         :selected-count="selectedIndices.length || 1"
         :selected-bubbles="selectedIndices.flatMap(index => bubbles[index] ? [bubbles[index]!] : [])"
         @format-text="(style, reset) => emit('formatText', style, reset)"
+        @restore-fonts="emit('restoreFonts', $event)"
+        @open-font-matching-settings="emit('openFontMatchingSettings')"
         @fit-text="emit('fitText')"
         @move-text="(dx, dy) => emit('moveText', dx, dy)"
         @apply-style="(scope, template) => emit('applyStyle', scope, template)"

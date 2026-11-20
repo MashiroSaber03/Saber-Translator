@@ -40,6 +40,18 @@ def is_empty_root(root: Path) -> bool:
     return True
 
 
+def replace_after_sharing_error(source: Path, destination: Path) -> None:
+    """Give Windows a moment to release temporary handles on an atomic move."""
+    for delay in (0.05, 0.15, 0.3, 0):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError as exc:
+            if not delay or getattr(exc, "winerror", None) not in (5, 32):
+                raise
+        time.sleep(delay)
+
+
 def atomic_json(path: Path, payload: dict) -> None:
     path = filesystem_path(path)
     reject_links(path.parent)
@@ -50,7 +62,7 @@ def atomic_json(path: Path, payload: dict) -> None:
         json.dump(payload, handle, ensure_ascii=False, sort_keys=True)
         handle.flush()
         os.fsync(handle.fileno())
-    os.replace(temporary, path)
+    replace_after_sharing_error(temporary, path)
 
 
 class DataRootAlreadyLocked(StorageError):

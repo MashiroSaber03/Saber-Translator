@@ -91,6 +91,7 @@ JOB_KINDS = (
     "continuation",
     "derived_rebuild",
     "plugin_agent",
+    "font_matching",
 )
 OPERATION_STATUSES = ("pending", "running", "completed", "failed", "cancelled")
 ACTIVE_OPERATION_STATUSES = OPERATION_STATUSES[:2]

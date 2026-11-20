@@ -7,7 +7,7 @@ import UiField from '@/components/ui/UiField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { isRequestCanceled } from '@/api/client'
 import { useRuntimeStore } from '@/stores/runtimeStore'
-import { cancelLocalModelInstall, getLocalModels, installLocalModels,
+import { cancelLocalModelInstall, getLocalModels, installLocalModels, prepareValenRuntime,
   type LocalModelCatalog, type LocalModelInstallRequest } from '@/api/v2/models'
 
 const props = defineProps<{ active: boolean }>()
@@ -20,7 +20,7 @@ const loading = ref(false)
 const task = computed(() => catalog.value?.task)
 const taskActive = computed(() => ['running', 'cancelling'].includes(task.value?.status ?? ''))
 const busy = computed(() => submitting.value || taskActive.value)
-const missing = computed(() => catalog.value?.models.filter(model => !model.installed) ?? [])
+const missing = computed(() => catalog.value?.models.filter(model => !model.optional && !model.installed) ?? [])
 const missingBytes = computed(() => missing.value.reduce((sum, model) => sum + model.sizeBytes, 0))
 const sources = computed(() => catalog.value?.sources.map(item => ({ value: item.id,
   label: item.configured ? item.label : `${item.label}（尚未配置）`, disabled: !item.configured })) ?? [])
@@ -66,16 +66,20 @@ async function refresh(): Promise<void> {
   }
 }
 
-async function install(modelIds: string[], verify = false): Promise<void> {
+async function run(action: () => ReturnType<typeof installLocalModels>): Promise<void> {
   submitting.value = true
   error.value = ''
   try {
-    const result = await installLocalModels({ modelIds, source: source.value, verify })
+    const result = await action()
     if (catalog.value) catalog.value.task = result
     await refresh()
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '无法开始安装'
+    error.value = cause instanceof Error ? cause.message : '无法执行模型管理操作'
   } finally { submitting.value = false }
+}
+
+function install(modelIds: string[], verify = false): Promise<void> {
+  return run(() => installLocalModels({ modelIds, source: source.value, verify }))
 }
 
 async function cancel(): Promise<void> {
@@ -99,24 +103,26 @@ onBeforeUnmount(() => { disposed = true; stopPolling() })
   <div class="local-models">
     <ProductFormSection>
       <template #title>模型管理</template>
-      <p class="local-models__hint">按需下载安装后即可使用；也可以一键安装全部。下载在后端进行，关闭设置不会中断，无需重启程序。</p>
+      <p class="local-models__hint">按需下载安装，或一键安装翻译所需模型。关闭设置后下载会继续。</p>
       <p v-if="catalog" class="local-models__path">模型下载目录：{{ catalog.directory }}</p>
-      <UiField variant="settings" label="下载源" hint="两个来源使用相同的模型包，下载后自动解压安装。离线用户也可将 ZIP 解压到上述目录后刷新。">
+      <UiField variant="settings" label="模型下载源" hint="模型下载后自动校验并解压。离线安装可将完整 ZIP 解压到上述目录后刷新。">
         <UiSelect v-model="source" :options="sources" :disabled="busy" aria-label="模型下载源" />
       </UiField>
       <div class="local-models__actions">
-        <UiButton variant="primary" :disabled="busy || !missing.length" @click="install(missing.map(model => model.id))">{{ missing.length ? `一键安装全部（${formatBytes(missingBytes)}）` : '全部模型已安装' }}</UiButton>
+        <UiButton variant="primary" :disabled="busy || !missing.length" @click="install(missing.map(model => model.id))">{{ missing.length ? `一键安装翻译模型（${formatBytes(missingBytes)}）` : '翻译模型已全部安装' }}</UiButton>
         <UiButton :disabled="loading || submitting" @click="refresh">刷新状态</UiButton>
       </div>
     </ProductFormSection>
     <ProductStatusBanner v-if="error" tone="danger" role="alert">{{ error }}</ProductStatusBanner>
     <ProductStatusBanner v-if="busy && task" tone="info" role="status" aria-live="polite">
-      <strong>{{ task.status === 'cancelling' ? '正在取消' : task.phase === 'extracting' ? '正在解压安装' : task.phase === 'verifying' ? '正在校验' : '正在下载' }} {{ currentLabel }}</strong>
-      <div class="local-models__progress"><progress :value="progress" max="100" aria-label="模型安装进度" /><span>{{ progress }}%</span></div>
-      <p class="local-models__hint">{{ formatBytes(task.downloadedBytes ?? 0) }} / {{ formatBytes(task.totalBytes ?? 0) }} · {{ task.currentFile }}</p>
-      <template #actions><UiButton size="sm" :disabled="task.status === 'cancelling' || submitting" @click="cancel">取消下载</UiButton></template>
+      <strong>{{ task.status === 'cancelling' ? '正在取消' : task.phase === 'preparing_runtime' ? '正在准备 Valen 推理环境' : task.phase === 'extracting' ? '正在解压安装' : task.phase === 'verifying' ? '正在校验' : '正在下载' }} {{ currentLabel }}</strong>
+      <template v-if="task.phase !== 'preparing_runtime'">
+        <div class="local-models__progress"><progress :value="progress" max="100" aria-label="模型安装进度" /><span>{{ progress }}%</span></div>
+        <p class="local-models__hint">{{ formatBytes(task.downloadedBytes ?? 0) }} / {{ formatBytes(task.totalBytes ?? 0) }} · {{ task.currentFile }}</p>
+      </template>
+      <template #actions><UiButton size="sm" :disabled="task.status === 'cancelling' || submitting" @click="cancel">取消操作</UiButton></template>
     </ProductStatusBanner>
-    <ProductStatusBanner v-else-if="task?.status === 'completed'" tone="success" role="status">{{ task.verify ? '校验完成' : '安装完成，可以使用了' }}</ProductStatusBanner>
+    <ProductStatusBanner v-else-if="task?.status === 'completed'" tone="success" role="status">{{ task.phase === 'preparing_runtime' ? 'Valen 推理环境已就绪' : task.verify ? '校验完成' : '安装完成' }}</ProductStatusBanner>
     <ProductStatusBanner v-else-if="task?.status === 'cancelled'" tone="neutral" role="status">已取消。已安装的模型不受影响，再次下载会继续未完成的文件。</ProductStatusBanner>
     <ProductStatusBanner v-else-if="task?.status === 'failed'" tone="warning" role="status">部分模型未完成，请查看下方原因并重试。{{ task.error }}</ProductStatusBanner>
     <ProductFormSection v-if="catalog">
@@ -137,6 +143,15 @@ onBeforeUnmount(() => { disposed = true; stopPolling() })
           </div>
         </li>
       </ul>
+      <UiField
+        v-if="catalog.models.some(model => model.optional)"
+        variant="settings" label="Valen 独立推理环境"
+        hint="准备时需要 Python 3.12 和下载依赖。已有对应版本的完整 Valen 模型可放入上述目录的同名文件夹，然后刷新并校验。"
+      >
+        <UiButton :disabled="busy || catalog.valenRuntimeReady" @click="run(prepareValenRuntime)">
+          {{ catalog.valenRuntimeReady ? '推理环境已就绪' : '准备 Valen 推理环境' }}
+        </UiButton>
+      </UiField>
     </ProductFormSection>
   </div>
 </template>

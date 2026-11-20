@@ -3,7 +3,7 @@ import { EditorState, TextSelection } from 'prosemirror-state'
 import { DOMParser, DOMSerializer } from 'prosemirror-model'
 import { copyTextStyle, applyTextStyle, copiedTextStyle } from '@/components/edit/textStyleClipboard'
 import { createBubbleState } from '@/utils/bubbleFactory'
-import { defaultParagraph, defaultRun, formatBubbleText, fromTextDocument, patchRunStyle, plainRun, replaceBubbleText, textSchema, toTextDocument } from '@/components/edit/richTextDocument'
+import { defaultParagraph, defaultRun, formatBubbleText, fromTextDocument, patchRunStyle, plainRun, replaceBubbleText, restoreFontRuns, textSchema, toTextDocument } from '@/components/edit/richTextDocument'
 
 describe('ordinary rich text uses native character and paragraph runs', () => {
   it('changes only the requested character attribute across frames, preserving mixed styles and masks', () => {
@@ -75,6 +75,20 @@ describe('ordinary rich text uses native character and paragraph runs', () => {
     state = state.apply(state.tr.addMark(2, 5, textSchema.marks.run!.create({ style: red })))
     expect(fromTextDocument(state.doc, normal).richText.runs).toEqual([
       { len: 1, style: normal }, { len: 7, style: red }, { len: 1, style: normal },
+    ])
+  })
+  it('undoes matched faces across merged UTF-8 runs without undoing later style edits', () => {
+    const original = [
+      { len: 3, style: { font_family: '宋体', postscript_name: 'Song', italic: true } },
+      { len: 4, style: { font_family: '黑体', postscript_name: 'Hei', weight: 700 } },
+    ]
+    const matched = [{ len: 7, style: { font_family: 'Matched', font_style: 'Bold', size_pt: 32, underline: true } }]
+    expect(restoreFontRuns(matched, original)).toEqual([
+      { len: 3, style: { ...original[0]!.style, size_pt: 32, underline: true } },
+      { len: 4, style: { ...original[1]!.style, size_pt: 32, underline: true } },
+    ])
+    expect(restoreFontRuns([{ len: 0, style: matched[0]!.style }], [{ len: 0, style: original[0]!.style }])).toEqual([
+      { len: 0, style: { ...original[0]!.style, size_pt: 32, underline: true } },
     ])
   })
   it('inherits character styles on insertion and keeps UTF-8 lengths valid on deletion', () => {

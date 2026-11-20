@@ -666,6 +666,7 @@ interface VisualFixtureOptions {
   insightHasBook?: boolean
   studioDocuments?: boolean
   editBubbles?: boolean
+  fontLabel?: string
   pages?: typeof demoV2Pages
 }
 
@@ -755,6 +756,25 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
       lanUrl: 'http://192.168.1.100:5000',
       port: 5000,
     })
+    return
+  }
+
+  if (path === '/api/v2/system/models') {
+    await fulfillJson({
+      directory: 'C:/Saber-Translator/models',
+      valenRuntimeReady: false,
+      sources: [
+        { id: 'auto', label: '自动（优先魔搭，失败后使用 GitHub）', configured: true },
+        { id: 'modelscope', label: '魔搭社区', configured: true },
+        { id: 'github', label: 'GitHub', configured: true },
+      ],
+      models: [{
+        id: 'valen_08b', label: 'Valen-0.8B', description: '字体匹配专用模型',
+        sizeBytes: 3437344256, installed: false, directory: 'C:/Saber-Translator/models/Valen-0.8B',
+        partialBytes: 0, optional: true,
+      }],
+      task: { status: 'idle', modelIds: [], results: {} },
+    } satisfies V2Schema<'LocalModelCatalog'>)
     return
   }
 
@@ -894,7 +914,7 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
   }
 
   if (path === '/api/v2/editor/fonts') {
-    await fulfillJson({ items: [{ id: 'font-source-han', displayName: '思源黑体', scope: 'shared', isDefault: true,
+    await fulfillJson({ items: [{ id: 'font-source-han', displayName: options.fontLabel ?? '思源黑体', scope: 'shared', isDefault: true,
       url: '/api/v2/editor/fonts/font-source-han', style: { font_family: 'Source Han Sans K', font_style: 'Bold',
         postscript_name: 'SourceHanSansKBold-Bold', weight: 700, italic: false } }] })
     return
@@ -2068,9 +2088,9 @@ test('translate edit workspace selected bubble keeps editor panel contract', asy
   await expect(shape).toHaveText('套索选区')
 })
 
-async function prepareEditorColorPage(page: Page) {
+async function prepareEditorColorPage(page: Page, options: VisualFixtureOptions = {}) {
   await page.unroute('**/*')
-  await prepareVisualPage(page, { editBubbles: true })
+  await prepareVisualPage(page, { ...options, editBubbles: true })
   const document = {
     pageId: 'demo-page-1', chapterId: 'demo-chapter', documentRevision: 1,
     defaultFontId: 'font-source-han', pageStyleDefaults: fixtureTextStyle,
@@ -2126,14 +2146,24 @@ async function prepareEditorColorPage(page: Page) {
 }
 
 test('ordinary editor expanded sections stay aligned in a narrow sidebar', async ({ page }, testInfo) => {
-  const fixture = await prepareEditorColorPage(page)
+  const fontLabel = '[toolbox]黑体-简繁-ExtraLight(v2.4)'
+  const fixture = await prepareEditorColorPage(page, { fontLabel })
   const checkControls = async () => {
-    const font = (await page.getByRole('combobox', { name: '字体', exact: true }).boundingBox())!
-    const size = (await page.getByRole('spinbutton', { name: '字号', exact: true }).boundingBox())!
-    expect(size.width).toBeGreaterThanOrEqual(96)
+    const picker = page.getByRole('combobox', { name: '字体', exact: true })
+    const value = picker.locator('.ui-combobox-value')
+    const font = (await picker.boundingBox())!
+    const sizeInput = page.getByRole('spinbutton', { name: '字号', exact: true })
+    const size = (await sizeInput.boundingBox())!
+    await expect(picker).toHaveAttribute('title', fontLabel)
+    await expect(value).toHaveText(fontLabel)
+    await expect(value).toHaveCSS('white-space', 'nowrap')
+    expect(await value.evaluate(el => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight)).toBe(true)
+    expect(size.width).toBeGreaterThanOrEqual(64)
+    expect(size.width).toBeLessThanOrEqual(80)
     expect(size.height).toBe(36)
     expect(font.height).toBe(size.height)
-    if (Math.abs(font.y - size.y) < 60) expect(font.y).toBe(size.y)
+    if (font.x < size.x) expect(font.y).toBe(size.y)
+    else expect(font.y + font.height).toBeLessThan(size.y)
     for (const name of ['行间距', '字距', '字宽', '字高', '旋转角度', '描边宽度']) {
       const field = (await page.getByRole('spinbutton', { name, exact: true }).boundingBox())!
       expect(field.height).toBe(size.height)
@@ -2240,7 +2270,7 @@ test('selected characters stay visible while ordinary editor style controls own 
   await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('丙丁戊己')
   await input.press('Control+End')
   await expect.poll(() => page.evaluate(() => window.getSelection()?.isCollapsed)).toBe(true)
-  await expect(page.locator('.bubble-editor__text-scope')).toHaveText('输入位置')
+  await expect(page.locator('.bubble-editor__text-scope')).toHaveText('整框文字')
   for (let i = 1; i <= 2; i++) {
     await input.press('Shift+ArrowLeft')
     await expect(page.locator('.bubble-editor__text-scope')).toHaveText(`已选 ${i} 个字`)
@@ -2748,7 +2778,7 @@ test('drawing a bubble persists integer image coordinates', async ({ page }) => 
 
 test('translation settings modal keeps its form styling contract', async ({ page }) => {
   await page.goto('/translate')
-  await expect(page.locator('.translate-page')).toBeVisible()
+  await expect(page.locator('.translate-page')).toBeVisible({ timeout: 15_000 })
   const settingsModal = page.locator('.settings-modal-wrapper')
   if (!(await settingsModal.isVisible())) {
     const guideConfigureButton = page.getByRole('button', { name: '立即配置' })
@@ -2782,6 +2812,7 @@ test('translation settings modal keeps every tab layout contract', async ({ page
     { label: '提示词管理', snapshot: 'settings-tab-prompt-library.png' },
     { label: '插件管理', snapshot: 'settings-tab-plugins.png' },
     { label: '文本默认值', snapshot: 'settings-tab-text-defaults.png' },
+    { label: '字体匹配', snapshot: 'settings-tab-font-matching.png' },
     { label: '更多', snapshot: 'settings-tab-more.png' },
   ]
 

@@ -355,6 +355,10 @@ def run_worker(args: object) -> int:
                 jobs=job_repository,
             )
             job_handlers["plugin_agent_execute"] = plugin_agent.handle
+            from src.backend_v2.font_matching.jobs import FontMatching, LOCAL_STEP, ONLINE_STEP
+
+            font_matching = FontMatching(engine, data_root, profile)
+            job_handlers.update({kind: font_matching.handle for kind in (LOCAL_STEP, ONLINE_STEP)})
             operation_repository = OperationRepository(engine)
             plugin_operation_runtime = PluginOperationRuntime(
                 data_root=data_root,

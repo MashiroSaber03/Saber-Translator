@@ -6,12 +6,14 @@ import { baseKeymap, joinBackward, splitBlockKeepMarks } from 'prosemirror-comma
 import { keymap } from 'prosemirror-keymap'
 import { history, undo, redo } from 'prosemirror-history'
 import type { BubbleState } from '@/types/bubble'
-import { defaultParagraph, defaultRun, fromTextDocument, patchRunStyle, textSchema, toTextDocument, type EditorFont, type RunStyle } from './richTextDocument'
+import { defaultParagraph, defaultRun, fromTextDocument, patchRunStyle, restoreFontRuns, textSchema, toTextDocument, type EditorFont, type RunStyle } from './richTextDocument'
+
+type TextScope = { active: boolean; count: number; range?: [number, number]; styles: RunStyle[] }
 
 const props = defineProps<{ bubble: BubbleState; fonts: EditorFont[]; disabled?: boolean }>()
 const emit = defineEmits<{
   update: [value: Partial<BubbleState>]
-  selection: [value: { active: boolean; count: number; styles: RunStyle[] }]
+  selection: [value: TextScope]
 }>()
 const container = ref<HTMLElement>()
 let view: EditorView | undefined
@@ -56,7 +58,17 @@ function selection(): void {
   const { from, to, empty } = view.state.selection
   const selected = active && !empty
   container.value?.toggleAttribute('data-selection-active', selected)
-  emit('selection', { active: selected, count: selected ? Array.from(view.state.doc.textBetween(from, to, '\n')).length : 0, styles: stylesInScope() })
+  emit('selection', { active: selected, range: selected ? [from, to] : undefined,
+    count: selected ? Array.from(view.state.doc.textBetween(from, to, '\n')).length : 0, styles: stylesInScope() })
+}
+
+function formattingTransaction(state: EditorState, doc: ReturnType<typeof toTextDocument>) {
+  const transaction = state.tr.removeMark(0, doc.content.size, textSchema.marks.run)
+  doc.descendants((node, position) => {
+    if (node.isText) node.marks.forEach(mark => transaction.addMark(position, position + node.nodeSize, mark))
+    else if (node.type.name === 'paragraph') transaction.setNodeMarkup(position, undefined, node.attrs)
+  })
+  return transaction
 }
 
 function sync(): void {
@@ -72,11 +84,7 @@ function sync(): void {
     if (fromTextDocument(view.state.doc, fallback()).translatedText === props.bubble.translatedText) {
       // Canonical saves expand native defaults. Update marks without replacing
       // the characters: replacing the whole document would invalidate input undo.
-      const transaction = view.state.tr.removeMark(0, doc.content.size, textSchema.marks.run)
-      doc.descendants((node, position) => {
-        if (node.isText) node.marks.forEach(mark => transaction.addMark(position, position + node.nodeSize, mark))
-        else if (node.type.name === 'paragraph') transaction.setNodeMarkup(position, undefined, node.attrs)
-      })
+      const transaction = formattingTransaction(view.state, doc)
       transaction.setStoredMarks(view.state.storedMarks)
       view.updateState(view.state.apply(transaction.setMeta('addToHistory', false)))
     } else {
@@ -130,6 +138,22 @@ function format(patch: RunStyle, replace = false): void {
     transaction.setStoredMarks([textSchema.marks.run!.create({ style })])
   }
   view.dispatch(transaction)
+}
+
+function captureFontUndo(): (() => void) | undefined {
+  if (!view || props.disabled || view.composing) return
+  const original = fromTextDocument(view.state.doc, fallback())
+  const originalIdentity = identity
+  return () => {
+    if (!view || props.disabled || view.composing || originalIdentity !== identity) return
+    const current = fromTextDocument(view.state.doc, fallback())
+    if (current.translatedText !== original.translatedText) return
+    const runs = restoreFontRuns(current.richText.runs, original.richText.runs)
+    const doc = toTextDocument(current.translatedText, { ...current.richText, runs }, fallback())
+    const transaction = formattingTransaction(view.state, doc)
+    if (!doc.textContent) transaction.setStoredMarks([textSchema.marks.run!.create({ style: runs[0]?.style ?? fallback() })])
+    view.dispatch(transaction)
+  }
 }
 
 function clearScope(event: PointerEvent): void {
@@ -195,6 +219,7 @@ onBeforeUnmount(() => {
 })
 defineExpose({
   format,
+  captureFontUndo,
   getSelectedText: () => view && active && !view.state.selection.empty
     ? view.state.doc.textBetween(view.state.selection.from, view.state.selection.to, '\n') : '',
   focus: () => { active = true; view?.focus(); selection() },

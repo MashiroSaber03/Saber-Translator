@@ -4,9 +4,11 @@ import type { operations } from '@/api/generated/v2'
 
 export type RunStyle = Record<string, unknown>
 export type NativeRichText = NonNullable<BubbleState['richText']>
+export type FontStyleSnapshot = { id: string; text: string; runs: NativeRichText['runs'] }
 export type EditorFont = operations['listEditorFonts']['responses'][200]['content']['application/json']['items'][number]
 const encoder = new TextEncoder()
 const bytes = (text: string) => encoder.encode(text).length
+const faceFields = ['font_family', 'font_style', 'postscript_name', 'weight', 'italic'] as const
 
 export function textColor(style: RunStyle): string | undefined {
   const color = style.color as { mode?: string; c?: number[]; alpha?: number } | undefined
@@ -74,7 +76,7 @@ export function defaultParagraph(bubble: BubbleState): RunStyle {
 
 export function plainRun(bubble: BubbleState, font?: RunStyle): RunStyle {
   const first = bubble.richText?.runs[0]?.style ?? font ?? {}
-  const face = Object.fromEntries(['font_family', 'font_style', 'postscript_name', 'weight', 'italic']
+  const face = Object.fromEntries(faceFields
     .filter(key => first[key] !== undefined).map(key => [key, first[key]]))
   return defaultRun(bubble, face)
 }
@@ -93,6 +95,31 @@ export function formatBubbleText(bubble: BubbleState, patch: RunStyle, replace =
   const fallback = defaultRun(bubble)
   const { richText } = fromTextDocument(toTextDocument(bubble.translatedText, bubble.richText, fallback, defaultParagraph(bubble)), fallback)
   return { richText: { ...richText, runs: richText.runs.map(run => ({ ...run, style: patchRunStyle(run.style, patch, replace) })) } }
+}
+
+/** Restore just the font face, even when the match merged differently styled runs. */
+export function restoreFontRuns(current: NativeRichText['runs'], original: NativeRichText['runs']): NativeRichText['runs'] {
+  const restored: NativeRichText['runs'] = []
+  let index = 0
+  let offset = 0
+  let boundary = original[0]?.len ?? 0
+  for (const run of current) {
+    const end = offset + run.len
+    do {
+      while (index < original.length - 1 && offset >= boundary) boundary += original[++index]!.len
+      const old = original[index]?.style ?? {}
+      const style = { ...run.style }
+      for (const field of faceFields) {
+        if (old[field] === undefined) delete style[field]
+        else style[field] = old[field]
+      }
+      const finish = Math.min(end, boundary)
+      if (finish < offset || (finish === offset && end !== offset)) return current
+      restored.push({ len: finish - offset, style })
+      offset = finish
+    } while (offset < end)
+  }
+  return restored
 }
 
 function styleReader(runs: NativeRichText['runs'], fallback: RunStyle): (at: number) => RunStyle {

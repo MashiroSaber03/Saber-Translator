@@ -457,7 +457,7 @@ describe('SettingsModal', () => {
       'utf8'
     )
 
-    expect(modalSource).toContain('<TextStyleDefaultsSettings />')
+    expect(modalSource).toMatch(/<TextStyleDefaultsSettings\b/)
     expect(modalSource).toContain('settingsStore.saveToBackend()')
     expect(modalSource).not.toContain('save-request-id')
     expect(modalSource).not.toContain('save-complete')

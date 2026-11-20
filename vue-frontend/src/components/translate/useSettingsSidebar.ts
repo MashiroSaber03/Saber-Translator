@@ -49,6 +49,7 @@ export interface ApplySettingsOptions {
 }
 
 export type SettingsSidebarEmit = {
+  (e: 'openFontMatchingSettings'): void
   (e: 'runWorkflow', payload: WorkflowRunRequest): void
   (e: 'previous'): void
   (e: 'next'): void

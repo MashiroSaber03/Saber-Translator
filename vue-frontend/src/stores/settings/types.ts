@@ -34,9 +34,16 @@ export interface AiVisionOcrProviderConfig {
   minImageSize?: number
 }
 
+export interface FontMatchingProviderConfig {
+  apiKey?: string
+  modelName?: string
+  customBaseUrl?: string
+}
+
 export interface ProviderConfigsCache {
   translation: Record<string, TranslationProviderConfig>
   hqTranslation: Record<string, HqTranslationProviderConfig>
   pluginAgent: Record<string, PluginAgentProviderConfig>
   aiVisionOcr: Record<string, AiVisionOcrProviderConfig>
+  fontMatching: Record<string, FontMatchingProviderConfig>
 }

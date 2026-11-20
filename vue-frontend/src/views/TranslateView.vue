@@ -63,6 +63,7 @@ const {
 
 const {
   handleTextStyleChanged,
+  handleMatchedFont,
   handleAutoFontSizeChanged,
   handleAutoTextColorChanged,
   handleApplyToAll,
@@ -74,6 +75,7 @@ const translation = useTranslation({
 })
 
 const showSettingsModal = ref(false)
+const initialSettingsTab = ref<string>()
 const showBookGlossaryModal = ref(false)
 const showBookNonTranslateModal = ref(false)
 const showQuickPromoteModal = ref(false)
@@ -237,6 +239,12 @@ watch(
 )
 
 function openSettings() {
+  initialSettingsTab.value = undefined
+  showSettingsModal.value = true
+}
+
+function openFontMatchingSettings() {
+  initialSettingsTab.value = 'font-matching'
   showSettingsModal.value = true
 }
 
@@ -392,6 +400,9 @@ async function handleQuickWorkspacePromoted() {
       <template #left>
         <SettingsSidebar
           :disabled="!isWorkspaceReady"
+          :active="!isEditMode"
+          :select-matched-font="handleMatchedFont"
+          @open-font-matching-settings="openFontMatchingSettings"
           @run-workflow="handleRunWorkflow"
           @previous="goToPrevious"
           @next="goToNext"
@@ -440,6 +451,7 @@ async function handleQuickWorkspacePromoted() {
     <EditWorkspace
       v-if="currentImage && isEditMode"
       @exit="toggleEditMode"
+      @open-font-matching-settings="openFontMatchingSettings"
     />
 
 
@@ -447,6 +459,7 @@ async function handleQuickWorkspacePromoted() {
 
     <SettingsModal
       v-model="showSettingsModal"
+      :initial-tab="initialSettingsTab"
       :before-close="translateInit.flushChapterWorkState"
     />
 

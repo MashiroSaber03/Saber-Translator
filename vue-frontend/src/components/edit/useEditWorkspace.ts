@@ -21,7 +21,7 @@ import {
 } from '@/services/pageDocumentPersistence'
 import { deepClone } from '@/utils/deepClone'
 import { applyTextStyle, copiedTextStyle, type TextStyleTemplate } from './textStyleClipboard'
-import { plainRun, formatBubbleText, type RunStyle } from './richTextDocument'
+import { plainRun, formatBubbleText, restoreFontRuns, type FontStyleSnapshot, type RunStyle } from './richTextDocument'
 import { showToast } from '@/utils/toast'
 import { isRequestCanceled } from '@/api/client'
 import type EditImageComparison from './EditImageComparison.vue'
@@ -33,6 +33,7 @@ import {
 
 export type EditWorkspaceEmit = {
   (e: 'exit'): void
+  (e: 'openFontMatchingSettings'): void
 }
 
 export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readonly<Ref<boolean>> = ref(true)) {
@@ -976,6 +977,17 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
       ? [[index, formatBubbleText(bubbles.value[index]!, reset ? plainRun(bubbles.value[index]!) : style, reset)] as [number, Partial<BubbleState>]] : []))
   }
 
+  function restoreMatchedFonts(originals: FontStyleSnapshot[]): void {
+    if (isBusy.value) return
+    updateBubbles(selectedIndices.value.flatMap(index => {
+      const bubble = bubbles.value[index]
+      const original = originals.find(item => item.id === (bubble?.backendBubbleId ?? bubble?.clientMutationId))
+      if (!bubble?.richText || !original || bubble.translatedText !== original.text) return []
+      const runs = restoreFontRuns(bubble.richText.runs, original.runs)
+      return [[index, { richText: { ...bubble.richText, runs } }]]
+    }))
+  }
+
   async function fitSelectedText(): Promise<void> {
     const image = currentImage.value
     if (!image || image.documentRevision === undefined || isBusy.value) return
@@ -1222,6 +1234,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     handleExitToolbarAction,
     handleBubbleUpdateWithSync,
     handleFormatText,
+    restoreMatchedFonts,
     fitSelectedText,
     isSearchReplacing,
     locateSearchResult,

@@ -23,7 +23,7 @@
       :aria-disabled="disabled ? 'true' : undefined"
       @click="toggleDropdown"
       @keydown="handleTriggerKeydown"
-      :title="title"
+      :title="title || (dropdownFitContent ? displayValue : undefined)"
     >
       <span class="ui-combobox-value">{{ displayValue }}</span>
       <span class="ui-combobox-arrow">
@@ -462,6 +462,7 @@ watch(activeIndex, (index) => {
 }
 
 .ui-combobox-arrow {
+  flex-shrink: 0;
   margin-left: 8px;
   color: var(--ui-selector-arrow-text);
   transition: transform 0.2s;

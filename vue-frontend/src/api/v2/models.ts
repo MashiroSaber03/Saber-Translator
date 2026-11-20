@@ -16,3 +16,7 @@ export function installLocalModels(request: LocalModelInstallRequest): Promise<L
 export function cancelLocalModelInstall(): Promise<LocalModelInstallTask> {
   return apiClient.post('/api/v2/system/models/cancel')
 }
+
+export function prepareValenRuntime(): Promise<LocalModelInstallTask> {
+  return apiClient.post('/api/v2/system/models/prepare-valen')
+}

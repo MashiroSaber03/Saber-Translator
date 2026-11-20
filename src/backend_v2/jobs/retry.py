@@ -13,6 +13,7 @@ from sqlalchemy import Engine, select, update
 
 from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.checksums import sha256_file
+from src.backend_v2.font_matching.config import DOMAIN as FONT_MATCHING
 from src.backend_v2.insight.repository import InsightRepository
 from src.backend_v2.jobs.repository import (
     JobConflict,
@@ -130,6 +131,13 @@ class JobRetryService:
             )
         elif strategy == "current" and kind == "detect":
             response = self._retry_detection(
+                source,
+                selected_items,
+                failed_only=failed_only,
+                idempotency_key=idempotency_key,
+            )
+        elif strategy == "current" and kind == FONT_MATCHING:
+            response = self._retry_font_matching(
                 source,
                 selected_items,
                 failed_only=failed_only,
@@ -674,6 +682,37 @@ class JobRetryService:
                 f"job-retry:{source['id']}:"
                 f"{'failed' if failed_only else 'all'}"
             ),
+        )
+
+    def _retry_font_matching(
+        self,
+        source: Mapping[str, Any],
+        selected_items: list[Mapping[str, Any]],
+        *,
+        failed_only: bool,
+        idempotency_key: str,
+    ) -> dict[str, object]:
+        from src.backend_v2.font_matching.jobs import FontMatching
+
+        if len(selected_items) != 1:
+            raise JobConflict("字体匹配任务缺少可重试的参考图")
+        source_id = str(source["id"])
+        item_id = str(selected_items[0]["id"])
+        scope = f"job-retry:{source_id}:{'failed' if failed_only else 'all'}"
+        payload = {"sourceJobId": source_id, "failedOnly": failed_only, "strategy": "current", "itemIds": [item_id]}
+        replay = self.repository.idempotency_replay(scope=scope, key=idempotency_key, payload=payload)
+        if replay is not None:
+            return replay
+        matching = FontMatching(self.engine, self.data_root, self.profile)
+        with self.engine.connect() as connection:
+            asset = matching.reference_asset(connection, source_id, item_id)
+        if asset is None:
+            raise JobConflict("原匹配参考图已不可用，请重新上传")
+        spec = matching.job_spec(asset.id, retry_of_job_id=source_id)
+        return self.repository.create_batch(
+            display_name="重试 · 以图匹配字体",
+            specs=(spec,),
+            idempotency_scope=scope, idempotency_key=idempotency_key, idempotency_payload=payload,
         )
 
     def _retry_insight(

@@ -32,6 +32,13 @@
       @change="updateDraft"
       @font-change="handleFontSelectChange"
     >
+      <template #font-actions>
+        <FontMatchButton
+          :font-id="draftDefaults.fontFamily" scope="text-style-defaults"
+          :disabled="active === false || isLoading || isUploadingFont" :select-font="applyMatch"
+          @open-settings="emit('openFontMatchingSettings')"
+        />
+      </template>
       <template #font-extra>
         <UiFileInput
           ref="fontUploadInput" :accept="FONT_FILE_ACCEPT"
@@ -46,6 +53,7 @@
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import FontMatchButton from '@/components/font-matching/FontMatchButton.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import TextStyleForm from './TextStyleForm.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -70,6 +78,8 @@ import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 import { INPAINT_MODEL_KEYS } from '@/utils/localModelAvailability'
 
 const toast = useToast()
+defineProps<{ active?: boolean }>()
+const emit = defineEmits<{ openFontMatchingSettings: [] }>()
 const settingsStore = useSettingsStore()
 const publicAccess = usePublicUserAccess()
 const inpaintMethodOptions = computed(() => publicAccess.modelOptions(
@@ -165,6 +175,13 @@ function handleFontSelectChange(value: string | number): void {
   if (value) {
     updateDraft({ fontFamily: value })
   }
+}
+
+function applyMatch(fontId: string): (() => void) | null {
+  if (!fontList.value.some(font => font.id === fontId)) return null
+  const previous = draftDefaults.value.fontFamily
+  handleFontSelectChange(fontId)
+  return () => handleFontSelectChange(previous)
 }
 
 </script>

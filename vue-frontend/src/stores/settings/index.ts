@@ -64,6 +64,7 @@ const PROVIDER_DOMAIN_BY_CACHE: Record<ProviderCacheDomain, string> = {
   hqTranslation: 'hq',
   pluginAgent: 'plugin_agent',
   aiVisionOcr: 'ai_vision_ocr',
+  fontMatching: 'font_matching',
 }
 
 const CACHE_BY_PROVIDER_DOMAIN = Object.fromEntries(
@@ -170,6 +171,7 @@ function emptyProviderConfigs(): ProviderConfigsCache {
     hqTranslation: {},
     pluginAgent: {},
     aiVisionOcr: {},
+    fontMatching: {},
   }
 }
 
@@ -278,6 +280,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const themePreference = useThemePreference(STORAGE_KEY_THEME)
   const { theme, effectiveTheme, setTheme, toggleTheme, loadThemeFromStorage } = themePreference
   const providerConfigs = ref<ProviderConfigsCache>(emptyProviderConfigs())
+  const fontMatchingProvider = ref('')
   const credentialSummaries = ref<V2CredentialSummary[]>([])
   const fontCatalog = ref<V2Font[]>([])
   const promptCatalog = ref<V2Prompt[]>([])
@@ -296,6 +299,7 @@ export const useSettingsStore = defineStore('settings', () => {
   let textStyleDefaultsRevision = 0
   let workflowPreferencesRevision = 0
   let exportPreferencesRevision = 0
+  let fontMatchingRevision = 0
   let providerEntries = new Map<string, V2ProviderSettingEntry>()
   const savedPayloads = new Map<string, Record<string, unknown>>()
   let loadPromise: Promise<boolean> | null = null
@@ -355,6 +359,10 @@ export const useSettingsStore = defineStore('settings', () => {
     const exportPreferencesEntry = document.settings.find(
       row => row.domain === 'export_preferences',
     )
+    const fontMatchingEntry = document.settings.find(row => row.domain === 'font_matching')
+    fontMatchingProvider.value = String(fontMatchingEntry?.payload.provider ?? '')
+    fontMatchingRevision = fontMatchingEntry?.revision ?? 0
+    savedPayloads.set('font_matching', { provider: fontMatchingProvider.value })
     if (!translationEntry) {
       throw new Error('后端翻译设置缺失')
     }
@@ -610,6 +618,7 @@ export const useSettingsStore = defineStore('settings', () => {
       if (entry.domain === 'export_preferences') {
         exportPreferencesRevision = entry.revision
       }
+      if (entry.domain === 'font_matching') fontMatchingRevision = entry.revision
       const change = submitted.settings?.find(row => row.domain === entry.domain)
       if (change) savedPayloads.set(entry.domain, deepClone(change.payload))
     })
@@ -679,7 +688,7 @@ export const useSettingsStore = defineStore('settings', () => {
           domain,
           provider,
           rawPayload: config,
-          secret: {
+          secret: domain === 'font_matching' && provider === 'valen' ? undefined : {
             [providerKeyField(domain)]:
               config.apiKey,
           },
@@ -727,6 +736,11 @@ export const useSettingsStore = defineStore('settings', () => {
           domain: 'export_preferences',
           payload: deepClone(exportPreferences.value) as unknown as Record<string, unknown>,
           baseRevision: exportPreferencesRevision,
+        },
+        {
+          domain: 'font_matching',
+          payload: { provider: fontMatchingProvider.value },
+          baseRevision: fontMatchingRevision,
         },
       ].filter(row => !sameSettingValue(row.payload, savedPayloads.get(row.domain))),
       providerSettings,
@@ -846,6 +860,7 @@ export const useSettingsStore = defineStore('settings', () => {
     settings,
     textStyleDefaults,
     providerConfigs,
+    fontMatchingProvider,
     credentialSummaries,
     fontCatalog,
     promptCatalog,

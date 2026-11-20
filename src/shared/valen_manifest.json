@@ -1,0 +1,216 @@
+[
+  {
+    "id": "valen_08b",
+    "label": "Valen-0.8B",
+    "description": "字体匹配专用的旧版 Valen，权重固定到官方版本",
+    "directory": "Valen-0.8B",
+    "repository": "Valen-Team/Valen-0.8B",
+    "revision": "c2c481fcb319bd9ae834abc7c6373271710cf24e",
+    "archive": {
+      "path": "valen_08b/valen_08b.zip",
+      "size": 3437344256,
+      "sha256": "9167f6b93d41db28234369e0a70be038d95625028c33e8fea343d755f8ee0b64"
+    },
+    "githubParts": [
+      {"path": "valen_08b.zip.001", "size": 1992294400, "sha256": "5e1c598606121603e1c05ad808c0422ec1db335d72075bcef4e12f0ce63ee016"},
+      {"path": "valen_08b.zip.002", "size": 1445049856, "sha256": "dca8bbdf053eed339ec21556a4204d60c1b703455688197d7fdb11df376be6f6"}
+    ],
+    "archiveDocs": [
+      {"path": "Valen-0.8B/LICENSE", "size": 11544, "sha256": "bbedc3fda3305820b977265f01b8619d87570a6739de3a5582c3464840f1e57a"},
+      {"path": "Valen-0.8B/README.md", "size": 2231, "sha256": "3dda78fe5ff6e8a33fb43236a694838bf10db2ed5b852db6f68f867cfff84329"}
+    ],
+    "files": [
+      {
+        "path": "Valen-0.8B/batching.py",
+        "size": 2953,
+        "sha256": "ea45d4724bcafca559fc5a2a18092918b633746771c19da6554c29bc5f2cef64"
+      },
+      {
+        "path": "Valen-0.8B/chat_template.jinja",
+        "size": 7755,
+        "sha256": "273d8e0e683b885071fb17e08d71e5f2a5ddfb5309756181681de4f5a1822d80"
+      },
+      {
+        "path": "Valen-0.8B/compiler.py",
+        "size": 13627,
+        "sha256": "f35bab2e71b6beb1228daaa5b7baecdacf04eaf713aee14e8082b97090f910b4"
+      },
+      {
+        "path": "Valen-0.8B/config.json",
+        "size": 3333,
+        "sha256": "8a6a766acfe35a6eb3d373e90c43af0f08dbd44301251df71e18b1b5b5381c08"
+      },
+      {
+        "path": "Valen-0.8B/configuration_valen.py",
+        "size": 1003,
+        "sha256": "8aa80266e8c328b5251d969de80f58e706dcd15a535c877108aab452ff572279"
+      },
+      {
+        "path": "Valen-0.8B/data_types.py",
+        "size": 258,
+        "sha256": "b06ce08081d8f7b2bf36abf302410a96086395e75a04f9e9b1c591db519b1641"
+      },
+      {
+        "path": "Valen-0.8B/heads.py",
+        "size": 6605,
+        "sha256": "63b5970a8bfa121eff94d50ffd35e1fa8387f3af5abccc5f5b75381fb084fc34"
+      },
+      {
+        "path": "Valen-0.8B/model.safetensors",
+        "size": 3417285852,
+        "sha256": "465714dd28702c4232d9233c2a2157d366967c541b2a27d9dadccc816304fd48"
+      },
+      {
+        "path": "Valen-0.8B/modeling_valen.py",
+        "size": 4553,
+        "sha256": "851f90a089c23060e321e1da192689fd3b405253f219f67723bf57c873612d62"
+      },
+      {
+        "path": "Valen-0.8B/processor_config.json",
+        "size": 1191,
+        "sha256": "d89ef49ce9cd37fbf510158e13c1ef063d9286411c1ec9049932dbe0487143b1"
+      },
+      {
+        "path": "Valen-0.8B/responses.py",
+        "size": 1542,
+        "sha256": "298016b0070f1000a38d033e1048e038ff5df6fc1dcbe830601105b181f1d228"
+      },
+      {
+        "path": "Valen-0.8B/runtime_model.py",
+        "size": 5554,
+        "sha256": "2ce5808373505105bedc254bd99671fbeea43c25483e6b63add77b9e32d7baaf"
+      },
+      {
+        "path": "Valen-0.8B/schema.py",
+        "size": 3385,
+        "sha256": "81659cc31b9673f6b9482095a4bbf6a2fb0b1415f0dfdd1c057278ecdca13595"
+      },
+      {
+        "path": "Valen-0.8B/tokenizer.json",
+        "size": 19989343,
+        "sha256": "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4"
+      },
+      {
+        "path": "Valen-0.8B/tokenizer_config.json",
+        "size": 1139,
+        "sha256": "e98f1901ac6f0adff67b1d540bfa0c36ac1a0cf59eb72ed78146ef89aafa1182"
+      }
+    ]
+  },
+  {
+    "id": "valen_2b",
+    "label": "Valen-2B",
+    "description": "字体匹配专用的旧版 Valen，权重固定到官方版本",
+    "directory": "Valen-2B",
+    "repository": "Valen-Team/Valen-2B",
+    "revision": "fb9205c2541abc97ce276670e66f79b78d9068fc",
+    "archive": {
+      "path": "valen_2b/valen_2b.zip",
+      "size": 8879500614,
+      "sha256": "928852449fe9e317de6bd15d5e3a96eaf699dc45e3e08c4dbc6f4ac4873f9be9"
+    },
+    "githubParts": [
+      {"path": "valen_2b.zip.001", "size": 1992294400, "sha256": "7fd9e08e848fc71cd6ccd9fc7cae73f03bdeecc7269b24d5fda79aecfd95ac46"},
+      {"path": "valen_2b.zip.002", "size": 1992294400, "sha256": "4c5f36664cd6a22dfd1d0b8d9a006d6fb29a53372cf1c7d7bb910d3a69a071f5"},
+      {"path": "valen_2b.zip.003", "size": 1992294400, "sha256": "a3032277d0d82bf2637fb7ad6ba3c934bf03ca3cbcb53e2c29581fefe57e5248"},
+      {"path": "valen_2b.zip.004", "size": 1992294400, "sha256": "7d608219688f70a0d7047bd14b126570fbdda3aaac5922f38ecc1ae3beaca59a"},
+      {"path": "valen_2b.zip.005", "size": 910323014, "sha256": "0596951eb6c50995f3b119cbaf3ce96e2eafbc61f93b4dd5d4c4b3b9cc25781f"}
+    ],
+    "archiveDocs": [
+      {"path": "Valen-2B/LICENSE", "size": 11544, "sha256": "bbedc3fda3305820b977265f01b8619d87570a6739de3a5582c3464840f1e57a"},
+      {"path": "Valen-2B/README.md", "size": 2115, "sha256": "729f0a754bccdba9609aa43eabe667bb95b1f61728ed208f45c77b4d5fdb6ddf"}
+    ],
+    "files": [
+      {
+        "path": "Valen-2B/batching.py",
+        "size": 2953,
+        "sha256": "ea45d4724bcafca559fc5a2a18092918b633746771c19da6554c29bc5f2cef64"
+      },
+      {
+        "path": "Valen-2B/chat_template.jinja",
+        "size": 7755,
+        "sha256": "273d8e0e683b885071fb17e08d71e5f2a5ddfb5309756181681de4f5a1822d80"
+      },
+      {
+        "path": "Valen-2B/compiler.py",
+        "size": 13627,
+        "sha256": "f35bab2e71b6beb1228daaa5b7baecdacf04eaf713aee14e8082b97090f910b4"
+      },
+      {
+        "path": "Valen-2B/config.json",
+        "size": 3334,
+        "sha256": "3347726bd3487643f8373bdd52929dee675d1142d282c3537f8a622bcdd1f19f"
+      },
+      {
+        "path": "Valen-2B/configuration_valen.py",
+        "size": 1003,
+        "sha256": "8aa80266e8c328b5251d969de80f58e706dcd15a535c877108aab452ff572279"
+      },
+      {
+        "path": "Valen-2B/data_types.py",
+        "size": 258,
+        "sha256": "b06ce08081d8f7b2bf36abf302410a96086395e75a04f9e9b1c591db519b1641"
+      },
+      {
+        "path": "Valen-2B/heads.py",
+        "size": 6605,
+        "sha256": "63b5970a8bfa121eff94d50ffd35e1fa8387f3af5abccc5f5b75381fb084fc34"
+      },
+      {
+        "path": "Valen-2B/model-00001-of-00003.safetensors",
+        "size": 3999858328,
+        "sha256": "cbac6fc9f9e1e155c09bd566ac79649d228db83d7ed0ac611184fc894a9baa21"
+      },
+      {
+        "path": "Valen-2B/model-00002-of-00003.safetensors",
+        "size": 3997771424,
+        "sha256": "280e098df96bd9acba5253d3ac4e38a178e795610fe77eabf4ca89dcdedc5a23"
+      },
+      {
+        "path": "Valen-2B/model-00003-of-00003.safetensors",
+        "size": 861752068,
+        "sha256": "62b8d1265250a1dc9389e86026f65cc1764975f99a07a320d8aa2aa43f7ec424"
+      },
+      {
+        "path": "Valen-2B/model.safetensors.index.json",
+        "size": 60005,
+        "sha256": "36674818e56496e8e5ab2acdfa1d52e9f98bd22051c2a8c1207391d3759447eb"
+      },
+      {
+        "path": "Valen-2B/modeling_valen.py",
+        "size": 4553,
+        "sha256": "851f90a089c23060e321e1da192689fd3b405253f219f67723bf57c873612d62"
+      },
+      {
+        "path": "Valen-2B/processor_config.json",
+        "size": 1191,
+        "sha256": "d89ef49ce9cd37fbf510158e13c1ef063d9286411c1ec9049932dbe0487143b1"
+      },
+      {
+        "path": "Valen-2B/responses.py",
+        "size": 1542,
+        "sha256": "298016b0070f1000a38d033e1048e038ff5df6fc1dcbe830601105b181f1d228"
+      },
+      {
+        "path": "Valen-2B/runtime_model.py",
+        "size": 5554,
+        "sha256": "2ce5808373505105bedc254bd99671fbeea43c25483e6b63add77b9e32d7baaf"
+      },
+      {
+        "path": "Valen-2B/schema.py",
+        "size": 3385,
+        "sha256": "81659cc31b9673f6b9482095a4bbf6a2fb0b1415f0dfdd1c057278ecdca13595"
+      },
+      {
+        "path": "Valen-2B/tokenizer.json",
+        "size": 19989343,
+        "sha256": "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4"
+      },
+      {
+        "path": "Valen-2B/tokenizer_config.json",
+        "size": 1139,
+        "sha256": "e98f1901ac6f0adff67b1d540bfa0c36ac1a0cf59eb72ed78146ef89aafa1182"
+      }
+    ]
+  }
+]

@@ -33,7 +33,7 @@ from src.shared.user_logging import inline_log_text, user_log
 LOGGER = logging.getLogger("saber.worker.models")
 
 
-LOCAL_MODEL_JOB_STEPS = frozenset({"detect", "ocr", "color", "repair"})
+LOCAL_MODEL_JOB_STEPS = frozenset({"detect", "ocr", "color", "repair", "font_matching_local"})
 ACTIVE_JOB_RUNTIME_STATUSES = frozenset(
     {"running"}
 )

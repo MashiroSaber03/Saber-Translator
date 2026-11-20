@@ -17,6 +17,7 @@ const JOB_KIND_LABELS = {
   continuation: '漫画续写',
   derived_rebuild: '重建分析内容',
   plugin_agent: '插件助手',
+  font_matching: '以图匹配字体',
 } satisfies Readonly<Record<V2Job['kind'], string>>
 
 const STEP_KIND_LABELS: Readonly<Record<string, string>> = {
@@ -62,6 +63,8 @@ const STEP_KIND_LABELS: Readonly<Record<string, string>> = {
   continuation_generate_character_sheet: '生成角色三视图',
   continuation_export: '导出续写内容',
   plugin_agent_execute: '执行插件助手',
+  font_matching_local: '本地字体匹配',
+  font_matching_online: '在线字体匹配',
 }
 
 const EVENT_TYPE_LABELS = {

@@ -169,7 +169,7 @@ jobs:
   # ============================================================================
   editor_runtime:
     needs: prepare
-    if: needs.prepare.outputs.publish == 'true'
+    if: needs.prepare.outputs.publish == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
     permissions:
       contents: write
     uses: ./.github/workflows/editor-runtime.yml

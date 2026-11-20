@@ -361,6 +361,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/models/prepare-valen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Prepare the isolated Valen runtime on demand. Public administrators only. */
+        post: operations["prepareValenRuntime"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/models/cancel": {
         parameters: {
             query?: never;
@@ -690,6 +707,54 @@ export interface paths {
             cookie?: never;
         };
         get: operations["listJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/font-matching/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getFontMatchConfiguration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/font-matching/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["startFontMatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/font-matching/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getFontMatch"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3884,6 +3949,7 @@ export interface components {
         };
         LocalModelCatalog: {
             directory: string;
+            valenRuntimeReady: boolean;
             sources: {
                 /** @enum {string} */
                 id: "auto" | "modelscope" | "github";
@@ -3898,6 +3964,7 @@ export interface components {
                 installed: boolean;
                 directory: string;
                 partialBytes: number;
+                optional?: boolean;
             }[];
             task: components["schemas"]["LocalModelInstallTask"];
         };
@@ -3923,7 +3990,7 @@ export interface components {
             downloadedBytes?: number;
             totalBytes?: number;
             /** @enum {string} */
-            phase?: "verifying" | "downloading" | "extracting";
+            phase?: "verifying" | "downloading" | "extracting" | "preparing_runtime";
             downloadHost?: string | null;
             error?: string | null;
             results: {
@@ -4103,8 +4170,31 @@ export interface components {
         };
         /** @enum {string} */
         JobStatus: "queued" | "running" | "paused" | "cancelled" | "completed" | "completed_with_errors" | "failed" | "interrupted";
+        FontMatchConfiguration: {
+            ready: boolean;
+            message?: string;
+            valenRuntimeReady: boolean;
+            installedValen: ("Valen-0.8B" | "Valen-2B")[];
+        };
+        FontMatchStatus: {
+            status: components["schemas"]["JobStatus"];
+            error?: string;
+            progress: {
+                /** @enum {string} */
+                phase: "samples" | "loading_model" | "style" | "attributes";
+                done: number;
+                total: number;
+            } | null;
+            result?: {
+                fontId: components["schemas"]["Uuid"];
+                /** @enum {string} */
+                method: "m7" | "style_only";
+                validCandidateCount: number;
+                elapsedSeconds: number;
+            };
+        };
         /** @enum {string} */
-        JobKind: "translation" | "remove_text" | "detect" | "style_apply" | "text_import" | "container_import" | "web_extract" | "web_import_commit" | "export" | "insight_analysis" | "insight_export" | "vector_rebuild" | "continuation" | "derived_rebuild" | "plugin_agent";
+        JobKind: "translation" | "remove_text" | "detect" | "style_apply" | "text_import" | "container_import" | "web_extract" | "web_import_commit" | "export" | "insight_analysis" | "insight_export" | "vector_rebuild" | "continuation" | "derived_rebuild" | "plugin_agent" | "font_matching";
         JobProgressCurrentStep: {
             kind: string;
             itemId: components["schemas"]["Uuid"];
@@ -7095,6 +7185,36 @@ export interface operations {
             };
         };
     };
+    prepareValenRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Preparation started. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalModelInstallTask"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            /** @description Another installation is running. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     cancelLocalModelInstall: {
         parameters: {
             query?: never;
@@ -7415,7 +7535,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                kind: "ollama" | "sakura" | "lama_repair" | "baidu_ocr" | "ai_vision_ocr" | "baidu_translate" | "youdao_translate" | "ai_translate" | "firecrawl" | "web_import_agent" | "vlm" | "llm" | "embedding" | "reranker";
+                kind: "ollama" | "sakura" | "lama_repair" | "baidu_ocr" | "ai_vision_ocr" | "baidu_translate" | "youdao_translate" | "ai_translate" | "firecrawl" | "web_import_agent" | "vlm" | "llm" | "embedding" | "reranker" | "font_matching";
             };
             cookie?: never;
         };
@@ -7798,6 +7918,88 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobList"];
+                };
+            };
+        };
+    };
+    getFontMatchConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Readiness of the current user's saved font matching configuration. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FontMatchConfiguration"];
+                };
+            };
+        };
+    };
+    startFontMatch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    reference: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Match admitted to the regular job queue. Cancel with the existing jobs endpoint. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    getFontMatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Compact progress and result for the initiating font control. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FontMatchStatus"];
+                };
+            };
+            /** @description Match unavailable to this user. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

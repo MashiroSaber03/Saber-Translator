@@ -109,6 +109,7 @@
         v-show="!fineActive"
         ref="imageComparisonRef"
         :view-mode="viewMode"
+        :font-match-active="!fineActive && !modeSwitching"
         :layout-mode="layoutMode"
         :current-image="currentImage"
         :bubbles="bubbles"
@@ -148,6 +149,8 @@
         @bubble-rotate-end="handleBubbleRotateEnd"
         @bubble-update="handleBubbleUpdateWithSync"
         @format-text="handleFormatText"
+        @restore-fonts="restoreMatchedFonts"
+        @open-font-matching-settings="emit('openFontMatchingSettings')"
         @fit-text="fitSelectedText"
         @move-text="moveSelectedText"
         @apply-style="handleApplyStyleToAllBubbles"
@@ -326,6 +329,7 @@ const {
   handleExitToolbarAction,
   handleBubbleUpdateWithSync,
   handleFormatText,
+  restoreMatchedFonts,
   fitSelectedText,
   isSearchReplacing,
   locateSearchResult,

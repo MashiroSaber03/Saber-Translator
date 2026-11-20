@@ -7,6 +7,7 @@ const props = defineProps<{
   label: string
   disabled?: boolean
   searchable?: boolean
+  singleLineOptions?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string | number] }>()
 const id = useId()
@@ -119,6 +120,7 @@ onBeforeUnmount(() => {
     role="combobox"
     :aria-label="label"
     :disabled="disabled"
+    :title="singleLineOptions ? selected : undefined"
     :aria-expanded="open"
     aria-haspopup="listbox"
     :aria-controls="open ? id : undefined"
@@ -129,7 +131,15 @@ onBeforeUnmount(() => {
     ><span class="chevron" aria-hidden="true" />
   </button>
   <Teleport to="body">
-    <div v-if="open" ref="popup" class="select-menu" :style="position" tabindex="-1" @keydown="key">
+    <div
+      v-if="open"
+      ref="popup"
+      class="select-menu"
+      :class="{ 'select-menu--single-line-options': singleLineOptions }"
+      :style="position"
+      tabindex="-1"
+      @keydown="key"
+    >
       <input
         v-if="searchable"
         v-model="query"
@@ -155,6 +165,7 @@ onBeforeUnmount(() => {
           :id="`${id}-${i}`"
           type="button"
           role="option"
+          :title="singleLineOptions ? option.label : undefined"
           :aria-selected="option.value === modelValue"
           :data-active="i === index"
           :data-value="option.value"

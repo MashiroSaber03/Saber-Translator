@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from collections.abc import Callable
 import hashlib
 import logging
 from pathlib import Path
@@ -16,7 +17,7 @@ import zipfile
 import requests
 
 from src.shared.model_catalog import (
-    LOCAL_MODELS, MODELS_BY_ID, LocalModel, ModelFile, download_sources, download_urls,
+    MODELS_BY_ID, LocalModel, ModelFile, download_sources, download_urls,
     file_matches, installed_root, model_available, models_root,
 )
 from src.storage_migrator.control import DataRootAlreadyLocked, DataRootLock
@@ -64,11 +65,14 @@ class ModelInstaller:
             thread.join(timeout=15)
 
     def snapshot(self) -> dict:
+        from src.backend_v2.font_matching.valen_runtime import runtime_ready
+
         with self._mutex:
             task = deepcopy(self._task)
         root = models_root()
         return {
             "directory": str(root),
+            "valenRuntimeReady": runtime_ready(root),
             "sources": [
                 {"id": "auto", "label": "自动（优先魔搭，失败后使用 GitHub）", "configured": True},
                 {"id": "modelscope", "label": "魔搭社区", "configured": "modelscope" in download_sources()},
@@ -80,8 +84,9 @@ class ModelInstaller:
                     "sizeBytes": model.archive.size, "installed": model_available(model.model_id),
                     "directory": str(installed_root(model.model_id) / model.directory),
                     "partialBytes": _partial_size(_partial_path(root, model.archive), model.archive.size),
+                    **({"optional": True} if model.repository else {}),
                 }
-                for model in LOCAL_MODELS
+                for model in MODELS_BY_ID.values()
             ],
             "task": task,
         }
@@ -96,6 +101,21 @@ class ModelInstaller:
         if source == "modelscope" and source not in download_sources():
             raise ValueError("魔搭仓库尚未配置，请先使用 GitHub 下载源")
         selected = list(dict.fromkeys(model_ids))
+        return self._start(
+            {"modelIds": selected, "source": source, "verify": verify,
+             "totalBytes": sum(MODELS_BY_ID[key].archive.size for key in selected)},
+            lambda root: self._run(selected, root, source, verify),
+        )
+
+    def prepare_valen(self) -> dict:
+        from src.backend_v2.font_matching.valen_runtime import prepare_runtime
+
+        return self._start(
+            {"modelIds": [], "phase": "preparing_runtime"},
+            lambda root: prepare_runtime(root, self._check_cancelled),
+        )
+
+    def _start(self, task: dict, run: Callable[[Path], None]) -> dict:
         with self._mutex:
             if self._closed:
                 raise ModelInstallBusy("服务正在关闭，请重新打开后重试")
@@ -109,13 +129,11 @@ class ModelInstaller:
                 raise ModelInstallBusy("另一个程序实例正在安装模型，请稍后重试") from error
             self._cancel.clear()
             self._task = {
-                "status": "running", "modelIds": selected, "source": source,
-                "verify": verify, "currentModelId": None, "currentFile": None,
-                "downloadedBytes": 0, "totalBytes": sum(MODELS_BY_ID[key].archive.size for key in selected),
-                "results": {}, "error": None,
+                "status": "running", "currentModelId": None, "currentFile": None,
+                "downloadedBytes": 0, "totalBytes": 0, "results": {}, "error": None, **task,
             }
             self._thread = threading.Thread(
-                target=self._run, args=(selected, root, source, verify, lock),
+                target=self._run_task, args=(run, root, lock),
                 name="model-installer", daemon=True,
             )
             try:
@@ -140,56 +158,109 @@ class ModelInstaller:
         if self._cancel.is_set():
             raise InstallCancelled()
 
-    def _run(self, model_ids: list[str], root: Path, source: str, verify: bool, lock: DataRootLock) -> None:
-        completed = 0
-        failed = False
+    def _run_task(self, run: Callable[[Path], None], root: Path, lock: DataRootLock) -> None:
         try:
-            for model_id in model_ids:
-                self._check_cancelled()
-                model = MODELS_BY_ID[model_id]
-                self._update(currentModelId=model_id)
-                try:
-                    existing_root = installed_root(model_id)
-                    matches = True
-                    for file in model.files:
-                        self._check_cancelled()
-                        self._update(currentFile=file.path, downloadedBytes=completed, phase="verifying")
-                        if not file_matches(existing_root / file.path, file):
-                            if verify:
-                                raise ValueError(f"文件缺失或校验不匹配：{file.path}，请点击下载/修复")
-                            matches = False
-                            break
-                    if not matches:
-                        archive = self._download(model, root, source, completed)
-                        self._extract(model, archive, root)
-                        archive.unlink()
-                    completed += model.archive.size
-                    self._update(downloadedBytes=completed)
-                    result = {"status": "completed", "error": None}
-                except InstallCancelled:
-                    raise
-                except Exception as error:
-                    failed = True
-                    LOGGER.warning("Model %s installation failed: %s", model_id, error)
-                    result = {"status": "failed", "error": str(error)}
-                with self._mutex:
-                    self._task["results"][model_id] = result
-            self._update(status="failed" if failed else "completed", currentModelId=None, currentFile=None)
+            run(root)
+            with self._mutex:
+                if self._task["status"] == "running":
+                    self._update(status="completed")
+                elif self._task["status"] == "cancelling":
+                    self._update(status="cancelled")
         except InstallCancelled:
-            self._update(status="cancelled", error="已取消；再次下载会继续未完成的文件")
+            self._update(status="cancelled")
         except Exception as error:
-            LOGGER.exception("Model installation failed")
+            LOGGER.warning("Model setup failed: %s", error)
             self._update(status="failed", error=str(error))
         finally:
             lock.release()
 
-    def _download(self, model: LocalModel, root: Path, source: str, completed: int) -> Path:
+    def _run(self, model_ids: list[str], root: Path, source: str, verify: bool) -> None:
+        completed = 0
+        failed = False
+        for model_id in model_ids:
+            self._check_cancelled()
+            model = MODELS_BY_ID[model_id]
+            self._update(currentModelId=model_id)
+            try:
+                self._install_model(model, root, source, completed, verify)
+                completed += model.archive.size
+                self._update(downloadedBytes=completed)
+                result = {"status": "completed", "error": None}
+            except InstallCancelled:
+                raise
+            except Exception as error:
+                failed = True
+                LOGGER.warning("Model %s installation failed: %s", model_id, error)
+                result = {"status": "failed", "error": str(error)}
+            with self._mutex:
+                self._task["results"][model_id] = result
+        self._update(currentModelId=None, currentFile=None)
+        if failed:
+            self._update(status="failed")
+
+    def _install_model(self, model: LocalModel, root: Path, source: str, completed: int, verify: bool) -> None:
+        source_root = installed_root(model.model_id)
+        for file in model.files:
+            self._check_cancelled()
+            self._update(currentFile=file.path, downloadedBytes=completed, phase="verifying")
+            if not file_matches(source_root / file.path, file):
+                if verify:
+                    raise ValueError(f"文件缺失或校验不匹配：{file.path}，请点击下载/修复")
+                archive = self._download_archive(model, root, source, completed)
+                self._extract(model, archive, root)
+                archive.unlink()
+                return
+
+    def _download_archive(self, model: LocalModel, root: Path, source: str, completed: int) -> Path:
+        if not model.github_parts or source == "modelscope":
+            return self._download(model.archive, root, download_urls(model.archive, source),
+                                  completed, extract_bytes=model.size)
+        if source == "auto" and "modelscope" in download_sources():
+            try:
+                return self._download(model.archive, root, download_urls(model.archive, "modelscope"),
+                                      completed, extract_bytes=model.size)
+            except RuntimeError as error:
+                LOGGER.info("ModelScope download failed for %s, trying GitHub: %s", model.model_id, error)
+
+        # The release assets are byte ranges of the same pinned ZIP. Resume in
+        # that ZIP directly, including when the prefix came from ModelScope.
         file = model.archive
+        partial = _partial_path(root, file)
+        partial.parent.mkdir(parents=True, exist_ok=True)
+        if partial.exists() and partial.stat().st_size > file.size:
+            partial.unlink()
+        downloaded = partial.stat().st_size if partial.exists() else 0
+        if downloaded < file.size:
+            self._require_download_space(partial.parent, file.size - downloaded + model.size)
+        start = 0
+        for part in model.github_parts:
+            self._check_cancelled()
+            if downloaded < start + part.size:
+                url, = download_urls(part, "github")
+                self._update(currentFile=part.asset_name, phase="downloading", downloadHost=urlsplit(url).hostname)
+                self._stream(url, partial, part, max(0, downloaded - start), completed + start, start=start)
+            start += part.size
+        return self._verify_download(partial, file)
+
+    @staticmethod
+    def _require_download_space(staging: Path, required: int) -> None:
+        if shutil.disk_usage(staging).free < required + 64 * 1024 * 1024:
+            raise OSError(f"磁盘空间不足，安装当前文件还需约 {required / 1024 ** 2:.0f} MiB")
+
+    def _verify_download(self, partial: Path, file: ModelFile) -> Path:
+        self._check_cancelled()
+        self._update(phase="verifying")
+        if not file_matches(partial, file):
+            partial.unlink(missing_ok=True)
+            raise ValueError(f"文件校验失败：{file.path}，请重试或切换下载源")
+        return partial
+
+    def _download(self, file: ModelFile, root: Path, urls: tuple[str, ...],
+                  completed: int, *, extract_bytes: int = 0) -> Path:
         staging = root / ".downloads"
         staging.mkdir(parents=True, exist_ok=True)
         partial = _partial_path(root, file)
         self._update(currentFile=file.asset_name)
-        urls = download_urls(file, source)
         last_error: Exception | None = None
         for url in urls:
             self._check_cancelled()
@@ -198,17 +269,10 @@ class ModelInstaller:
                     partial.unlink()
                 offset = partial.stat().st_size if partial.exists() else 0
                 if offset < file.size:
-                    required = file.size - offset + model.size
-                    if shutil.disk_usage(staging).free < required + 64 * 1024 * 1024:
-                        raise OSError(f"磁盘空间不足，下载和解压还需约 {required / 1024 ** 2:.0f} MiB")
+                    self._require_download_space(staging, file.size - offset + extract_bytes)
                     self._update(phase="downloading", downloadHost=urlsplit(url).hostname)
                     self._stream(url, partial, file, offset, completed)
-                self._check_cancelled()
-                self._update(phase="verifying")
-                if not file_matches(partial, file):
-                    partial.unlink(missing_ok=True)
-                    raise ValueError(f"文件校验失败：{file.path}，请重试或切换下载源")
-                return partial
+                return self._verify_download(partial, file)
             except InstallCancelled:
                 raise
             except (requests.RequestException, OSError, ValueError) as error:
@@ -223,7 +287,7 @@ class ModelInstaller:
         # catalogued files are accepted; ZIP paths never choose install targets.
         with zipfile.ZipFile(archive) as package, TemporaryDirectory(prefix="extract-", dir=archive.parent) as temporary:
             members = package.infolist()
-            expected = {file.path: file for file in model.files}
+            expected = {file.path: file for file in (*model.files, *model.archive_docs)}
             if len(members) != len(expected) or {member.filename for member in members} != expected.keys():
                 raise ValueError("模型 ZIP 文件列表不匹配")
             for member in members:
@@ -245,12 +309,12 @@ class ModelInstaller:
                 if digest.hexdigest() != file.sha256:
                     raise ValueError(f"文件校验失败：{file.path}")
             self._check_cancelled()
-            for file in model.files:
+            for file in expected.values():
                 destination = root / file.path
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 (Path(temporary) / file.path).replace(destination)
 
-    def _stream(self, url: str, partial: Path, file: ModelFile, offset: int, completed: int) -> None:
+    def _stream(self, url: str, partial: Path, file: ModelFile, offset: int, completed: int, *, start: int = 0) -> None:
         headers = {"Accept-Encoding": "identity", "User-Agent": "Saber-Translator-model-installer"}
         if offset:
             headers["Range"] = f"bytes={offset}-"
@@ -272,7 +336,9 @@ class ModelInstaller:
                 else:
                     raise ValueError(f"下载源返回了异常状态 {response.status_code}")
                 self._update(downloadedBytes=completed + offset)
-                with partial.open("ab" if offset else "wb") as handle:
+                with partial.open("r+b" if partial.exists() else "wb") as handle:
+                    handle.seek(start + offset)
+                    handle.truncate()
                     received = offset
                     for chunk in response.iter_content(chunk_size=256 * 1024):
                         self._check_cancelled()

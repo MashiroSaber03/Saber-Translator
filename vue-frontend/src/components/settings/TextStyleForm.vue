@@ -1,34 +1,13 @@
 <template>
   <div class="text-style-form">
-    <ProductFormSection>
+    <ProductFormSection class="text-style-form__typography">
       <template #title>字体排版</template>
-      <UiFormGrid>
-        <UiField variant="settings" label="字号" :control-id="id('FontSize')">
-          <UiNumberField
-            :input-id="id('FontSize')"
-            :model-value="draftDefaults.fontSize"
-            :min="1"
-            :disabled="draftDefaults.autoFontSize"
-            size="sm"
-            @change="updateFontSize"
-          />
-        </UiField>
-        <UiField
-          variant="settings"
-          control="checkbox"
-          label="自动计算初始字号"
-          :control-id="id('AutoFontSize')"
-        >
-          <UiCheckbox
-            :input-id="id('AutoFontSize')"
-            :model-value="draftDefaults.autoFontSize"
-            @change="updateAutoFontSize"
-          />
-        </UiField>
-      </UiFormGrid>
-
       <UiField variant="settings" label="文本字体" :control-id="id('FontFamily')">
+        <template v-if="$slots['font-actions']" #label-actions>
+          <slot name="font-actions" />
+        </template>
         <UiCombobox
+          fit
           dropdown-fit-content
           :input-id="id('FontFamily')"
           aria-label="文本字体"
@@ -38,6 +17,25 @@
           @change="handleFontSelectChange"
         />
         <slot name="font-extra" />
+      </UiField>
+
+      <UiField variant="settings" label="字号" :control-id="id('FontSize')">
+        <div class="text-style-form__font-size">
+          <UiNumberField
+            :input-id="id('FontSize')"
+            :model-value="draftDefaults.fontSize"
+            :min="1"
+            :disabled="draftDefaults.autoFontSize"
+            size="sm"
+            @change="updateFontSize"
+          />
+          <UiCheckbox
+            :input-id="id('AutoFontSize')"
+            :model-value="draftDefaults.autoFontSize"
+            label="自动计算初始字号"
+            @change="updateAutoFontSize"
+          />
+        </div>
       </UiField>
 
       <UiFormGrid>
@@ -295,5 +293,19 @@ function updateStrokeWidth(value: number | null): void {
   --ui-number-field-width: 100%;
   --ui-number-field-input-width: 100%;
   --ui-number-field-text-align: left;
+}
+
+.text-style-form__typography {
+  --ui-selector-control-min-height: var(--ui-input-sm-min-height, 32px);
+}
+
+.text-style-form__font-size {
+  --ui-number-field-width: fit-content;
+  --ui-number-field-input-width: 68px;
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
 }
 </style>

@@ -9,6 +9,7 @@ from typing import Any, Mapping
 from urllib.parse import urlsplit
 
 from src.backend_v2.content.page_style import validate_text_style_payload
+from src.backend_v2.font_matching.config import DOMAIN as FONT_MATCHING, ONLINE_PROVIDERS, PROVIDERS, VALEN_IDS
 from src.backend_v2.jobs import MAX_DEEP_LEARNING_CONCURRENCY
 from src.backend_v2.storage.defaults import (
     DEFAULT_BROWSER_DOM_AGENT,
@@ -35,7 +36,7 @@ from src.shared.paddleocr_vl import PADDLEOCR_VL_LANGUAGE_NAMES
 APP_SETTING_DOMAINS = frozenset({
     "browser_dom_agent", "translation", "text_style_defaults",
     "workflow_preferences", "export_preferences", "custom_ai_profiles",
-    "web_import", "insight",
+    "web_import", "insight", FONT_MATCHING,
 })
 PROVIDER_CAPABILITIES = {
     "translation": TRANSLATION_CAPABILITY,
@@ -803,6 +804,10 @@ def validate_setting_payload(
         _validate_web_import(result)
     elif domain == "insight":
         _validate_insight(result)
+    elif domain == FONT_MATCHING:
+        _exact_keys(result, {"provider"}, domain)
+        if not isinstance(result["provider"], str) or result["provider"] not in PROVIDERS:
+            raise ValueError("无效的字体匹配服务商")
     elif domain == "text_style_defaults":
         font_id, style = validate_text_style_payload(result)
         result = {**style, "fontFamily": font_id}
@@ -816,6 +821,14 @@ def validate_provider_setting_payload(
 ) -> dict[str, Any]:
     result = _object(payload, "provider setting payload")
     _reject_secret_fields(result, f"provider_settings.{domain}.{provider}")
+    if domain == FONT_MATCHING:
+        _exact_keys(result, {"modelName", "customBaseUrl"}, domain)
+        if provider not in PROVIDERS or not all(isinstance(value, str) for value in result.values()):
+            raise ValueError("无效的字体匹配配置")
+        if provider == "valen":
+            if result["customBaseUrl"] or result["modelName"] not in {"", *VALEN_IDS}:
+                raise ValueError("请选择旧 Valen-0.8B 或 Valen-2B")
+        return result
     if domain in {"web_import_firecrawl", "web_import_http"}:
         expected_provider = "firecrawl" if domain == "web_import_firecrawl" else "headers"
         if provider != expected_provider or result:
@@ -943,6 +956,8 @@ def validate_credential_secret(
     result = _object(secret, "credential secret")
     if domain == "ocr" and provider == "baidu":
         allowed = {"baidu_api_key", "baidu_secret_key"}
+    elif domain == FONT_MATCHING and provider in ONLINE_PROVIDERS:
+        allowed = {"api_key"}
     elif domain == "ai_vision_ocr":
         _require_provider(
             provider,

@@ -104,20 +104,27 @@
       <div class="bubble-editor__toolbar">
         <div class="bubble-editor__toolbar-row bubble-editor__toolbar-row--top">
           <UiField class="bubble-editor__toolbar-field" variant="editor" label="字体" control-id="bubbleFontFamily">
+            <template #label-actions>
+              <FontMatchButton
+                :font-id="localFontFamily" :scope="fontMatchScope"
+                :disabled="disabled || !bubble || fontMatchActive === false" :select-font="applyFontMatch"
+                @open-settings="emit('openFontMatchingSettings')"
+              />
+            </template>
             <UiCombobox
+              class="bubble-editor__font-select"
               fit
               dropdown-fit-content
               input-id="bubbleFontFamily"
               aria-label="字体"
               v-model="localFontFamily"
               :groups="fontSelectGroups"
-              title="字体"
-              @change="handleFontFamilyChange"
+              @change="handleFontFamilyChange()"
               placeholder="多种字体"
             />
           </UiField>
           <UiField
-            class="bubble-editor__toolbar-field"
+            class="bubble-editor__font-size"
             variant="editor"
             label="字号"
             control-id="bubbleFontSize"
@@ -475,6 +482,7 @@ import { ref } from 'vue'
 
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
+import FontMatchButton from '@/components/font-matching/FontMatchButton.vue'
 import RichTextInput from './RichTextInput.vue'
 import { nativeColor } from './richTextDocument'
 import EditColorPopover from './EditColorPopover.vue'
@@ -549,6 +557,8 @@ const {
   handleFontSizeChange,
   setFontSize,
   handleFontFamilyChange,
+  fontMatchScope,
+  applyFontMatch,
   setTextDirection,
   openColorPopover,
   toggleStroke,
@@ -635,7 +645,21 @@ defineExpose({ focusText: () => translatedTextInput.value?.focus(), applyPickedC
 .bubble-editor__style-section { display: flex; flex: 0 0 auto; flex-direction: column; gap: 12px; width: 100%; }
 .bubble-editor__toolbar { display: grid; gap: 16px; min-width: 0; }
 .bubble-editor__toolbar-row { display: grid; align-items: start; gap: 12px; min-width: 0; }
-.bubble-editor__toolbar-row--top { grid-template-columns: minmax(0, 1fr) minmax(180px, 0.6fr); }
+.bubble-editor__toolbar-row--top { grid-template-columns: minmax(0, 1fr) max-content; column-gap: 10px; }
+
+.bubble-editor__toolbar-row--top .bubble-editor__font-select {
+  --ui-selector-control-padding: 0 8px;
+
+  font-size: var(--ui-selector-control-font-size);
+}
+
+.bubble-editor__font-size {
+  --ui-number-field-width: fit-content;
+  --ui-number-field-input-width: 64px;
+  --ui-number-field-control-width: 26px;
+
+  width: 128px;
+}
 
 .bubble-editor__toolbar-row--actions,
 .bubble-editor__toolbar-row--typography { padding-top: 12px; border-top: 1px solid var(--color-border-muted); }

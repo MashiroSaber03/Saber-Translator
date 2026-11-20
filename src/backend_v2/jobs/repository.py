@@ -3222,13 +3222,14 @@ class JobQueueRepository:
         step_id: str,
         code: str,
         message: str,
+        checkpoint: Mapping[str, Any] | None = None,
         publisher: Callable[[Connection], None] | None = None,
     ) -> None:
         self._finish_step(
             fence,
             step_id=step_id,
             status="failed",
-            checkpoint=None,
+            checkpoint=checkpoint,
             error={"code": code, "message": message},
             publisher=publisher,
         )

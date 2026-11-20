@@ -14,6 +14,9 @@ import {
 } from '@/services/pageDocumentPersistence'
 import { showToast } from '@/utils/toast'
 import { normalizeImageTextStyleFields } from '@/defaults/textStyleDefaults'
+import { restoreFontRuns } from '@/components/edit/richTextDocument'
+import { deepClone } from '@/utils/deepClone'
+import type { BubbleState } from '@/types/bubble'
 import type { TextStyleMutationField, TextStyleSettings } from '@/types/settings'
 
 export interface ApplySettingsOptions {
@@ -77,10 +80,11 @@ export function useTextStyleSync() {
     propagateStyleFields: string[],
     defaultFontId?: string,
     expectsRender = false,
-  ): Promise<void> {
+    bubblesOverride?: BubbleState[],
+  ): Promise<boolean> {
     const image = currentImage.value
-    if (!image || image.documentRevision === undefined) return
-    const bubbles = image.bubbleStates ?? bubbleStore.bubbles
+    if (!image || image.documentRevision === undefined) return false
+    const bubbles = bubblesOverride ?? image.bubbleStates ?? bubbleStore.bubbles
     try {
       await queuePageDocumentMutation(
         image.id,
@@ -108,15 +112,16 @@ export function useTextStyleSync() {
           'error',
         )
       }
-      return
+      return false
     }
     const committed = imageStore.images.find(candidate => candidate.id === image.id)
-    if (!expectsRender || !image.translatedAssetUrl || !committed?.documentRevision) return
+    if (!expectsRender || !image.translatedAssetUrl || !committed?.documentRevision) return true
     imageStore.updateImageByIndex(
       imageStore.images.findIndex(candidate => candidate.id === image.id),
       { translationStatus: 'processing' },
     )
     void refreshRenderedAsset(image.id, committed.documentRevision)
+    return true
   }
 
   async function reloadAuthoritativePage(
@@ -154,7 +159,7 @@ export function useTextStyleSync() {
     newValue: TextStyleSettings[Field],
   ) {
     const image = currentImage.value
-    if (!image) return
+    if (!image) return false
     imageStore.updateCurrentImage({
       [settingKey]: newValue,
       hasUnsavedChanges: true,
@@ -162,12 +167,56 @@ export function useTextStyleSync() {
     const defaultFontId = settingKey === 'fontFamily' && typeof newValue === 'string'
       ? newValue
       : undefined
-    await persistStyle(
+    return persistStyle(
       settingKey === 'fontFamily' ? {} : { [settingKey]: newValue },
       settingKey === 'inpaintMethod' ? [] : [settingKey],
       defaultFontId,
       RENDERED_STYLE_FIELDS.has(settingKey),
     )
+  }
+
+  function handleMatchedFont(fontId: string): (() => void | Promise<void>) | null {
+    const image = currentImage.value
+    const previous = settingsStore.settings.textStyle.fontFamily
+    if (!image) {
+      settingsStore.updateTextStyle({ fontFamily: fontId })
+      return () => {
+        if (!currentImage.value && settingsStore.settings.textStyle.fontFamily === fontId) {
+          settingsStore.updateTextStyle({ fontFamily: previous })
+        }
+      }
+    }
+    if (image.documentRevision === undefined) return null
+
+    const pageId = image.id
+    const previousDefault = image.fontFamily || previous
+    const originals = new Map(bubbleStore.bubbles.flatMap(bubble => bubble.backendBubbleId ? [[
+      bubble.backendBubbleId, {
+        fontId: bubble.fontFamily,
+        text: bubble.translatedText,
+        runs: deepClone(bubble.richText?.runs),
+      },
+    ] as const] : []))
+    const saved = handleTextStyleChanged('fontFamily', fontId)
+    return async () => {
+      if (!(await saved)) return
+      const current = currentImage.value
+      if (current?.id !== pageId || current.fontFamily !== fontId) return
+      const bubbles = bubbleStore.bubbles.map(bubble => {
+        const original = originals.get(bubble.backendBubbleId ?? '')
+        if (!original || bubble.fontFamily !== fontId || bubble.translatedText !== original.text) return bubble
+        return {
+          ...bubble,
+          fontFamily: original.fontId,
+          richText: bubble.richText && original.runs ? {
+            ...bubble.richText, runs: restoreFontRuns(bubble.richText.runs, original.runs),
+          } : bubble.richText,
+        }
+      })
+      // Restore individual faces and the page default in the same document
+      // mutation. Propagating the default here would overwrite the faces again.
+      await persistStyle({}, [], previousDefault, true, bubbles)
+    }
   }
 
   async function handleAutoFontSizeChanged(autoFontSize: boolean) {
@@ -254,6 +303,7 @@ export function useTextStyleSync() {
     handleApplyToAll,
     handleAutoFontSizeChanged,
     handleAutoTextColorChanged,
+    handleMatchedFont,
     handleTextStyleChanged,
   }
 }

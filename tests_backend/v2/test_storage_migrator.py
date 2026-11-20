@@ -26,13 +26,16 @@ def baseline(tmp_path_factory):
     with closing(sqlite3.connect(root / "saber.sqlite3")) as db, db:
         db.execute("ALTER TABLE pages DROP COLUMN is_manually_annotated")
         # Use the actual historical contract, not today's schema with an old label.
-        original_assets = next(statement for statement in contract_sql("3.5.1").split(";")
-                               if statement.lstrip().startswith("CREATE TABLE page_assets ("))
-        original_indexes = [row[0] for row in db.execute("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='page_assets' AND sql IS NOT NULL")]
-        db.execute("DROP TABLE page_assets")
-        db.execute(original_assets)
-        for sql in original_indexes:
-            db.execute(sql)
+        for table in ("page_assets", "jobs"):
+            original_ddl = next(statement for statement in contract_sql("3.5.1").split(";")
+                                if statement.lstrip().startswith(f"CREATE TABLE {table} ("))
+            indexes = [row[0] for row in db.execute(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", (table,)
+            )]
+            db.execute(f"DROP TABLE {table}")
+            db.execute(original_ddl)
+            for sql in indexes:
+                db.execute(sql)
         db.execute("UPDATE schema_metadata SET storage_version='3.5.1'")
         for (relative,) in db.execute("SELECT relative_path FROM fonts"):
             path = root / relative
@@ -68,7 +71,7 @@ def manager(root, **kwargs):
 
 
 def test_version_numeric_and_registry():
-    assert STORAGE_VERSION == "3.5.5"
+    assert STORAGE_VERSION == "3.5.6"
     assert parse_version("3.5.10") > parse_version("3.5.9")
     for value in ("3.5", "3.05.0", "3.6.0-rc1", "v3.5.1"):
         with pytest.raises(ValueError):
@@ -83,9 +86,11 @@ def test_current_check_and_readonly_cli(root):
     from src.storage_migrator.v3_5_3 import convert as add_user_masks
     from src.storage_migrator.v3_5_4 import convert as add_editor_documents
     from src.storage_migrator.v3_5_5 import convert as add_manual_marker
+    from src.storage_migrator.v3_5_6 import convert as add_font_matching
     add_user_masks(root)
     add_editor_documents(root)
     add_manual_marker(root)
+    add_font_matching(root)
     with closing(sqlite3.connect(root / "saber.sqlite3")) as db, db:
         db.execute("UPDATE schema_metadata SET storage_version=?", (STORAGE_VERSION,))
     assert StorageManager(root, "local").check()["status"] == "current"
@@ -117,7 +122,7 @@ def test_manual_marker_upgrade_preserves_existing_pages_and_artwork(root):
     with closing(sqlite3.connect(root / "saber.sqlite3")) as db:
         after = db.execute("SELECT * FROM pages WHERE id=?", (page_id,)).fetchone()
         assert after == (*before, 0)
-        validate_schema(db, contract_sql("3.5.5"))
+        validate_schema(db, contract_sql(STORAGE_VERSION))
     assert (root / "objects" / "saved.txt").read_bytes() == artwork
 
 
@@ -533,9 +538,11 @@ def test_real_launcher_confirms_candidate_and_cleans_backup(root):
         from src.storage_migrator.v3_5_3 import convert as add_user_masks
         from src.storage_migrator.v3_5_4 import convert as add_editor_documents
         from src.storage_migrator.v3_5_5 import convert as add_manual_marker
+        from src.storage_migrator.v3_5_6 import convert as add_font_matching
         add_user_masks(work)
         add_editor_documents(work)
         add_manual_marker(work)
+        add_font_matching(work)
     ready = threading.Event()
     errors = []
     with socket.socket() as listener:

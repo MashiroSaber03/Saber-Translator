@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ProductCollapsibleSection from '@/components/product/ProductCollapsibleSection.vue'
+import FontMatchButton from '@/components/font-matching/FontMatchButton.vue'
 import UiCombobox from '@/components/ui/UiCombobox.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiColorInput from '@/components/ui/UiColorInput.vue'
@@ -12,7 +13,7 @@ import type { TextStyleSettings } from '@/types/settings'
 import type { ApplySettingsOptions } from '../useSettingsSidebar'
 import ApplyOptionsSection from './ApplyOptionsSection.vue'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   applyOptions: ApplySettingsOptions
   disabled?: boolean
   autoTextColorAvailable?: boolean
@@ -24,12 +25,16 @@ withDefaults(defineProps<{
   inlineAlignOptions: UiSelectOption[]
   blockAlignOptions: UiSelectOption[]
   textStyle: TextStyleSettings
+  fontMatchScope?: string
+  fontMatchActive?: boolean
+  selectMatchedFont?: (fontId: string) => (() => void | Promise<void>) | null
 }>(), {
   disabled: false,
   autoTextColorAvailable: true,
 })
 
-defineEmits<{
+const emit = defineEmits<{
+  (event: 'openFontMatchingSettings'): void
   (event: 'apply'): void
   (event: 'fontSelectChange', value: UiSelectValue): void
   (event: 'inpaintMethodChange', value: UiSelectValue): void
@@ -51,6 +56,11 @@ defineEmits<{
 }>()
 
 const isTextStyleExpanded = ref(true)
+
+function applyMatch(fontId: string): (() => void | Promise<void>) | null {
+  if (!props.fontSelectOptions.some(option => option.value === fontId)) return null
+  return props.selectMatchedFont?.(fontId) ?? null
+}
 </script>
 
 <template>
@@ -68,35 +78,19 @@ const isTextStyleExpanded = ref(true)
         <UiField
           class="text-style-section__field"
           variant="settings"
-          label="字号"
-          control-id="fontSize"
-        >
-          <UiNumberField
-            input-id="fontSize"
-            :model-value="textStyle.fontSize"
-            :min="1"
-            :disabled="disabled || textStyle.autoFontSize"
-            aria-label="字号"
-            :title="textStyle.autoFontSize ? '已启用自动字号，首次翻译时将自动计算' : ''"
-            @update:model-value="$event !== null && $emit('updateFontSize', $event)"
-          />
-          <UiCheckbox
-            class="text-style-section__toggle text-style-section__toggle--auto-fontsize"
-            input-id="autoFontSize"
-            :model-value="textStyle.autoFontSize"
-            :disabled="disabled"
-            label="自动计算初始字号"
-            @change="$emit('updateAutoFontSize', $event)"
-          />
-        </UiField>
-
-        <UiField
-          class="text-style-section__field"
-          variant="settings"
           label="文本字体"
           control-id="fontFamily"
         >
+          <template v-if="fontMatchScope && selectMatchedFont" #label-actions>
+            <FontMatchButton
+              :font-id="textStyle.fontFamily" :scope="fontMatchScope"
+              :apply-current-font="hasImages"
+              :disabled="disabled || fontMatchActive === false || !isTextStyleExpanded" :select-font="applyMatch"
+              @open-settings="emit('openFontMatchingSettings')"
+            />
+          </template>
           <UiCombobox
+            fit
             dropdown-fit-content
             input-id="fontFamily"
             aria-label="文本字体"
@@ -105,6 +99,32 @@ const isTextStyleExpanded = ref(true)
             :options="fontSelectOptions"
             @change="$emit('fontSelectChange', $event)"
           />
+        </UiField>
+
+        <UiField
+          class="text-style-section__field"
+          variant="settings"
+          label="字号"
+          control-id="fontSize"
+        >
+          <div class="text-style-section__font-size">
+            <UiNumberField
+              input-id="fontSize"
+              :model-value="textStyle.fontSize"
+              :min="1"
+              :disabled="disabled || textStyle.autoFontSize"
+              aria-label="字号"
+              :title="textStyle.autoFontSize ? '已启用自动字号，首次翻译时将自动计算' : ''"
+              @update:model-value="$event !== null && $emit('updateFontSize', $event)"
+            />
+            <UiCheckbox
+              input-id="autoFontSize"
+              :model-value="textStyle.autoFontSize"
+              :disabled="disabled"
+              label="自动计算初始字号"
+              @change="$emit('updateAutoFontSize', $event)"
+            />
+          </div>
         </UiField>
 
         <UiField
@@ -391,6 +411,7 @@ const isTextStyleExpanded = ref(true)
 
 .text-style-section__group--typography {
   --settings-sidebar-group-divider-color: var(--settings-sidebar-text-style-divider-typography);
+  --ui-selector-control-min-height: var(--ui-input-sm-min-height, 32px);
 }
 
 .text-style-section__group--color {
@@ -475,8 +496,19 @@ const isTextStyleExpanded = ref(true)
   font-size: 12px;
 }
 
-.text-style-section__toggle--auto-fontsize {
-  margin-top: 2px;
+.text-style-section__font-size {
+  --ui-number-field-width: fit-content;
+  --ui-number-field-input-width: 68px;
+  --ui-checkbox-align-items: center;
+  --ui-checkbox-color: var(--settings-sidebar-text-style-toggle-text);
+  --ui-checkbox-gap: 6px;
+  --ui-checkbox-input-margin: 0;
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: 12px;
 }
 
 .text-style-section__field--inline-color {

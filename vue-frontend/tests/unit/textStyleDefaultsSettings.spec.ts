@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
@@ -267,7 +268,9 @@ describe('TextStyleDefaultsSettings', () => {
       fields.find(field => field.props('controlId') === controlId)
 
     expect(fieldByControlId('textDefaultsFontSize')?.props('label')).toBe('字号')
-    expect(fieldByControlId('textDefaultsAutoFontSize')?.props('label')).toBe('自动计算初始字号')
+    const autoSize = wrapper.findAllComponents(UiCheckbox)
+      .find(checkbox => checkbox.props('inputId') === 'textDefaultsAutoFontSize')
+    expect(autoSize?.props('label')).toBe('自动计算初始字号')
     expect(fieldByControlId('textDefaultsFontFamily')?.props('label')).toBe('文本字体')
     expect(fieldByControlId('textDefaultsLayoutDirection')?.props('label')).toBe('排版方向')
     expect(fieldByControlId('textDefaultsInlineAlign')?.props('label')).toBe('行内对齐')

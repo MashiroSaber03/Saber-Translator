@@ -16,6 +16,7 @@ function catalog(): LocalModelCatalog {
     models: [
       { id: 'detector_default', label: 'Default', description: '文字检测', sizeBytes: 100, installed: true, directory: 'models/default', partialBytes: 0 },
       { id: 'manga_ocr', label: 'MangaOCR', description: '文字识别', sizeBytes: 1000, installed: false, directory: 'models/manga_ocr', partialBytes: 500 },
+      { id: 'valen_08b', label: 'Valen-0.8B', description: '字体匹配', sizeBytes: 2000, installed: false, directory: 'models/Valen-0.8B', partialBytes: 0, optional: true },
     ],
     task: { status: 'idle', modelIds: [], results: {} },
   }
@@ -62,12 +63,17 @@ describe('model management', () => {
   it('uses one installer for missing models and verification', async () => {
     const wrapper = mount(LocalModelsSettings, { props: { active: true } })
     await flushPromises()
-    await wrapper.findAll('button').find(button => button.text().includes('一键安装全部'))!.trigger('click')
+    const installAll = wrapper.findAll('button').find(button => button.text().startsWith('一键安装翻译模型'))
+    expect(installAll).toBeDefined()
+    await installAll!.trigger('click')
     await flushPromises()
     expect(api.installLocalModels).toHaveBeenLastCalledWith({ modelIds: ['manga_ocr'], source: 'auto', verify: false })
     await wrapper.get('[aria-label="校验 Default"]').trigger('click')
     await flushPromises()
     expect(api.installLocalModels).toHaveBeenLastCalledWith({ modelIds: ['detector_default'], source: 'auto', verify: true })
+    await wrapper.get('[aria-label="下载或修复 Valen-0.8B"]').trigger('click')
+    await flushPromises()
+    expect(api.installLocalModels).toHaveBeenLastCalledWith({ modelIds: ['valen_08b'], source: 'auto', verify: false })
     wrapper.unmount()
   })
 
@@ -105,7 +111,9 @@ describe('model management', () => {
     api.getLocalModels.mockImplementationOnce(async () => ({ ...catalog(), task: { status: 'running', modelIds: ['manga_ocr'], results: {} } }))
     const wrapper = mount(LocalModelsSettings, { props: { active: true } })
     await flushPromises()
-    await wrapper.findAll('button').find(button => button.text() === '取消下载')!.trigger('click')
+    const cancel = wrapper.findAll('button').find(button => button.text() === '取消操作')
+    expect(cancel).toBeDefined()
+    await cancel!.trigger('click')
     await flushPromises()
     expect(api.cancelLocalModelInstall).toHaveBeenCalledTimes(1)
     wrapper.unmount()
