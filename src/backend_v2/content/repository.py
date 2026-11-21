@@ -1860,6 +1860,7 @@ class ContentRepository:
         user_mask: bytes | None = None,
         editor_document: bytes | None = None,
         editor_metadata: dict[str, object] | None = None,
+        layer_style_request: tuple[list[str], str | None, dict[str, object] | None] | None = None,
     ) -> tuple[dict[str, object], bool]:
         from src.backend_v2.editing.native import NativeEditor, NATIVE_BUBBLE_FIELDS
 
@@ -1894,6 +1895,7 @@ class ContentRepository:
             and not propagation
             and user_mask is None
             and editor_document is None
+            and layer_style_request is None
         ):
             raise ValueError(
                 "command must mutate bubbles, the default font, or page style"
@@ -2060,6 +2062,11 @@ class ContentRepository:
             request_payload["editorMetadata"] = metadata
         if user_mask is not None:
             request_payload["userMaskChecksum"] = hashlib.sha256(user_mask).hexdigest()
+        if layer_style_request is not None:
+            request_payload["layerStyle"] = {
+                "bubbleIds": layer_style_request[0],
+                "presetName": layer_style_request[1],
+            }
         request_hash = hashlib.sha256(
             _json(request_payload).encode("utf-8")
         ).hexdigest()
@@ -2200,6 +2207,24 @@ class ContentRepository:
                         raise ValueError("撤销快照的文本框与工程不匹配")
                     for item in projected:
                         item["payload"].update(metadata[item["bubbleId"]])
+                renderable_change = True
+            if layer_style_request is not None:
+                if self.storage is None:
+                    raise ValueError("editing assets are unavailable")
+                target_ids, _preset_name, preset_dict = layer_style_request
+                for target_id in target_ids:
+                    if target_id not in documents:
+                        raise ContentNotFound(f"bubble {target_id} not found")
+                native_editor = NativeEditor(self.storage)
+                native_result = native_editor.prepare_layer_style(
+                    connection,
+                    page_id,
+                    target_ids,
+                    preset_dict,
+                )
+                projected = native_result.bubbles
+                order = [str(item["bubbleId"]) for item in projected]
+                documents = {str(item["bubbleId"]): item for item in projected}
                 renderable_change = True
             source_bubble_ids = set(documents)
             for mutation in mutations:
@@ -2378,7 +2403,12 @@ class ContentRepository:
                 )
 
             new_revision = base_revision + 1
-            if self.storage is not None and editor_document is None and (renderable_change or user_mask is not None):
+            if (
+                self.storage is not None
+                and editor_document is None
+                and layer_style_request is None
+                and (renderable_change or user_mask is not None)
+            ):
                 native_editor = NativeEditor(self.storage)
                 native_result = native_editor.prepare(connection, page_id, documents=[documents[id] for id in order],
                                                       mask_override=user_mask, fields=native_fields)
@@ -2418,7 +2448,10 @@ class ContentRepository:
                 for document in documents.values()
             )
             needs_render = renderable_change and (
-                has_current_translated or has_drawable_text or editor_document is not None
+                has_current_translated
+                or has_drawable_text
+                or editor_document is not None
+                or layer_style_request is not None
             )
             repair_blocks_render = page["render_status"] in {
                 "awaiting_repair",
@@ -2492,6 +2525,36 @@ class ContentRepository:
                 )
             )
         return result, False
+
+    def apply_page_layer_style(
+        self,
+        *,
+        page_id: str,
+        base_revision: int,
+        bubble_ids: list[str],
+        preset_name: str | None,
+        idempotency_key: str,
+    ) -> tuple[dict[str, object], bool]:
+        """Apply or clear a bundled PhotoCraft layer style on selected page bubbles."""
+
+        from src.backend_v2.editing.layer_styles import get_layer_style_preset
+
+        unique_ids = list(dict.fromkeys(bubble_ids))
+        if not unique_ids:
+            raise ValueError("bubbleIds must not be empty")
+        if preset_name is None:
+            preset: dict[str, object] | None = None
+        else:
+            preset = get_layer_style_preset(preset_name)
+            if preset is None:
+                raise ValueError(f"unknown layer style preset: {preset_name}")
+        return self.mutate_page_document(
+            page_id=page_id,
+            base_revision=base_revision,
+            mutations=[],
+            idempotency_key=idempotency_key,
+            layer_style_request=(unique_ids, preset_name, preset),
+        )
 
     @staticmethod
     def _get_page_document(

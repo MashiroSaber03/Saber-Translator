@@ -20,6 +20,7 @@ from zipfile import BadZipFile, ZipFile
 
 from sqlalchemy import insert, select, update
 
+from src.backend_v2.editing.layer_styles import build_layer_style_commands
 from src.backend_v2.rendering.fonts import (
     character_font_style, resolve_font_path, resolve_font_paths,
 )
@@ -248,9 +249,74 @@ class NativeEditor:
                 style["auto_leading"] = spacing
         return item
 
+    def _resolve_text_layer_ids(self, connection, page_id: str, document_bytes: bytes,
+                                bubble_ids: list[str]) -> list[int]:
+        document = self._project_document(document_bytes)
+        text_layer_ids: set[int] = set()
+        stack = list(document.get("layers", []))
+        while stack:
+            layer = stack.pop()
+            if not isinstance(layer, dict):
+                continue
+            content = layer.get("content", {})
+            if isinstance(content, dict) and content.get("kind") == "text":
+                layer_id = layer.get("id")
+                if isinstance(layer_id, int):
+                    text_layer_ids.add(layer_id)
+            elif isinstance(content, dict) and isinstance(content.get("children"), list):
+                stack.extend(content["children"])
+
+        layer_by_bubble: dict[str, int] = {}
+        raw_meta = dict(document.get("metadata", {}).get("text", [])).get("saber.page")
+        if isinstance(raw_meta, str):
+            try:
+                entries = json.loads(raw_meta).get("bubbles", {})
+            except (TypeError, ValueError):
+                entries = {}
+            if isinstance(entries, dict):
+                for key, entry in entries.items():
+                    if not isinstance(entry, dict):
+                        continue
+                    bid = entry.get("bubbleId") or key
+                    lid = entry.get("layer")
+                    if isinstance(bid, str) and isinstance(lid, int) and lid in text_layer_ids:
+                        layer_by_bubble[bid] = lid
+
+        if any(bid not in layer_by_bubble for bid in bubble_ids):
+            temporary_root = self.storage.data_root / "temp" / "editing"
+            temporary_root.mkdir(parents=True, exist_ok=True)
+            with TemporaryDirectory(dir=temporary_root) as directory:
+                project_path = Path(directory) / "page.pcraft"
+                project_path.write_bytes(document_bytes)
+                projection = self.invoke(
+                    dict(pageId=page_id, project=str(project_path), fonts=self.font_files(connection))
+                )
+            for item in projection.get("bubbles", []):
+                bid = item.get("bubbleId")
+                lid = item.get("layer")
+                if isinstance(bid, str) and isinstance(lid, int) and lid in text_layer_ids:
+                    layer_by_bubble[bid] = lid
+
+        resolved: list[int] = []
+        for bid in bubble_ids:
+            lid = layer_by_bubble.get(bid)
+            if lid is None:
+                raise ValueError(f"text layer {bid} not found in editor document")
+            resolved.append(lid)
+        return resolved
+
+    def prepare_layer_style(self, connection, page_id: str, bubble_ids: list[str],
+                            preset: dict | None) -> EditingResult:
+        """Apply (or clear, when preset is None) native layer styles on target text layers."""
+        base_document = self.read_document(connection, page_id)
+        layer_ids = self._resolve_text_layer_ids(connection, page_id, base_document, bubble_ids)
+        commands = build_layer_style_commands(layer_ids, preset)
+        return self.prepare(connection, page_id, uploaded=base_document, commands=commands)
+
     def prepare(self, connection, page_id: str, *, documents=None, uploaded: bytes | None = None,
                 render: bool = False, repair: bytes | None = None, text_only: bool = False,
-                mask_override: bytes | None = None, background: bytes | None = None, fields=None) -> EditingResult:
+                mask_override: bytes | None = None, background: bytes | None = None, fields=None,
+                commands: list[dict] | None = None) -> EditingResult:
         page = connection.execute(select(pages).where(pages.c.id == page_id)).mappings().one()
         pointer_rows = list(connection.execute(select(page_assets.c.role, page_assets.c.asset_id,
                             page_assets.c.input_source_revision, page_assets.c.input_document_revision,
@@ -267,7 +333,8 @@ class NativeEditor:
                             and clean.input_document_revision == page["document_revision"]
                             and pointers["clean"].is_file())
         writing = (documents is not None or uploaded is not None or repair is not None
-                   or mask_override is not None or background is not None or current is None or legacy is not None)
+                   or mask_override is not None or background is not None or bool(commands)
+                   or current is None or legacy is not None)
         stored = self.page_bubbles(connection, page_id) if current is None or documents is None and (writing or not render and not text_only) else []
         if documents is None and uploaded is None and (current is None or legacy == "text"):
             documents = stored
@@ -311,6 +378,8 @@ class NativeEditor:
             if repair is not None:
                 (root / "repair.png").write_bytes(repair)
                 request["repair"] = str(root / "repair.png")
+            if commands:
+                request["commands"] = commands
             if render:
                 request["png"] = str(root / "translated.png")
                 if writing or not clean_is_current:

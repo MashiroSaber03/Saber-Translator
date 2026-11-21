@@ -380,6 +380,24 @@ export function calculatePageTextFit(pageId: string, command: operations['calcul
     `${API_ROOT}/pages/${encodeURIComponent(pageId)}/text-fit`, command)
 }
 
+export function listEditorLayerStyles() {
+  return apiClient.get<operations['listEditorLayerStyles']['responses'][200]['content']['application/json']>(
+    `${API_ROOT}/editor/layer-styles`,
+  )
+}
+
+export function applyPageLayerStyle(
+  pageId: string,
+  command: operations['applyPageLayerStyle']['requestBody']['content']['application/json'],
+  idempotencyKey: string,
+): Promise<V2PageDocumentMutationResponse> {
+  return apiClient.post<V2PageDocumentMutationResponse>(
+    `${API_ROOT}/pages/${encodeURIComponent(pageId)}/layer-style`,
+    command,
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  )
+}
+
 export function downloadPagePsd(pageId: string): Promise<Blob> {
   return apiClient.get<Blob>(`${API_ROOT}/pages/${encodeURIComponent(pageId)}/export.psd`, { responseType: 'blob' })
 }

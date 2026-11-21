@@ -1900,6 +1900,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pages/{page_id}/layer-style": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["applyPageLayerStyle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/editor/fonts": {
         parameters: {
             query?: never;
@@ -1924,6 +1940,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["getEditorFont"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/editor/layer-styles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listEditorLayerStyles"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10331,6 +10363,43 @@ export interface operations {
             422: components["responses"]["ValidationError"];
         };
     };
+    applyPageLayerStyle: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    baseRevision: number;
+                    bubbleIds: components["schemas"]["Uuid"][];
+                    presetName: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Layer style applied or cleared on the native text layers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageDocumentMutationResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            423: components["responses"]["Locked"];
+        };
+    };
     listEditorFonts: {
         parameters: {
             query?: never;
@@ -10388,6 +10457,36 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    listEditorLayerStyles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bundled manga PhotoCraft layer styles grouped for ordinary edit mode. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        groups: {
+                            name: string;
+                            items: {
+                                name: string;
+                                effectCount: number;
+                                overridesTextColor: boolean;
+                                hollow: boolean;
+                            }[];
+                        }[];
+                    };
+                };
+            };
         };
     };
     getPageDocument: {

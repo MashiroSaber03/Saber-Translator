@@ -374,6 +374,13 @@ def create_content_blueprint(
                 for font in catalog
             ]})
 
+    @blueprint.get("/editor/layer-styles")
+    def editor_layer_styles() -> Response:
+        from src.backend_v2.editing.layer_styles import list_layer_style_groups
+
+        public_access.require_feature("editMode")
+        return jsonify({"groups": list_layer_style_groups()})
+
     @blueprint.get("/pages/<page_id>/export.psd")
     def export_page_psd(page_id: str) -> Response:
         from io import BytesIO
@@ -405,6 +412,30 @@ def create_content_blueprint(
             fitted = NativeEditor(storage).fit_text(connection, page_id, list(dict.fromkeys(ids)))
         # Calculation only; the caller uses the ordinary document commit, undo and render path.
         return jsonify({"items": fitted})
+
+    @blueprint.post("/pages/<page_id>/layer-style")
+    def apply_page_layer_style(page_id: str) -> Response:
+        public_access.require_feature("editMode")
+        idempotency_key = _require_idempotency_key()
+        body = _json_body(allowed_keys={"baseRevision", "bubbleIds", "presetName"})
+        ids = body.get("bubbleIds")
+        if not isinstance(ids, list) or not ids or not all(isinstance(item, str) and item for item in ids):
+            raise ValueError("bubbleIds must be a non-empty array of text layer IDs")
+        if "presetName" not in body:
+            raise ValueError("presetName is required")
+        preset_name = body.get("presetName")
+        if preset_name is not None and (not isinstance(preset_name, str) or not preset_name.strip()):
+            raise ValueError("presetName must be a non-empty string or null")
+        result, replayed = repository.apply_page_layer_style(
+            page_id=page_id,
+            base_revision=_required_integer(body, "baseRevision", minimum=1),
+            bubble_ids=ids,
+            preset_name=preset_name,
+            idempotency_key=idempotency_key,
+        )
+        response = jsonify(result)
+        response.headers["Idempotency-Replayed"] = "true" if replayed else "false"
+        return response
 
     @blueprint.get("/editor/fonts/<font_id>")
     def editor_font(font_id: str) -> Response:

@@ -136,6 +136,7 @@ const emit = defineEmits<{
   fitText: []
   moveText: [dx: number, dy: number]
   applyStyle: [scope: 'selected' | 'page', template?: TextStyleTemplate]
+  applyLayerStyle: [presetName: string | null]
   ocrRecognize: [index: number]
   reTranslate: [index: number]
   pickColor: [field: BubbleColorField]
@@ -408,6 +409,7 @@ defineExpose({
         @fit-text="emit('fitText')"
         @move-text="(dx, dy) => emit('moveText', dx, dy)"
         @apply-style="(scope, template) => emit('applyStyle', scope, template)"
+        @apply-layer-style="emit('applyLayerStyle', $event)"
         @ocr-recognize="emit('ocrRecognize', $event)"
         @re-translate="emit('reTranslate', $event)"
         @pick-color="emit('pickColor', $event)"

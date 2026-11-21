@@ -154,6 +154,7 @@
         @fit-text="fitSelectedText"
         @move-text="moveSelectedText"
         @apply-style="handleApplyStyleToAllBubbles"
+        @apply-layer-style="handleApplyLayerStyle"
         @ocr-recognize="handleOcrRecognize"
         @re-translate="handleReTranslateBubble"
         @pick-color="startImageColorPick"
@@ -326,6 +327,7 @@ const {
   handleMouseDown,
   handleImageLoad,
   handleApplyStyleToAllBubbles,
+  handleApplyLayerStyle,
   handleExitToolbarAction,
   handleBubbleUpdateWithSync,
   handleFormatText,
