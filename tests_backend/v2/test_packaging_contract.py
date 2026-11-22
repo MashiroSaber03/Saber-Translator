@@ -173,6 +173,7 @@ def test_validation_builds_both_packages_without_publishing() -> None:
     )
     runtime_build, runtime_publish = (runtime["jobs"][key] for key in ("build", "publish"))
     assert runtime["permissions"]["contents"] == "read"
+    assert runtime["env"]["PYTHONUTF8"] == "1"
     assert runtime_publish["needs"] == "build"
     assert "inputs.publish" in runtime_publish["if"]
     assert "github.event_name != 'pull_request'" in runtime_publish["if"]
