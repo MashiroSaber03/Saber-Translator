@@ -6,7 +6,6 @@ import UiInput from '@/components/ui/UiInput.vue'
 
 withDefaults(defineProps<{
   failedImageCount: number
-  hasFailedImages: boolean
   hasProcessedImage: boolean
   imageSize: number
   isEditMode: boolean
@@ -70,10 +69,10 @@ defineEmits<{
     </UiField>
 
     <UiButton
-      v-if="hasFailedImages"
+      v-if="failedImageCount > 0"
       class="result-toolbar__retry"
       variant="danger"
-      title="重新翻译所有失败的图片"
+      title="重新翻译仍失败的图片"
       @click="$emit('retryFailed')"
     >
       重新翻译失败图片 ({{ failedImageCount }})

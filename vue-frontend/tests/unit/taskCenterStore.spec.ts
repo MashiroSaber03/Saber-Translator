@@ -665,79 +665,46 @@ describe('taskCenterStore snapshot reconciliation', () => {
     expect(store.interruptedCount).toBe(1)
   })
 
-  it('derives retryable failed items from the latest durable chapter job', async () => {
+  it('uses current page failures even if their source job is older than a successful job', async () => {
     const failed = makeJob({
       jobId: 'source-failed-job',
       status: 'completed_with_errors',
       chapterId: 'chapter-1',
       createdAt: '2026-08-23T04:00:00Z',
-      progress: {
-        executionMode: 'sequential',
-        jobStatus: 'completed_with_errors',
-        totalItems: 3,
-        completedItems: 1,
-        failedItems: 2,
-        skippedItems: 0,
-        cancelledItems: 0,
-        pools: [],
-      },
     })
-    mocks.list.mockResolvedValue({ items: [failed] })
-    const store = useTaskCenterStore()
-
-    await store.refresh()
-
-    expect(store.retryableFailedItemCount('chapter-1')).toBe(2)
-    await expect(store.retryLatestFailed('chapter-1', ['translation'])).resolves.toMatchObject({
-      sourceJobId: 'source-failed-job',
-      failedItemCount: 2,
-    })
-    expect(mocks.retryFailed).toHaveBeenCalledWith('source-failed-job', 'current')
-
-    const unrelatedSuccess = makeJob({
-      jobId: 'unrelated-success',
+    const successful = makeJob({
+      jobId: 'independent-rerun',
       status: 'completed',
       chapterId: 'chapter-1',
       createdAt: '2026-08-23T04:01:00Z',
     })
-    mocks.list.mockResolvedValue({ items: [failed, unrelatedSuccess] })
+    mocks.list.mockResolvedValue({ items: [failed, successful] })
+    const store = useTaskCenterStore()
     await store.refresh()
 
-    expect(store.retryableFailedItemCount('chapter-1')).toBe(2)
-
-    mocks.list.mockResolvedValue({
-      items: [
-        failed,
-        unrelatedSuccess,
-        makeJob({
-          jobId: 'successful-retry',
-          status: 'completed',
-          chapterId: 'chapter-1',
-          retryOfJobId: 'source-failed-job',
-          createdAt: '2026-08-23T04:02:00Z',
-        }),
-      ],
+    const page1 = { id: 'page-1', failedTranslationJobId: failed.jobId }
+    const page2 = { id: 'page-2', failedTranslationJobId: failed.jobId }
+    expect(store.retryableTranslation([page1, page2])).toEqual({
+      jobId: failed.jobId,
+      pageIds: ['page-1', 'page-2'],
     })
-    await store.refresh()
-
-    expect(store.retryableFailedItemCount('chapter-1')).toBe(0)
-
-    mocks.list.mockResolvedValue({
-      items: [
-        failed,
-        unrelatedSuccess,
-        makeJob({
-          jobId: 'failed-retry',
-          status: 'failed',
-          chapterId: 'chapter-1',
-          retryOfJobId: 'source-failed-job',
-          createdAt: '2026-08-23T04:02:00Z',
-        }),
-      ],
+    expect(store.retryableTranslation([{ id: page1.id }, page2])).toEqual({
+      jobId: failed.jobId,
+      pageIds: ['page-2'],
     })
-    await store.refresh()
+    expect(store.retryableTranslation([{ id: page1.id }, { id: page2.id }])).toBeNull()
 
-    expect(store.retryableFailedItemCount('chapter-1')).toBe(2)
+    store.queue = [makeJob({
+      jobId: 'queued-retry',
+      status: 'queued',
+      chapterId: 'chapter-1',
+      retryOfJobId: failed.jobId,
+    })]
+    expect(store.retryableTranslation([page2])).toBeNull()
+
+    mocks.list.mockResolvedValue({ items: [] })
+    await store.refresh()
+    expect(store.retryableTranslation([page2])).toBeNull()
   })
 
   it('keeps the durable history snapshot complete while deriving filters locally', async () => {

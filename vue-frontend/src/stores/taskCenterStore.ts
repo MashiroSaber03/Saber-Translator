@@ -13,6 +13,7 @@ import {
   type V2JobStatus,
 } from '@/api/v2/jobs'
 import { groupJobsByBatch } from '@/stores/taskCenterProjection'
+import type { ImageData } from '@/types/image'
 import { TASK_EVENT_TYPES } from '@/utils/taskDisplay'
 
 type TaskCenterEventListener = (event: V2JobEvent) => void
@@ -123,37 +124,32 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   )
   const historyBatches = computed(() => groupJobsByBatch(filteredHistory.value))
 
-  function latestRetryableFailedJob(
-    chapterId: string,
-    kinds: readonly V2Job['kind'][],
-  ): V2Job | null {
-    const matching = [...queue.value, ...history.value]
-      .filter(job => job.chapterId === chapterId && kinds.includes(job.kind))
-    const retriedJobIds = new Set(
-      matching.flatMap(job => (
-        job.retryOfJobId && !['cancelled', 'failed'].includes(job.status)
-          ? [job.retryOfJobId]
-          : []
-      )),
-    )
-    return matching
-      .filter(job => (
-        job.status === 'completed_with_errors' && !retriedJobIds.has(job.jobId)
-      ))
-      .reduce<V2Job | null>(
-        (latest, job) => (
-          !latest || job.createdAt > latest.createdAt ? job : latest
-        ),
-        null,
-      )
-  }
+  function retryableTranslation(
+    images: readonly Pick<ImageData, 'id' | 'failedTranslationJobId'>[],
+  ): { jobId: string; pageIds: string[] } | null {
+    const pagesByJob = new Map<string, string[]>()
+    for (const { id, failedTranslationJobId } of images) {
+      if (!failedTranslationJobId) continue
+      const pageIds = pagesByJob.get(failedTranslationJobId)
+      if (pageIds) pageIds.push(id)
+      else pagesByJob.set(failedTranslationJobId, [id])
+    }
+    if (!pagesByJob.size) return null
 
-  function retryableFailedItemCount(
-    chapterId: string | null | undefined,
-    kinds: readonly V2Job['kind'][] = ['translation'],
-  ): number {
-    if (!chapterId) return 0
-    return latestRetryableFailedJob(chapterId, kinds)?.progress.failedItems ?? 0
+    for (const job of [...queue.value, ...history.value]) {
+      if (job.retryOfJobId && NONTERMINAL_JOB_STATUSES.has(job.status)) {
+        pagesByJob.delete(job.retryOfJobId)
+      }
+    }
+    const latest = history.value.reduce<V2Job | null>((current, job) => (
+      pagesByJob.has(job.jobId) && (!current || job.createdAt > current.createdAt)
+        ? job
+        : current
+    ), null)
+    const jobId = latest?.jobId
+      ?? (snapshotLoaded.value ? undefined : pagesByJob.keys().next().value)
+    const pageIds = jobId ? pagesByJob.get(jobId) : undefined
+    return jobId && pageIds ? { jobId, pageIds } : null
   }
 
   function refresh(): Promise<void> {
@@ -683,23 +679,10 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
 
   async function retryFailed(
     jobId: string,
-    strategy: 'current' | 'original' = 'current'
+    strategy: 'current' | 'original' = 'current',
+    pageIds?: string[],
   ): Promise<JobRetryAccepted> {
-    return runCommand(() => jobsApi.retryFailed(jobId, strategy))
-  }
-
-  async function retryLatestFailed(
-    chapterId: string,
-    kinds: V2Job['kind'][],
-    strategy: 'current' | 'original' = 'current'
-  ): Promise<(JobRetryAccepted & { failedItemCount: number }) | null> {
-    await refresh()
-    const source = latestRetryableFailedJob(chapterId, kinds)
-    if (!source) return null
-    return {
-      ...await retryFailed(source.jobId, strategy),
-      failedItemCount: source.progress.failedItems,
-    }
+    return runCommand(() => jobsApi.retryFailed(jobId, strategy, pageIds))
   }
 
   async function moveQueued(jobId: string, delta: -1 | 1): Promise<void> {
@@ -761,7 +744,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     currentJobs,
     waitingBatches,
     historyBatches,
-    retryableFailedItemCount,
+    retryableTranslation,
     initialize,
     disconnect,
     subscribeEvents,
@@ -782,7 +765,6 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     cancel: (jobId: string) => runCommand(() => jobsApi.cancel(jobId)),
     retry,
     retryFailed,
-    retryLatestFailed,
     loadDetail,
     clearDetail,
     loadOlderEvents,

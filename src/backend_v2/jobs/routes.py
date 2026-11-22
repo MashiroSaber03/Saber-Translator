@@ -257,17 +257,26 @@ def create_jobs_blueprint(
 
     @blueprint.post("/jobs/<job_id>/retry-failed")
     def retry_failed_job(job_id: str) -> Response:
-        body = _json_body(allowed_keys={"strategy"}, optional=True)
+        body = _json_body(allowed_keys={"strategy", "pageIds"}, optional=True)
         strategy = (
             _required_string(body, "strategy")
             if "strategy" in body
             else "current"
         )
+        page_ids = body.get("pageIds")
+        if "pageIds" in body and (
+            not isinstance(page_ids, list)
+            or not page_ids
+            or any(not isinstance(value, str) or not value.strip() for value in page_ids)
+            or len(set(page_ids)) != len(page_ids)
+        ):
+            raise ValueError("pageIds must be a non-empty array of unique page IDs")
         result = retry_service.retry(
             job_id=job_id,
             failed_only=True,
             strategy=strategy,
             idempotency_key=_require_idempotency_key(),
+            page_ids=page_ids,
         )
         new_job_id = replacement_job_id(result)
         with user_log_context(job_id=new_job_id or None):

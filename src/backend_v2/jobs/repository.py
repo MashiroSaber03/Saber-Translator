@@ -16,6 +16,7 @@ import uuid
 from sqlalchemy import (
     Engine,
     and_,
+    case,
     delete,
     exists,
     func,
@@ -108,6 +109,32 @@ WRITE_JOB_KINDS = frozenset(
         "web_import_commit",
     }
 )
+
+
+def latest_failed_translation_job_id():
+    """Project a page's current retry source from its finished translation items."""
+    return (
+        select(case((job_items.c.status == "failed", jobs.c.id)))
+        .select_from(job_items.join(jobs, jobs.c.id == job_items.c.job_id))
+        .where(
+            job_items.c.page_id == pages.c.id,
+            jobs.c.chapter_id == pages.c.chapter_id,
+            jobs.c.kind == "translation",
+            or_(
+                job_items.c.status == "completed",
+                and_(
+                    job_items.c.status == "failed",
+                    jobs.c.status == "completed_with_errors",
+                ),
+            ),
+        )
+        .order_by(jobs.c.created_at.desc(), jobs.c.id.desc())
+        .limit(1)
+        .correlate(pages)
+        .scalar_subquery()
+    )
+
+
 class JobNotFound(LookupError):
     pass
 

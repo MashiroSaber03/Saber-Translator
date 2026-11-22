@@ -3,7 +3,6 @@ import { showToast } from '@/utils/toast'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useBubbleStore } from '@/stores/bubbleStore'
-import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { useTranslation } from '@/composables/useTranslationPipeline'
 import { useTranslateInit } from '@/composables/useTranslateInit'
 import { confirmProductAction, type ProductConfirmAction } from '@/composables/useProductConfirm'
@@ -20,7 +19,6 @@ interface UseTranslateViewActionsOptions {
   imageStore: ReturnType<typeof useImageStore>
   bubbleStore: ReturnType<typeof useBubbleStore>
   settingsStore: ReturnType<typeof useSettingsStore>
-  taskCenterStore: ReturnType<typeof useTaskCenterStore>
   translation: ReturnType<typeof useTranslation>
   translateInit: ReturnType<typeof useTranslateInit>
   validateBeforeTranslation: (mode: TranslateValidationMode) => boolean
@@ -34,7 +32,6 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
     imageStore,
     bubbleStore,
     settingsStore,
-    taskCenterStore,
     translation,
     translateInit,
     validateBeforeTranslation,
@@ -277,12 +274,6 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
   }
 
   async function handleRetryFailed() {
-    const chapterId = imageStore.currentImage?.chapterId ?? imageStore.images[0]?.chapterId
-    if (taskCenterStore.retryableFailedItemCount(chapterId) === 0) {
-      showToast('没有失败的图片需要重新翻译', 'info')
-      return
-    }
-
     if (!validateBeforeTranslation('normal')) return
     await translation.retryFailedImages()
   }

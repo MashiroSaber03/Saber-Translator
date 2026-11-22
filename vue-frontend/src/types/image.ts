@@ -28,6 +28,7 @@ export interface ImageDetectionFields {
 
 export interface ImageWorkflowFields {
   translationStatus: TranslationStatus
+  failedTranslationJobId?: string
 }
 
 export interface ImageTextStyleFields {

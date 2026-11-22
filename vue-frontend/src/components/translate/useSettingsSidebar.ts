@@ -151,7 +151,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
       case 'clear-all':
         return hasImages.value && isIdle
       case 'retry-failed':
-        return hasFailedImages.value && isIdle
+        return failedImageCount.value > 0 && isIdle
       default:
         return false
     }
@@ -159,11 +159,9 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
 
   const textStyle = computed(() => settingsStore.textStyle)
 
-  const failedImageCount = computed(() => taskCenterStore.retryableFailedItemCount(
-    currentImage.value?.chapterId ?? imageStore.images[0]?.chapterId,
-  ))
-
-  const hasFailedImages = computed(() => failedImageCount.value > 0)
+  const failedImageCount = computed(
+    () => taskCenterStore.retryableTranslation(imageStore.images)?.pageIds.length ?? 0,
+  )
 
   const selectedWorkflowConfig = computed<WorkflowModeConfig>(() => {
     return (
@@ -206,7 +204,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
       case 'clear-all':
         return '全量'
       case 'retry-failed':
-        return hasFailedImages.value ? `失败 ${failedImageCount.value} 张` : '失败重试'
+        return failedImageCount.value > 0 ? `失败 ${failedImageCount.value} 张` : '失败重试'
       default:
         return '流程'
     }
@@ -226,7 +224,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
       case 'clear-all':
         return '清除前会弹出确认，此操作会移除所有已加载图片。'
       case 'retry-failed':
-        return hasFailedImages.value
+        return failedImageCount.value > 0
           ? `将重试 ${failedImageCount.value} 张失败图片。`
           : '当前没有失败图片可重试。'
       default:
@@ -539,8 +537,6 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
     canRunWorkflow,
     isCurrentPageReady,
     textStyle,
-    failedImageCount,
-    hasFailedImages,
     selectedWorkflowConfig,
     supportsPageSelectionForCurrentMode,
     isPageSelectionActiveForCurrentMode,

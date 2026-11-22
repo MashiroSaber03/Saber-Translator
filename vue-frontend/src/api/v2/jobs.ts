@@ -117,10 +117,11 @@ export const jobsApi = {
   retryFailed(
     jobId: string,
     strategy: 'current' | 'original' = 'current',
+    pageIds?: string[],
   ): Promise<JobRetryAccepted> {
     return apiClient.post(
       `/api/v2/jobs/${encodeURIComponent(jobId)}/retry-failed`,
-      { strategy },
+      { strategy, ...(pageIds ? { pageIds } : {}) },
       { headers: replayHeaders() },
     )
   },

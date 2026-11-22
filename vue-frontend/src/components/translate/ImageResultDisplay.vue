@@ -77,10 +77,9 @@ const displayImageUrl = computed(() => {
   return processedImageUrl.value || currentImage.value.sourceAssetUrl
 })
 
-const failedImageCount = computed(() => taskCenterStore.retryableFailedItemCount(
-  currentImage.value?.chapterId ?? imageStore.images[0]?.chapterId,
-))
-const hasFailedImages = computed(() => failedImageCount.value > 0)
+const failedImageCount = computed(
+  () => taskCenterStore.retryableTranslation(imageStore.images)?.pageIds.length ?? 0,
+)
 
 const displayImageAlt = computed(() => {
   const fileName = currentImage.value?.fileName || '当前图片'
@@ -157,7 +156,6 @@ function handleImportText(file: File): void {
   >
     <ResultToolbar
       :failed-image-count="failedImageCount"
-      :has-failed-images="hasFailedImages"
       :has-processed-image="hasProcessedImage"
       :image-size="imageSize"
       :is-edit-mode="isEditMode"

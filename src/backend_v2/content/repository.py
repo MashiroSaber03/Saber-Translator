@@ -29,7 +29,10 @@ from src.backend_v2.content.page_style import (
 from src.backend_v2.insight.repository import (
     mark_book_insight_derived_stale,
 )
-from src.backend_v2.jobs.repository import decode_job_progress
+from src.backend_v2.jobs.repository import (
+    decode_job_progress,
+    latest_failed_translation_job_id,
+)
 from src.backend_v2.settings.validation import validate_setting_payload
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.database import immediate_transaction, read_transaction
@@ -2585,6 +2588,7 @@ class ContentRepository:
             ],
             assets.c.width.label("source_width"),
             assets.c.height.label("source_height"),
+            latest_failed_translation_job_id().label("failed_translation_job_id"),
         )
         for role, alias in asset_aliases.items():
             statement = statement.outerjoin(
@@ -2602,6 +2606,7 @@ class ContentRepository:
             asset_id = row.get(f"{role}_asset_id")
             return f"/api/v2/assets/{asset_id}" if asset_id else None
 
+        failure_job_id = row.get("failed_translation_job_id")
         return {
             "id": row["id"],
             "chapterId": row["chapter_id"],
@@ -2619,6 +2624,7 @@ class ContentRepository:
             "thumbnailSourceUrl": url("thumbnail_source"),
             "cleanUrl": url("clean"),
             "translatedUrl": url("translated"),
+            **({"failedTranslationJobId": failure_job_id} if failure_job_id else {}),
         }
 
     def reset_quick_workspace(self) -> dict[str, str]:

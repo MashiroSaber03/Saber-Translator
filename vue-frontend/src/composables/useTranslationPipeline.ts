@@ -569,13 +569,13 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
   }
 
   async function retryFailedImages(): Promise<boolean> {
-    const chapterId = imageStore.currentImage?.chapterId || imageStore.images[0]?.chapterId
-    if (!chapterId) {
-      toast.error('当前页面尚未写入后端章节')
-      return false
-    }
     if (imageStore.isTranslationInProgress) {
       toast.info('已有翻译任务正在创建或执行')
+      return false
+    }
+    const source = taskCenterStore.retryableTranslation(imageStore.images)
+    if (!source) {
+      toast.info('没有失败的图片需要重新翻译')
       return false
     }
     imageStore.setTranslationInProgress(true)
@@ -585,22 +585,17 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
         && publicAccess.parallelAllowed()
         ? 'parallel'
         : 'sequential'
-      const accepted = await taskCenterStore.retryLatestFailed(
-        chapterId,
-        ['translation'],
+      const accepted = await taskCenterStore.retryFailed(
+        source.jobId,
         'current',
+        source.pageIds,
       )
-      if (!accepted) {
-        imageStore.setTranslationInProgress(false)
-        toast.info('后端没有找到当前章节可重试的部分失败翻译任务')
-        return true
-      }
       const jobId = accepted.jobIds[0]
       if (!jobId) throw new Error('后端没有返回重试任务')
       activeJobId.value = jobId
       progress.value = {
         current: 0,
-        total: accepted.failedItemCount,
+        total: source.pageIds.length,
         completed: 0,
         failed: 0,
         isInProgress: true,

@@ -5495,6 +5495,8 @@ export interface components {
             detectionState: "unprocessed" | "processed";
             /** @description Whether this page has a successfully saved manual edit. */
             isManuallyAnnotated?: boolean;
+            /** @description Retry source when the page's latest completed or failed translation item is a failure. */
+            failedTranslationJobId?: components["schemas"]["Uuid"];
             sourceUrl: string;
             thumbnailSourceUrl: string;
             cleanUrl: string | null;
@@ -8216,7 +8218,11 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": components["schemas"]["JobRetryCommand"];
+                "application/json": {
+                    strategy?: components["schemas"]["JobRetryCommand"]["strategy"];
+                    /** @description Restrict a translation retry with current settings to these pages whose latest translation attempt failed in this job. */
+                    pageIds?: components["schemas"]["Uuid"][];
+                };
             };
         };
         responses: {

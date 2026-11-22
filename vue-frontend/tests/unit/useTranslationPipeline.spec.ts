@@ -895,48 +895,39 @@ describe('useTranslationPipeline', () => {
     expect(translation.progress.value.isInProgress).toBe(false)
   })
 
-  it('retries durable failed items from the latest matching backend job', async () => {
+  it('retries only pages with current translation failures', async () => {
     const imageStore = useImageStore()
     addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
       id: 'page-1',
+      failedTranslationJobId: 'source-job',
     })
-    imageStore.setTranslationStatus(0, 'failed')
-    mocks.jobsList.mockResolvedValue({
-      items: [{
-            jobId: 'source-job',
-            batchId: 'source-batch',
-            batchDisplayName: 'source',
-            kind: 'translation',
-            retryOfJobId: null,
-            retryMode: null,
-            status: 'completed_with_errors',
-            queueRank: null,
-            bookId: null,
-            chapterId: 'chapter-1',
-            pageId: null,
-            blockedReason: null,
-            blockedByJobId: null,
-            progress: jobProgress({
-              jobStatus: 'completed_with_errors',
-              totalItems: 1,
-              failedItems: 1,
-            }),
-            target: {},
-            createdAt: '2026-08-23T04:00:00Z',
-            startedAt: null,
-            finishedAt: null,
-          }],
+    addTestImage(imageStore, '002.png', '/api/v2/assets/source-2', {
+      chapterId: 'chapter-1',
+      id: 'page-2',
+      translationStatus: 'completed',
     })
 
     const retried = await useTranslation().retryFailedImages()
 
     expect(retried).toBe(true)
-    expect(mocks.jobsRetryFailed).toHaveBeenCalledWith('source-job', 'current')
+    expect(mocks.jobsRetryFailed).toHaveBeenCalledWith('source-job', 'current', ['page-1'])
     expect(mocks.createChapterTranslationJob).not.toHaveBeenCalled()
     expect(mocks.toast.success).toHaveBeenCalledWith(
       '失败项已按当前设置加入后端任务中心',
     )
+  })
+
+  it('does not enqueue retry if no page has a current failure', async () => {
+    addTestImage(useImageStore(), '001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      id: 'page-1',
+      translationStatus: 'completed',
+    })
+
+    await expect(useTranslation().retryFailedImages()).resolves.toBe(false)
+    expect(mocks.jobsRetryFailed).not.toHaveBeenCalled()
+    expect(mocks.toast.info).toHaveBeenCalledWith('没有失败的图片需要重新翻译')
   })
 
   it('contains no browser pipeline, session persistence, or image payload processing', () => {

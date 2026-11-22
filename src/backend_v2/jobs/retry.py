@@ -6,10 +6,11 @@ from collections import defaultdict
 from datetime import timedelta
 import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 import uuid
 
 from sqlalchemy import Engine, select, update
+from sqlalchemy.engine import Connection
 
 from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.checksums import sha256_file
@@ -23,6 +24,7 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
     JobSpec,
     decode_job_config,
+    latest_failed_translation_job_id,
 )
 from src.backend_v2.timestamps import utcnow
 from src.backend_v2.settings.resolver import SettingsResolver
@@ -82,12 +84,22 @@ class JobRetryService:
         failed_only: bool,
         strategy: str,
         idempotency_key: str,
+        page_ids: Sequence[str] | None = None,
     ) -> dict[str, object]:
         if strategy not in {"current", "original"}:
             raise ValueError("strategy must be current or original")
         source, selected_items = self._source(job_id, failed_only=failed_only)
         kind = str(source["kind"])
         self._require_feature(kind)
+        if page_ids is not None:
+            if not failed_only or kind != "translation" or strategy != "current":
+                raise ValueError("pageIds requires a failed translation retry with current settings")
+            requested_pages = set(page_ids)
+            selected_items = [
+                item for item in selected_items if item["page_id"] in requested_pages
+            ]
+            if len(selected_items) != len(requested_pages):
+                raise JobConflict("selected pages must belong to the source job's failed items")
         if kind == "style_apply":
             strategy = "original"
 
@@ -128,6 +140,7 @@ class JobRetryService:
                 selected_items,
                 failed_only=failed_only,
                 idempotency_key=idempotency_key,
+                require_current_failure=page_ids is not None,
             )
         elif strategy == "current" and kind == "detect":
             response = self._retry_detection(
@@ -608,11 +621,13 @@ class JobRetryService:
         *,
         failed_only: bool,
         idempotency_key: str,
+        require_current_failure: bool,
     ) -> dict[str, object]:
         chapter_id = source.get("chapter_id")
         if not chapter_id:
             raise JobConflict("translation retry target chapter no longer exists")
         page_ids = self._page_ids(selected_items)
+        source_id = str(source["id"])
         config = _json_object(source.get("config_json"))
         mode = _required_text(config, "mode")
         execution_mode = _required_text(config, "executionMode")
@@ -637,6 +652,21 @@ class JobRetryService:
                 "styleSourcePageId": source_page_id,
                 "styleSourceDocumentRevision": int(source_revision),
             }
+
+        def check_current_failures(
+            connection: Connection, _batch_id: str, _job_ids: Sequence[str]
+        ) -> None:
+            current = set(
+                connection.execute(
+                    select(pages.c.id).where(
+                        pages.c.id.in_(page_ids),
+                        latest_failed_translation_job_id() == source_id,
+                    )
+                ).scalars()
+            )
+            if current != set(page_ids):
+                raise JobConflict("selected pages no longer have this translation failure")
+
         return TranslationJobCommandService(
             self.engine,
             profile=self.profile,
@@ -650,12 +680,13 @@ class JobRetryService:
             },
             page_ids=page_ids,
             idempotency_key=idempotency_key,
-            retry_of_job_id=str(source["id"]),
+            retry_of_job_id=source_id,
             retry_mode="current",
             idempotency_scope=(
-                f"job-retry:{source['id']}:"
+                f"job-retry:{source_id}:"
                 f"{'failed' if failed_only else 'all'}"
             ),
+            transaction_hook=check_current_failures if require_current_failure else None,
         )
 
     def _retry_detection(

@@ -49,9 +49,6 @@ function createOptions() {
       },
       updateTextStyle: vi.fn(),
     },
-    taskCenterStore: {
-      retryableFailedItemCount: vi.fn(() => 0),
-    },
     translation: {
       translateCurrentImage: vi.fn(),
       translateAllImages: vi.fn(),
@@ -75,7 +72,6 @@ function createOptions() {
     validateBeforeTranslation: vi.fn(() => true),
     currentImage: computed(() => image),
     hasImages: computed(() => true),
-    hasFailedImages: computed(() => false),
     isEditMode: ref(false),
     confirmAction: vi.fn().mockResolvedValue(true),
   }
@@ -107,21 +103,21 @@ describe('useTranslateViewActions', () => {
     expect(options.translateInit.switchImage).not.toHaveBeenCalled()
   })
 
-  it('uses the durable task history to enable failed-item retry', async () => {
+  it('validates translation settings before starting a failed-page retry', async () => {
     const options = createOptions()
-    options.taskCenterStore.retryableFailedItemCount.mockReturnValue(2)
     const actions = useTranslateViewActions(
       options as unknown as Parameters<typeof useTranslateViewActions>[0],
     )
 
     await actions.handleRetryFailed()
 
-    expect(options.taskCenterStore.retryableFailedItemCount).toHaveBeenCalledWith('chapter-1')
+    expect(options.validateBeforeTranslation).toHaveBeenCalledWith('normal')
     expect(options.translation.retryFailedImages).toHaveBeenCalledOnce()
   })
 
-  it('does not retry when the latest durable translation has no failed items', async () => {
+  it('does not retry when translation settings fail validation', async () => {
     const options = createOptions()
+    options.validateBeforeTranslation.mockReturnValue(false)
     const actions = useTranslateViewActions(
       options as unknown as Parameters<typeof useTranslateViewActions>[0],
     )
@@ -129,10 +125,6 @@ describe('useTranslateViewActions', () => {
     await actions.handleRetryFailed()
 
     expect(options.translation.retryFailedImages).not.toHaveBeenCalled()
-    expect(mocks.showToast).toHaveBeenCalledWith(
-      '没有失败的图片需要重新翻译',
-      'info',
-    )
   })
 
   it('uses backend deletion APIs after product confirmation', async () => {

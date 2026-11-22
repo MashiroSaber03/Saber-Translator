@@ -314,6 +314,7 @@ export function pageSummaryToImage(page: V2PageSummary): ImageDataLoadInput {
     translatedAssetUrl: page.translatedUrl ?? null,
     bubbleStates: null,
     translationStatus: status,
+    failedTranslationJobId: page.failedTranslationJobId,
     hasUnsavedChanges: false,
     isManuallyAnnotated: page.isManuallyAnnotated ?? false,
   }

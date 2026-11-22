@@ -3178,6 +3178,70 @@ def test_local_ai_vision_section_does_not_require_a_saved_api_key() -> None:
     )
 
 
+def test_translation_retry_uses_only_pages_with_current_failures(
+    translation_platform, monkeypatch,
+) -> None:
+    platform = translation_platform
+    engine = platform["engine"]
+    chapter_id = str(platform["chapter"]["id"])
+    second = _import_extra_page(platform, "second.png")
+    third = _import_extra_page(platform, "third.png")
+    content = ContentRepository(engine)
+    commands = TranslationJobCommandService(engine, profile=LOCAL_PROFILE)
+    jobs_repository = JobQueueRepository(engine)
+    algorithms = DeterministicFakeProvider()
+    translate = algorithms.translate
+    translate_calls = 0
+
+    def fail_later_pages(texts, config, *, mode):
+        nonlocal translate_calls
+        translate_calls += 1
+        if translate_calls > 1:
+            raise RuntimeError("intentional translation failure")
+        return translate(texts, config, mode=mode)
+
+    def current_failures():
+        return {
+            page["id"]: page["failedTranslationJobId"]
+            for page in content.list_pages(chapter_id=chapter_id, all_pages=True)["items"]
+            if "failedTranslationJobId" in page
+        }
+
+    config = {"mode": "standard", "executionMode": "sequential"}
+    commands.create_chapter_job(
+        chapter_id=chapter_id, config=config, page_ids=None, idempotency_key="partial"
+    )
+    monkeypatch.setattr(algorithms, "translate", fail_later_pages)
+    source_id = _run_translation_job(platform, algorithms)
+    assert current_failures() == {second: source_id, third: source_id}
+
+    commands.create_chapter_job(
+        chapter_id=chapter_id, config=config, page_ids=[second], idempotency_key="second"
+    )
+    _run_translation_job(platform, DeterministicFakeProvider())
+    assert current_failures() == {third: source_id}
+
+    retry = JobRetryService(engine, profile=LOCAL_PROFILE)
+    with pytest.raises(JobConflict, match="no longer have this translation failure"):
+        retry.retry(
+            job_id=source_id, strategy="current", failed_only=True,
+            idempotency_key="stale", page_ids=[second],
+        )
+    request = dict(
+        job_id=source_id, strategy="current", failed_only=True,
+        idempotency_key="retry-third", page_ids=[third],
+    )
+    accepted = retry.retry(**request)
+    retry_id = _run_translation_job(platform, DeterministicFakeProvider())
+    assert accepted["jobIds"] == [retry_id]
+    detail = jobs_repository.get_job(retry_id)
+    assert [item["pageId"] for item in detail["items"]] == [third]
+    assert detail["retryOfJobId"] == source_id
+    assert jobs_repository.get_job(source_id)["status"] == "completed_with_errors"
+    assert current_failures() == {}
+    assert retry.retry(**request) == accepted
+
+
 def test_failed_item_retry_refreezes_current_backend_settings(
     translation_platform,
 ) -> None:

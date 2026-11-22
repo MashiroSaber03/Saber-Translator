@@ -187,7 +187,6 @@ const {
   imageStore,
   bubbleStore,
   settingsStore,
-  taskCenterStore,
   translation,
   translateInit,
   validateBeforeTranslation,
