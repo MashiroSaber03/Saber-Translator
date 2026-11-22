@@ -68,7 +68,7 @@ fn retag_text(dpi: f32, t: &mut TextLayer) {
     }
     let mut eng = photocraft_text::shared().lock().unwrap_or_else(|e| e.into_inner());
     let layout = eng.layout(t, dpi);
-    t.psd_raw = Some(Arc::new(photocraft_text::psd::build_tysh(t, dpi, layout.bounds())));
+    t.psd_raw = Some(Arc::new(photocraft_text::psd::build_layout_tysh(t, dpi, &layout)));
 }
 
 /// Applies `a` to one layer's (and its children's) non-pixel geometry. With `content` false only

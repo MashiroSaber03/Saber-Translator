@@ -1063,8 +1063,7 @@ pub fn draw_overlay(app: &mut PhotocraftApp, painter: &egui::Painter, xf: &ViewX
     let (a, b) = (byte_of(&text, ed.caret.min(ed.anchor)), byte_of(&text, ed.caret.max(ed.anchor)));
     if a < b {
         let fill = Color32::from_rgba_unmultiplied(t.accent.r(), t.accent.g(), t.accent.b(), 110);
-        for bounds in l.clusters.iter().filter(|c| c.range.start >= a && c.range.end <= b).filter_map(|c| c.combined) {
-            let [x0, y0, x1, y1] = bounds;
+        for [x0, y0, x1, y1] in l.clusters.iter().filter(|c| c.range.start >= a && c.range.end <= b).filter_map(|c| c.combined) {
             painter.add(egui::Shape::convex_polygon(vec![scr_t(x0, y0), scr_t(x1, y0), scr_t(x1, y1), scr_t(x0, y1)], fill, Stroke::NONE));
         }
         for (li, ln) in l.lines.iter().enumerate() {

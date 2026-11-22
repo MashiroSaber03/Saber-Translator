@@ -9,6 +9,7 @@
 //! Writing starts from the layer's original `TySh` (when present) and patches only the text, runs,
 //! paragraphs, fonts, shape and transform, so Photoshop-only settings survive an edit.
 
+use icu_properties::{CodePointMapData, props::Script};
 use photocraft_color::{Color, ColorMode};
 use photocraft_doc::TextLayer;
 use photocraft_doc::text::{AntiAlias, Caps, CharStyle, Kerning, Orientation, ParagraphRun, ParagraphStyle, TextAlign, TextRun, TextShape, TextWarp};
@@ -16,7 +17,15 @@ use photocraft_geom::{Affine, Point};
 use photocraft_psd::descriptor::{Descriptor, Id, UnicodeString, Value as D, VersionedDescriptor};
 
 use crate::engine_data::{self as ed, Value as E};
+use crate::comic::{GroupKind, Groups};
+
+mod composition;
+mod presentation;
+pub use composition::build_composition_txt2;
 use crate::fonts::guess_from_postscript;
+
+// Photoshop's editable Tate-Chu-Yoko (cross-stream baseline).
+const TATE_CHU_YOKO: i64 = 3;
 
 /// Parsed `TySh` contents.
 #[derive(Clone, Debug, PartialEq)]
@@ -684,22 +693,29 @@ fn manual(s: &CharStyle) -> bool {
     s.kerning == Kerning::Off || kern_units(s.kern) != 0
 }
 
-/// EngineData style runs for `ed_text` (the layer text with `\r` breaks and the trailing `\r`):
-/// (model run index, `(AutoKerning, Kerning)`, UTF-16 length), split where those change.
-fn pair_runs(ed_text: &str, runs: &[TextRun]) -> Vec<(usize, (bool, i64), usize)> {
+#[derive(PartialEq, Eq)]
+struct EngineRunStyle {
+    automatic_kerning: bool,
+    kern: i64,
+    tate_chu_yoko: Option<usize>,
+    no_break: bool,
+}
+
+/// EngineData style runs split wherever kerning or the vertical cell changes.
+fn pair_runs(ed_text: &str, runs: &[TextRun], groups: &Groups) -> Vec<(usize, EngineRunStyle, usize)> {
     // Model run of each character (the trailing `\r` takes the last run).
-    let mut owner: Vec<(usize, usize)> = Vec::with_capacity(ed_text.len());
+    let mut owner = Vec::with_capacity(ed_text.len());
     let (mut ri, mut run_end) = (0usize, runs.first().map_or(0, |r| r.len));
     for (b, ch) in ed_text.char_indices() {
         while b >= run_end && ri + 1 < runs.len() {
             ri += 1;
             run_end = run_end.saturating_add(runs.get(ri).map_or(0, |r| r.len));
         }
-        owner.push((ri, ch.len_utf16()));
+        owner.push((ri, ch.len_utf16(), b));
     }
     let style = |i: usize| owner.get(i).and_then(|o| runs.get(o.0)).map(|r| &r.style);
-    let mut out: Vec<(usize, (bool, i64), usize)> = Vec::new();
-    for (j, &(ri, n)) in owner.iter().enumerate() {
+    let mut out: Vec<(usize, EngineRunStyle, usize)> = Vec::new();
+    for (j, &(ri, n, byte)) in owner.iter().enumerate() {
         let k = j.checked_sub(1).and_then(style).map_or(0, |s| kern_units(s.kern));
         // `false` marks character j - 2 manual: written when it is and its own kern (on j - 1)
         // doesn't say so already; harmless (and Photoshop's own form) next to a kern on j.
@@ -707,7 +723,10 @@ fn pair_runs(ed_text: &str, runs: &[TextRun]) -> Vec<(usize, (bool, i64), usize)
             Some(p) => style(p).is_some_and(|s| manual(s) && (kern_units(s.kern) == 0 || k != 0)),
             None => k != 0,
         };
-        let fields = (!off, k);
+        let group = groups.at(byte);
+        let fields = EngineRunStyle { automatic_kerning: !off, kern: k,
+            tate_chu_yoko: group.filter(|g| g.cross).map(|g| g.range.start),
+            no_break: group.is_some_and(|g| g.kind != GroupKind::Upright) };
         match out.last_mut() {
             Some(last) if last.0 == ri && last.1 == fields => last.2 += n,
             _ => out.push((ri, fields, n)),
@@ -889,10 +908,6 @@ pub(crate) fn paragraph_properties(p: &ParagraphStyle, k: f32) -> E {
     ])
 }
 
-fn utf16_len(s: &str) -> i64 {
-    s.encode_utf16().count() as i64
-}
-
 pub(crate) fn font_entry(name: &str) -> E {
     E::Dict(vec![("Name".into(), E::String(name.into())), ("Script".into(), E::Int(0)), ("FontType".into(), E::Int(1)), ("Synthetic".into(), E::Int(0))])
 }
@@ -913,19 +928,17 @@ fn txt2_mode(s: &CharStyle) -> i64 {
 /// `Txt2` style runs for `layer`: `(mode, UTF-16 length)` over the engine text (`\r` breaks and
 /// the trailing `\r`, which takes the last run's mode), split where the auto-kern mode changes.
 fn txt2_mode_runs(layer: &TextLayer) -> Vec<(i64, usize)> {
-    let runs = layer.char_runs();
-    let ed_text = format!("{}\r", layer.text.replace('\n', "\r"));
+    let mut remaining = layer.text.as_str();
     let mut out: Vec<(i64, usize)> = Vec::new();
-    let (mut ri, mut run_end) = (0usize, runs.first().map_or(0, |r| r.len));
-    for (b, ch) in ed_text.char_indices() {
-        while b >= run_end && ri + 1 < runs.len() {
-            ri += 1;
-            run_end = run_end.saturating_add(runs.get(ri).map_or(0, |r| r.len));
-        }
-        let mode = runs.get(ri).map_or(1, |r| txt2_mode(&r.style));
+    for run in layer.char_runs() {
+        let Some((part, rest)) = remaining.split_at_checked(run.len) else { break };
+        remaining = rest;
+        let mode = txt2_mode(&run.style);
+        // LF and CR both take one UTF-16 code unit. The terminal CR uses the last style.
+        let length = part.encode_utf16().count() + usize::from(rest.is_empty());
         match out.last_mut() {
-            Some(last) if last.0 == mode => last.1 += ch.len_utf16(),
-            _ => out.push((mode, ch.len_utf16())),
+            Some(last) if last.0 == mode => last.1 += length,
+            _ => out.push((mode, length)),
         }
     }
     out
@@ -1089,10 +1102,8 @@ pub fn set_text_index(tysh: &[u8], index: i32) -> Option<Vec<u8>> {
     Some(write_tysh(&t))
 }
 
-/// PSD paragraph type hides overset text. Fit a copy to the complete layout and freeze its
-/// automatic wraps as explicit paragraphs; the source frame and character styles stay untouched.
-/// Cached pixels are retained, and Photoshop can recompose every character on the first edit.
-pub fn visible_overflow_for_psd(layer: &TextLayer, layout: &crate::TextLayout) -> Option<TextLayer> {
+/// Fit an export copy around visible overflow, freezing wraps only when the frame needs to grow.
+fn fit_to_layout(layer: &TextLayer, layout: &crate::TextLayout) -> Option<(TextLayer, std::collections::BTreeSet<usize>)> {
     let TextShape::Box { x, y, width, height } = layer.shape else { return None };
     if !layer.overflow_visible && layer.block_align == photocraft_doc::text::BlockAlign::Start {
         return None;
@@ -1121,12 +1132,42 @@ pub fn visible_overflow_for_psd(layer: &TextLayer, layout: &crate::TextLayout) -
             *end = end.max(cluster.x + cluster.advance);
         }
     }
+    let inline_needed = |advance: f32, inset: f32| {
+        layout.lines.iter().enumerate().fold(0.0f32, |acc, (index, line)| {
+            let paragraph = paragraph_at(line.range.start);
+            let indents = (paragraph.start_indent_pt + paragraph.end_indent_pt) * k;
+            // Trailing spaces before a frozen wrap still need room in Photoshop.
+            acc.max((ends[index] - line.x0) * advance + indents + inset)
+        })
+    };
+    let block_overflow = layout.lines.iter().any(|line| {
+        if layout.vertical { line.baseline - layout.block_offset + line.descent > -x + 0.5 } else { line.baseline - layout.block_offset > y + height + 0.5 }
+    });
+    let mut copy = layer.clone();
+    copy.block_align = photocraft_doc::text::BlockAlign::Start;
+    copy.psd_raw = None;
+    copy.overflow_visible = false;
+    let finish = |mut copy: TextLayer| {
+        // Photoshop reanchors an offset paragraph frame on edit. Store a zero-based
+        // box and apply its origin and the block alignment once in the layer transform.
+        if let TextShape::Box { x, y, .. } = &mut copy.shape {
+            copy.transform = copy.transform.mul(&Affine::translate(f64::from(*x + dx), f64::from(*y + dy)));
+            *x = 0.0;
+            *y = 0.0;
+        }
+        copy
+    };
+    if !block_overflow && inline_needed(1.0, 0.0) <= inline + 0.001 {
+        return (layout.block_offset != 0.0 || x != 0.0 || y != 0.0).then(|| (finish(copy), Default::default()));
+    }
     // Photoshop uses the font's vertical advance; some CJK faces use more than one em.
     let vertical_advance = if layout.vertical {
         use skrifa::raw::TableProvider;
+        let mut seen = std::collections::HashSet::new();
         layout
             .faces
             .iter()
+            .filter(|face| seen.insert((face.font.data.id(), face.font.index)))
             .filter_map(|face| {
                 let font = skrifa::FontRef::from_index(face.font.data.as_ref(), face.font.index).ok()?;
                 Some(
@@ -1140,28 +1181,8 @@ pub fn visible_overflow_for_psd(layer: &TextLayer, layout: &crate::TextLayout) -
     };
     // Leave one em for Photoshop's first-glyph ascent/descent in vertical paragraph frames.
     let vertical_inset = if layout.vertical { layout.faces.iter().map(|f| f.size_px).fold(0.0f32, f32::max) } else { 0.0 };
-    let needed = layout.lines.iter().enumerate().fold(0.0f32, |acc, (index, line)| {
-        let indents = (paragraph_at(line.range.start).start_indent_pt + paragraph_at(line.range.start).end_indent_pt) * k;
-        // Trailing spaces before a frozen wrap still need room in Photoshop.
-        let end = ends.get(index).copied().unwrap_or(line.x1);
-        acc.max((end - line.x0) * vertical_advance + indents + vertical_inset)
-    });
+    let needed = inline_needed(vertical_advance, vertical_inset);
     let delta = if needed > inline + 0.001 { needed - inline + 1.0 } else { 0.0 };
-    let block_overflow = layout.lines.iter().any(|line| {
-        if layout.vertical { line.baseline - layout.block_offset + line.descent > -x + 0.5 } else { line.baseline - layout.block_offset > y + height + 0.5 }
-    });
-    let mut copy = layer.clone();
-    copy.block_align = photocraft_doc::text::BlockAlign::Start;
-    // Photoshop has no block alignment field. Bake only the export copy's layout
-    // translation into TySh, preserving the page frame and its repair geometry.
-    let m = &mut copy.transform.m;
-    m[4] += m[0] * f64::from(dx) + m[2] * f64::from(dy);
-    m[5] += m[1] * f64::from(dx) + m[3] * f64::from(dy);
-    copy.psd_raw = None;
-    copy.overflow_visible = false;
-    if !block_overflow && delta < 0.01 {
-        return (layout.block_offset != 0.0).then_some(copy);
-    }
     let breaks: std::collections::BTreeSet<_> = layout
         .lines
         .iter()
@@ -1223,11 +1244,30 @@ pub fn visible_overflow_for_psd(layer: &TextLayer, layout: &crate::TextLayout) -
     } else {
         TextShape::Box { x, y, width: width + delta, height: height.max(bounds[3] - y + 1.0) }
     };
-    Some(copy)
+    Some((finish(copy), breaks))
 }
 
 /// Updates (or creates) an EngineData tree for `layer`.
 pub fn build_engine_data(layer: &TextLayer, template: Option<E>, dpi: f32) -> E {
+    engine_data_for_layout(layer, template, dpi, &[], &Groups::for_text(&layer.text, layer.orientation == Orientation::Vertical))
+}
+
+const HARD_KINSOKU: &str = "PhotoshopKinsokuHard";
+// JIS Maximum categories and their keys in the per-layer and document resources.
+const HARD_KINSOKU_RULES: [(&str, &str, &str); 4] = [
+    ("NoStart", "0", "!),.:;?]}¢—’”‰℃℉、。々〉》」』】〕ぁぃぅぇぉっゃゅょゎ゛゜ゝゞァィゥェォッャュョヮヵヶ・ーヽヾ！％），．：；？］｝"),
+    ("NoEnd", "1", "([{£§‘“〈《「『【〒〔＃＄（＠［｛￥"),
+    ("Keep", "2", "—‥…"),
+    ("Hanging", "3", "、。，．"),
+];
+
+fn hard_kinsoku_resource() -> E {
+    let fields = std::iter::once(("Name", HARD_KINSOKU))
+        .chain(HARD_KINSOKU_RULES.map(|(name, _, rules)| (name, rules)));
+    E::Array(vec![E::Dict(fields.map(|(key, value)| (key.into(), E::String(value.into()))).collect())])
+}
+
+fn engine_data_for_layout(layer: &TextLayer, template: Option<E>, dpi: f32, japanese_styles: &[bool], groups: &Groups) -> E {
     let k = 72.0 / if dpi > 0.0 { dpi } else { 72.0 };
     let fresh = || E::Dict(vec![("EngineDict".into(), E::dict()), ("ResourceDict".into(), E::dict())]);
     // The template comes from the PSD: it may not be a dictionary or may lack `EngineDict`.
@@ -1258,12 +1298,16 @@ pub fn build_engine_data(layer: &TextLayer, template: Option<E>, dpi: f32) -> E 
     };
     let mut sruns = Vec::new();
     let mut slens = Vec::new();
-    for (ri, pair, n) in pair_runs(&ed_text, &runs) {
+    for (ri, style, n) in pair_runs(&ed_text, &runs, groups) {
         let Some(r) = runs.get(ri) else { continue };
         let fi = font_index(postscript_for(&r.style));
         let mut data = style_sheet_data(&r.style, fi, k);
-        data.set("AutoKerning", E::Bool(pair.0));
-        data.set("Kerning", E::Int(pair.1));
+        data.set("AutoKerning", E::Bool(style.automatic_kerning));
+        data.set("Kerning", E::Int(style.kern));
+        if style.tate_chu_yoko.is_some() {
+            data.set("BaselineDirection", E::Int(TATE_CHU_YOKO));
+        }
+        if style.no_break { data.set("NoBreak", E::Bool(true)); }
         sruns.push(E::Dict(vec![("StyleSheet".into(), E::Dict(vec![("StyleSheetData".into(), data)]))]));
         slens.push(E::Int(n as i64));
     }
@@ -1272,18 +1316,58 @@ pub fn build_engine_data(layer: &TextLayer, template: Option<E>, dpi: f32) -> E 
     let mut at = 0usize;
     let mut pi = 0;
     let mut end = paras[0].len;
+    let old_paragraphs = e.path(&["EngineDict", "ParagraphRun", "RunArray"]).and_then(E::as_array).unwrap_or_default();
+    let composed_box = !japanese_styles.is_empty() && matches!(layer.shape, TextShape::Box { .. });
+    let hard_is_first = ["ResourceDict", "DocumentResources"].into_iter().filter_map(|key| e.path(&[key, "KinsokuSet"]))
+        .all(|set| set.as_array().and_then(|rules| rules.first()).and_then(|rule| rule.get("Name")).and_then(E::as_str) == Some(HARD_KINSOKU));
+    let mut uses_hard_kinsoku = false;
+    let scripts = CodePointMapData::<Script>::new();
+    let japanese: Vec<_> = runs.iter().zip(japanese_styles).scan(0, |at, (run, &enabled)| {
+        let start = *at;
+        *at += run.len;
+        Some((enabled, start..*at))
+    }).filter_map(|(enabled, range)| enabled.then_some(range)).collect();
     // Photoshop needs one record per hard paragraph, including the terminal
     // marker. Native style runs may span paragraphs; use the style at each start.
-    for paragraph in ed_text.split_inclusive('\r') {
+    for (index, paragraph) in ed_text.split_inclusive('\r').enumerate() {
         while at >= end && pi + 1 < paras.len() {
             pi += 1;
             end += paras[pi].len;
         }
-        pruns.push(E::Dict(vec![(
-            "ParagraphSheet".into(),
-            E::Dict(vec![("DefaultStyleSheet".into(), E::Int(0)), ("Properties".into(), paragraph_properties(&paras[pi].style, k))]),
-        )]));
-        plens.push(E::Int(utf16_len(paragraph)));
+        let mut record = old_paragraphs.get(index).filter(|data| matches!(data, E::Dict(_))).cloned().unwrap_or_else(E::dict);
+        let mut sheet = record.get("ParagraphSheet").filter(|data| matches!(data, E::Dict(_))).cloned().unwrap_or_else(E::dict);
+        let mut properties = sheet.get("Properties").filter(|data| matches!(data, E::Dict(_))).cloned().unwrap_or_else(E::dict);
+        if let E::Dict(entries) = paragraph_properties(&paras[pi].style, k) {
+            for (key, value) in entries {
+                properties.set(&key, value);
+            }
+        }
+        let run = japanese.partition_point(|r| r.end <= at);
+        let japanese_paragraph = japanese.get(run).is_some_and(|r| r.start < at + paragraph.len());
+        if japanese_paragraph && properties.get("MojiKumi").is_none() {
+            properties.set("MojiKumi", E::Int(1));
+        }
+        if composed_box && properties.get("EveryLineComposer").is_none() {
+            // The shared layouter fits one line at a time. Preserve an imported composer,
+            // including an explicit composer with no Kinsoku selection.
+            properties.set("EveryLineComposer", E::Bool(false));
+            if hard_is_first && properties.get("Kinsoku").is_none() && (japanese_paragraph
+                || paragraph.chars().any(|ch| matches!(scripts.get(ch), Script::Han | Script::Hiragana | Script::Katakana)))
+            {
+                properties.set("Kinsoku", E::Int(0));
+                if properties.get("KinsokuOrder").is_none() {
+                    properties.set("KinsokuOrder", E::Int(0));
+                }
+                uses_hard_kinsoku = true;
+            }
+        }
+        if sheet.get("DefaultStyleSheet").is_none() {
+            sheet.set("DefaultStyleSheet", E::Int(0));
+        }
+        sheet.set("Properties", properties);
+        record.set("ParagraphSheet", sheet);
+        pruns.push(record);
+        plens.push(E::Int(paragraph.encode_utf16().count() as i64));
         at += paragraph.len();
     }
     let fontset = E::Array(fonts.iter().map(|f| font_entry(f)).collect());
@@ -1368,6 +1452,9 @@ pub fn build_engine_data(layer: &TextLayer, template: Option<E>, dpi: f32) -> E 
         }
         let Some(rd) = e.get_mut(key) else { continue };
         rd.set("FontSet", fontset.clone());
+        if uses_hard_kinsoku && rd.get("KinsokuSet").is_none() {
+            rd.set("KinsokuSet", hard_kinsoku_resource());
+        }
         if rd.get("StyleSheetSet").is_none() {
             let base = runs.first().map(|r| r.style.clone()).unwrap_or_default();
             rd.set(
@@ -1410,9 +1497,31 @@ fn engine_antialias(n: f64) -> Option<AntiAlias> {
 /// Builds the `TySh` block for `layer`, patching its current `psd_raw` when present.
 /// `ink` is the layer's rendered bounds in text space (for `bounds`/`boundingBox`).
 pub fn build_tysh(layer: &TextLayer, dpi: f32, ink: Option<[f32; 4]>) -> Vec<u8> {
+    let groups = Groups::for_text(&layer.text, layer.orientation == Orientation::Vertical);
+    tysh_for_layout(layer, dpi, ink, &[], &groups)
+}
+
+/// Writes editable text using the composition chosen by the shared layouter.
+pub fn build_layout_tysh(layer: &TextLayer, dpi: f32, layout: &crate::TextLayout) -> Vec<u8> {
+    tysh_for_layout(layer, dpi, layout.bounds(), &layout.japanese_styles, &layout.comic_groups)
+}
+
+/// Apply the measured paragraph fit and the editable styles to the same export copy.
+pub fn prepare_text_for_psd(layer: &TextLayer, dpi: f32, layout: &crate::TextLayout, fonts: &mut crate::FontDb, build_composition: bool) -> Option<TextLayer> {
+    let (mut fitted, breaks) = fit_to_layout(layer, layout)
+        .or_else(|| (layer.overflow_visible || layer.psd_raw.is_none()).then(|| (layer.clone(), Default::default())))?;
+    let mut groups = layout.comic_groups.clone();
+    groups.insert_breaks(&breaks);
+    let projected = if build_composition { presentation::apply(&mut fitted, layout, fonts, &mut groups, &breaks) } else { None };
+    let tysh = tysh_for_layout(&fitted, dpi, layout.bounds(), projected.as_deref().unwrap_or(&layout.japanese_styles), &groups);
+    fitted.psd_raw = Some(std::sync::Arc::new(tysh));
+    Some(fitted)
+}
+
+fn tysh_for_layout(layer: &TextLayer, dpi: f32, ink: Option<[f32; 4]>, japanese_styles: &[bool], groups: &Groups) -> Vec<u8> {
     let old = layer.psd_raw.as_deref().and_then(|d| parse_tysh(d));
     let template = old.as_ref().and_then(|t| engine_data(&t.text));
-    let e = build_engine_data(layer, template, dpi);
+    let e = engine_data_for_layout(layer, template, dpi, japanese_styles, groups);
     let mut text = old.as_ref().map(|t| t.text.clone()).unwrap_or_else(|| Descriptor::new("TxLr"));
     let set = |d: &mut Descriptor, key: &str, v: D| match d.items.iter_mut().find(|(k, _)| k.is(key)) {
         Some(e) => e.1 = v,

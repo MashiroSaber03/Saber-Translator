@@ -156,7 +156,7 @@ def test_rich_editor_catalog_matches_every_bundled_native_face(tmp_path):
 
 
 @pytest.mark.parametrize('font_name', ['msyh.ttc', 'Arial_Unicode.ttf'])
-def test_native_emphasis_marks_stay_upright_after_project_reopen(tmp_path, font_name):
+def test_native_punctuation_keeps_source_and_direction_after_project_reopen(tmp_path, font_name):
     marks = '!！?？¡¿؟‼⁇⁈⁉﹖﹗ǃ❢❕❗'
     font = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts' / font_name
     fonts = [dict(id='font', path=str(font))]
@@ -184,21 +184,23 @@ def test_native_emphasis_marks_stay_upright_after_project_reopen(tmp_path, font_
             bbox = rendered[direction].crop((i * 100, 0, (i + 1) * 100, 200)).getbbox()
             assert bbox, (font_name, mark, direction)
             sizes.append((bbox[2] - bbox[0], bbox[3] - bbox[1]))
-        # Vertical OpenType alternates can change a mark's width, but it stays upright.
-        assert abs(sizes[0][1] - sizes[1][1]) <= 2, (font_name, mark, sizes)
+        if mark in '!?':
+            assert all(abs(a - b) <= 2 for a, b in zip(*sizes)), (font_name, mark, sizes)
 
 
 @pytest.mark.parametrize('font_name', ['msyh.ttc', 'simhei.ttf', 'STSONG.TTF', '思源黑体SourceHanSansK-Bold.TTF'])
-def test_vertical_comic_digits_and_punctuation_keep_text_and_reload_pixels(tmp_path, font_name):
+def test_vertical_digits_and_punctuation_keep_text_and_reload_pixels(tmp_path, font_name):
     font = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts' / font_name
     source, output, project = tmp_path / 'source.png', tmp_path / 'text.png', tmp_path / 'comic.pcraft'
-    samples = ['9', '19', '!!', '!?', '?!', '??', '!!!', '！！', '！？']
-    Image.new('RGB', (len(samples) * 120, 240), 'white').save(source)
+    samples = ['9', '19', '９９', 'OK', '<H>19</H>', '!!', '!?', '?!', '??',
+               '!!!', '！！！', '？？？', '！！', '！？', '？！', '？？', '！?', '‼', '⁉', '⁈', '⁇']
+    sample_width = 150
+    Image.new('RGB', (len(samples) * sample_width, 240), 'white').save(source)
     fonts = [dict(id='font', path=str(font))]
     rendered = {}
     for direction in ('horizontal', 'vertical'):
         inputs = [dict(bubbleId=str(i), fontId='font', payload=_bubble_fields(
-            translatedText=text, coords=[i * 120 + 5, 20, (i + 1) * 120 - 5, 220],
+            translatedText=text, coords=[i * sample_width + 5, 20, (i + 1) * sample_width - 5, 220],
             fontSize=56, textDirection=direction, rotationAngle=0, strokeEnabled=False, blockAlign='center'))
             for i, text in enumerate(samples)]
         result = NativeEditor.invoke(dict(pageId='comic', source=str(source), fonts=fonts,
@@ -211,18 +213,29 @@ def test_vertical_comic_digits_and_punctuation_keep_text_and_reload_pixels(tmp_p
         assert reopened['bubbles'] == result['bubbles']
         with Image.open(output) as image:
             assert image.getchannel('A').tobytes() == rendered[direction].tobytes()
+    vertical_ink = {}
     for i, text in enumerate(samples):
-        horizontal = rendered['horizontal'].crop((i * 120, 0, (i + 1) * 120, 240)).getbbox()
-        vertical = rendered['vertical'].crop((i * 120, 0, (i + 1) * 120, 240)).getbbox()
-        assert horizontal and vertical, (font_name, text)
+        region = (i * sample_width, 0, (i + 1) * sample_width, 240)
+        h, v = (rendered[d].crop(region) for d in ('horizontal', 'vertical'))
+        assert (hb := h.getbbox()) and (vb := v.getbbox()), (font_name, text)
+        h, v = h.crop(hb), v.crop(vb)
+        vertical_ink[text] = v
         if text == '9':
-            assert abs((horizontal[2] - horizontal[0]) - (vertical[2] - vertical[0])) <= 2
-        if text != '19':
-            assert abs((horizontal[3] - horizontal[1]) - (vertical[3] - vertical[1])) <= 2, (font_name, text)
+            assert abs(h.width - v.height) <= 2 and abs(h.height - v.width) <= 2, (font_name, h.size, v.size)
+            continue
+        if text in ('19', '９９', 'OK'):
+            assert abs(h.height - v.height) <= 2, (font_name, text, h.size, v.size)
+        assert max(v.width, v.height) <= 57, (font_name, text, v.size)
+        columns = [v.crop((x, 0, x + 1, v.height)).getbbox() is not None for x in range(v.width)]
+        groups = sum(painted and (x == 0 or not columns[x - 1]) for x, painted in enumerate(columns))
+        assert groups == 2, (font_name, text, v.size, groups)
+    for source, displayed_as in [('<H>19</H>', '19'), ('!!!', '!!'), ('！！！', '!!'), ('？？？', '??')]:
+        actual, expected = vertical_ink[source], vertical_ink[displayed_as]
+        assert (actual.size, actual.tobytes()) == (expected.size, expected.tobytes()), (font_name, source)
 
 
 @pytest.mark.parametrize('font_name', ['msyh.ttc', 'simhei.ttf', 'STSONG.TTF', '思源黑体SourceHanSansK-Bold.TTF'])
-def test_vertical_punctuation_centres_visible_ink_and_missing_ornaments_keep_their_text(tmp_path, font_name):
+def test_vertical_punctuation_centres_visible_ink_after_font_fallback(tmp_path, font_name):
     font = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts' / font_name
     source, output = tmp_path / 'source.png', tmp_path / 'text.png'
     marks = '中！？❗❕'
@@ -238,10 +251,67 @@ def test_vertical_punctuation_centres_visible_ink_and_missing_ornaments_keep_the
     assert all(bounds)
     centres = [(b[0] + b[2]) / 2 for b in bounds]
     assert all(abs(c - centres[0]) <= 2 for c in centres[1:]), (font_name, centres)
-    # Bundled fonts lack these ornaments. Their visible fallback must be a real
-    # exclamation glyph, never a missing-glyph box; the Unicode text stays intact.
-    for i in (3, 4):
-        assert alpha.crop((i * 100, 0, (i + 1) * 100, 200)).crop(bounds[i]).tobytes() == alpha.crop((100, 0, 200, 200)).crop(bounds[1]).tobytes()
+
+
+@pytest.mark.parametrize(('font_name', 'mark_advance'), [
+    ('汉仪旗黑 65S.TTF', 48),
+    ('[toolbox]宋体-简繁-Medium(v2.4).ttf', 24),
+])
+def test_native_punctuation_uses_direction_and_font_without_rewriting_text(tmp_path, font_name, mark_advance):
+    fonts_dir = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts'
+    fonts = [dict(id='font', path=str(fonts_dir / font_name)), dict(id='fallback', path=str(fonts_dir / 'msyh.ttc'))]
+    source, overlay, project = tmp_path / 'source.png', tmp_path / 'text.png', tmp_path / 'page.pcraft'
+    marks = ['“', '”', '‘', '’', '『', '』', '：', '；', '～', '…', '︙', '甲，甲', '甲。甲', '甲、甲']
+    Image.new('RGB', (len(marks) * 100, 240), 'white').save(source)
+    rendered = {}
+    for direction in ('horizontal', 'vertical'):
+        inputs = [dict(bubbleId=str(i), fontId='font', payload=_bubble_fields(
+            translatedText=mark, coords=[i * 100 + 10, 20, (i + 1) * 100 - 10, 220],
+            fontSize=48, textDirection=direction, strokeEnabled=False, blockAlign='center', rotationAngle=0))
+            for i, mark in enumerate(marks)]
+        saved = NativeEditor.invoke(dict(pageId='punctuation', source=str(source), fonts=fonts,
+            bubbles=inputs, text=str(overlay), output=str(project)))
+        assert [b['payload']['translatedText'] for b in saved['bubbles']] == marks
+        with Image.open(overlay) as image:
+            alpha = image.getchannel('A')
+        rendered[direction] = {mark: alpha.crop((i * 100, 0, (i + 1) * 100, 240)) for i, mark in enumerate(marks)}
+        assert NativeEditor.invoke(dict(pageId='punctuation', project=str(project), fonts=fonts, text=str(overlay)))['bubbles'] == saved['bubbles']
+        with Image.open(overlay) as image:
+            assert image.getchannel('A').tobytes() == alpha.tobytes()
+
+    def ink(mask):
+        bounds = mask.getbbox()
+        assert bounds
+        return mask.crop(bounds)
+
+    def ink_rows(mask):
+        visible = [row for row in range(mask.height) if mask.crop((0, row, mask.width, row + 1)).getbbox()]
+        return [row for i, row in enumerate(visible) if i == 0 or visible[i - 1] != row - 1]
+
+    vertical, horizontal = rendered['vertical'], rendered['horizontal']
+    for mark in '“”‘’':
+        v, h = ink(vertical[mark]), ink(horizontal[mark])
+        assert abs(v.width - h.height) <= 2 and abs(v.height - h.width) <= 2, (mark, v.size, h.size)
+    for mark in '『』':
+        shape = ink(vertical[mark])
+        assert shape.width > shape.height, (mark, shape.size)
+    assert ink(vertical['～']).width > ink(vertical['～']).height
+    colon = ink(vertical['：'])
+    assert (colon.height > colon.width) == (mark_advance == 48), colon.size
+    semicolon = ink(vertical['；'])
+    assert semicolon.height > semicolon.width, semicolon.size
+    assert len(ink_rows(horizontal['︙'])) == 3
+
+    # These marks use their font's top-right vertical forms, relative to the Han
+    # characters in the same column. This avoids mistaking block alignment for glyph placement.
+    for sample in marks[-3:]:
+        mask = vertical[sample]
+        starts = ink_rows(mask)
+        assert len(starts) == 3, (sample, starts)
+        assert abs(starts[-1] - starts[0] - 48 - mark_advance) <= 2, (font_name, sample, starts)
+        han = mask.crop((0, starts[0], mask.width, starts[1])).getbbox()
+        mark = mask.crop((0, starts[1], mask.width, starts[2])).getbbox()
+        assert mark[0] + mark[2] > han[0] + han[2] + 6, (sample, han, mark)
 
 
 @pytest.mark.parametrize('uploaded', [False, True])
@@ -903,7 +973,7 @@ def test_render_reads_native_text_and_does_not_republish_the_document_or_project
         with ZipFile(BytesIO(original)) as source, ZipFile(changed, 'w') as target:
             for name in source.namelist():
                 target.writestr(name, json.dumps(manifest).encode() if name == 'manifest.json' else source.read(name))
-        assert not NativeEditor._legacy_document(changed.getvalue())
+        assert not NativeEditor._legacy_document(manifest['document'])
         with engine.begin() as connection:
             asset = storage.publish_bytes(changed.getvalue(), extension='pcraft', mime_type='application/x-photocraft', connection=connection)
             connection.execute(update(page_assets).where(page_assets.c.page_id == page,
@@ -1006,11 +1076,11 @@ def test_legacy_native_metadata_is_read_compatibly_and_converted_only_on_save(co
     with engine.connect() as conn:
         converted = NativeEditor(storage).read_document(conn, page)
     assert _project_asset(content_platform, page) == before
-    assert not NativeEditor._legacy_document(converted)
+    assert not NativeEditor._legacy_document(_manifest(converted)['document'])
     saved, _ = repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'],
         mutations=[], editor_document=converted, idempotency_key='convert')
     assert saved['document']['bubbles'][0]['payload']['richText'] == document['bubbles'][0]['payload']['richText']
-    assert not NativeEditor._legacy_document(_project_asset(content_platform, page)[1])
+    assert not NativeEditor._legacy_document(_manifest(_project_asset(content_platform, page)[1])['document'])
 
 
 @pytest.mark.parametrize('stale_cache', [False, True])
@@ -1053,7 +1123,7 @@ def test_legacy_repair_layers_are_compacted_on_read_and_persisted_only_on_save(c
     assert len(layers) == len(manifest['document']['layers'])
     assert layers[0]['content']['kind'] == 'raster'
     assert layers[0]['locks']['position'] and layers[0]['locks']['transparency'] and not layers[0]['locks']['all']
-    assert not NativeEditor._legacy_document(converted)
+    assert not NativeEditor._legacy_document(_manifest(converted)['document'])
     saved, _ = repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'],
         mutations=[], editor_document=converted, idempotency_key='compact-background')
     assert saved['document']['bubbles'][0]['payload']['fontSize'] == 24

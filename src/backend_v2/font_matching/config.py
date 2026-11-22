@@ -1,8 +1,10 @@
 """Validation and defaults shared by saved settings and native diagnostics."""
 
+from pathlib import Path
 from urllib.parse import urlsplit
 
 DOMAIN = "font_matching"
+CACHE_DIRECTORY = Path("runtime/font-match-cache")
 ONLINE_PROVIDERS = {
     "openai": ("https://api.openai.com/v1", "gpt-6-luna"),
     "jev": ("https://api.typesafe.ai/v1", "jev-1.14.0"),

@@ -1,6 +1,7 @@
 import { getCurrentInstance, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { getPageRenderStatus, type V2PageRenderStatus } from '@/api/v2/content'
+import { pageTranslationStatus } from '@/adapters/v2ContentAdapter'
 import {
   queuePageDocumentSave,
 } from '@/services/pageDocumentPersistence'
@@ -19,20 +20,12 @@ export function applyPageRenderStatus(status: V2PageRenderStatus): void {
     || (image.renderedRevision === status.documentRevision
       && status.renderedRevision !== status.documentRevision)
   ) return
-  const failed = status.renderStatus === 'render_failed' || status.renderStatus === 'repair_failed'
-  const translationStatus = failed
-    ? 'failed'
-    : status.renderStatus === 'ready'
-      ? 'completed'
-      : status.renderStatus === 'not_rendered'
-        ? 'pending'
-        : 'processing'
   imageStore.updateImageByIndex(index, {
     documentRevision: status.documentRevision,
     renderedRevision: status.renderedRevision,
     cleanAssetUrl: status.cleanUrl,
     translatedAssetUrl: status.translatedUrl,
-    translationStatus,
+    translationStatus: pageTranslationStatus(status),
   })
 }
 

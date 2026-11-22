@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -100,12 +101,37 @@ def _install(root: Path, staged: Path) -> None:
         raise
 
 
-def ensure_editor_runtime(progress=print, *, root: Path | None = None) -> None:
+def _expected_checksum(content: bytes) -> str:
+    fields = content.decode("ascii").split()
+    if not fields or len(fields[0]) != 64 or any(c not in "0123456789abcdef" for c in fields[0]):
+        raise ValueError("编辑内核校验文件无效")
+    return fields[0]
+
+
+def _download_bundle(url: str, path: Path, progress) -> str:
+    with urlopen(url + ".sha256", timeout=30) as response:
+        expected = _expected_checksum(response.read(1024))
+    with urlopen(url, timeout=30) as response, path.open("wb") as output:
+        total = int(response.headers.get("Content-Length", 0))
+        received, last_percent = 0, -1
+        while chunk := response.read(1024 * 1024):
+            output.write(chunk)
+            received += len(chunk)
+            percent = received * 100 // total if total else 0
+            if total and percent // 10 != last_percent // 10:
+                progress(f"正在下载编辑内核：{min(percent, 100)}%")
+                last_percent = percent
+    return expected
+
+
+def ensure_editor_runtime(
+    progress=print, *, root: Path | None = None, bundle: Path | None = None,
+) -> None:
     if getattr(sys, "frozen", False):
         return  # Release packages already contain their matching runtime.
     root = (root or project_root()).resolve()
     build = pinned_build(root)
-    if runtime_ready(root, build):
+    if bundle is None and runtime_ready(root, build):
         return
     filename = bundle_name(build)
     url = f"https://github.com/{REPOSITORY}/releases/download/editor-{build}/{filename}"
@@ -114,26 +140,18 @@ def ensure_editor_runtime(progress=print, *, root: Path | None = None) -> None:
 
     try:
         with DataRootLock(root / "native"):
-            if runtime_ready(root, build):
+            if bundle is None and runtime_ready(root, build):
                 return
-            progress("正在准备编辑内核，首次使用或内核更新时需要下载一次…")
             with TemporaryDirectory(prefix=".tmp-editor-", dir=root) as directory:
                 temporary = Path(directory)
-                archive_path = temporary / filename
-                with urlopen(url + ".sha256", timeout=30) as response:
-                    expected = response.read(1024).decode("ascii").split()[0]
-                if len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
-                    raise ValueError("编辑内核校验文件无效")
-                with urlopen(url, timeout=30) as response, archive_path.open("wb") as output:
-                    total = int(response.headers.get("Content-Length", 0))
-                    received, last_percent = 0, -1
-                    while chunk := response.read(1024 * 1024):
-                        output.write(chunk)
-                        received += len(chunk)
-                        percent = received * 100 // total if total else 0
-                        if total and percent // 10 != last_percent // 10:
-                            progress(f"正在下载编辑内核：{min(percent, 100)}%")
-                            last_percent = percent
+                if bundle is None:
+                    progress("正在准备编辑内核，首次使用或内核更新时需要下载一次…")
+                    archive_path = temporary / filename
+                    expected = _download_bundle(url, archive_path, progress)
+                else:
+                    archive_path = bundle
+                    with bundle.with_suffix(".zip.sha256").open("rb") as sidecar:
+                        expected = _expected_checksum(sidecar.read(1024))
                 if checksum(archive_path) != expected:
                     raise ValueError("编辑内核下载不完整或校验失败")
                 staged = temporary / "unpacked"
@@ -151,6 +169,8 @@ def ensure_editor_runtime(progress=print, *, root: Path | None = None) -> None:
     except DataRootAlreadyLocked as error:
         raise RuntimeError("另一个实例正在准备编辑内核，请稍后重新启动") from error
     except (OSError, ValueError, IndexError, BadZipFile) as error:
+        if bundle is not None:
+            raise RuntimeError(f"编辑内核包安装失败：{error}") from error
         detail = ("当前源码对应的内核包尚未发布，请等待 GitHub Actions 的 Publish Editor Runtime 构建完成后重试"
                   if isinstance(error, HTTPError) and error.code == 404 else str(error))
         raise RuntimeError(
@@ -160,7 +180,10 @@ def ensure_editor_runtime(progress=print, *, root: Path | None = None) -> None:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--bundle", type=Path, help="Install a local runtime ZIP and verify its .sha256 sidecar")
+    args = parser.parse_args()
     try:
-        ensure_editor_runtime()
+        ensure_editor_runtime(bundle=args.bundle)
     except (OSError, ValueError, RuntimeError) as error:
         raise SystemExit(str(error)) from error

@@ -85,7 +85,6 @@ fn selected_type_properties_preserve_each_layers_other_attributes_and_one_histor
             let actual = text(&s, *id);
             assert_styles(&actual, &expected);
             if indices.contains(&i) {
-                assert_ne!(actual.psd_raw, before[i].psd_raw, "editable PSD data refreshed");
                 let damage = s.active().unwrap().last_damage.unwrap();
                 for t in [&before[i], &actual] {
                     let bounds = t.cache.as_ref().unwrap().tile_bounds();

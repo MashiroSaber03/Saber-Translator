@@ -22,7 +22,7 @@
         <UiButton variant="secondary" type="button" @click="exportJson" size="sm">
           导出 JSON
         </UiButton>
-        <UiButton variant="secondary" type="button" @click="exportXlsx" size="sm">
+        <UiButton variant="secondary" type="button" @click="exportXlsx" size="sm" :loading="exportingXlsx">
           导出 XLSX
         </UiButton>
       </ProductActionRow>
@@ -227,6 +227,8 @@ function toggleSort(key: string): void {
   sortDirection.value = 'asc'
 }
 
+const exportingXlsx = ref(false)
+
 function triggerImport(format: 'json' | 'xlsx'): void {
   if (format === 'json') {
     jsonImportInput.value?.click()
@@ -245,7 +247,7 @@ async function handleImport(files: File[], format: 'json' | 'xlsx'): Promise<voi
     const importedRows =
       format === 'json'
         ? importRowsFromJson(await file.text(), props.columns)
-        : importRowsFromXlsxBuffer(await file.arrayBuffer(), props.columns)
+        : await importRowsFromXlsxBuffer(await file.arrayBuffer(), props.columns)
     emitRows(mergeImportedRows(importedRows))
     toast.success(`已导入 ${importedRows.length} 条记录`)
   } catch (error) {
@@ -267,12 +269,19 @@ function exportJson(): void {
   triggerBlobDownload(blob, `${props.exportBaseName}.json`)
 }
 
-function exportXlsx(): void {
-  const buffer = exportRowsToXlsxBuffer(toStringRows(props.modelValue), props.columns)
-  const blob = new Blob([buffer], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  })
-  triggerBlobDownload(blob, `${props.exportBaseName}.xlsx`)
+async function exportXlsx(): Promise<void> {
+  exportingXlsx.value = true
+  try {
+    const buffer = await exportRowsToXlsxBuffer(toStringRows(props.modelValue), props.columns)
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    triggerBlobDownload(blob, `${props.exportBaseName}.xlsx`)
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '导出失败')
+  } finally {
+    exportingXlsx.value = false
+  }
 }
 
 function mergeImportedRows(importedRows: TableRow[]): TableRow[] {

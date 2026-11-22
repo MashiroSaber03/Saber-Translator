@@ -2983,21 +2983,22 @@ class TranslationPipelineService:
                         background = output.getvalue()
                 with self.engine.connect() as connection:
                     native_result = native_editor.prepare(connection, page_id, documents=documents, render=True, background=background)
-                with Image.open(BytesIO(native_result.translated)) as image:
-                    rendered = image.convert("RGB")
-                persisted_payloads = [(value["bubbleId"], value["payload"]) for value in native_result.bubbles]
+                rendered = native_result.translated
+                rendered_size = (native_result.width, native_result.height)
             else:
                 rendered = self.algorithms.render(clean, render_bubbles, dict(render_config))
+                rendered_size = rendered.size if isinstance(rendered, Image.Image) else None
         finally:
             clean.close()
-        if not isinstance(rendered, Image.Image):
+        if not isinstance(rendered, (Image.Image, bytes)):
             raise JobConflict("renderer did not return an image")
         try:
-            if rendered.size != clean_size:
+            if rendered_size != clean_size:
                 raise JobConflict("render result size does not match input image")
             translated = self._publish_working_image(step, rendered, mode="RGB")
         finally:
-            rendered.close()
+            if isinstance(rendered, Image.Image):
+                rendered.close()
         after = self._atomic_hook(
             fence,
             phase="after",
@@ -3568,7 +3569,7 @@ class TranslationPipelineService:
         return result
 
     def _publish_working_image(
-        self, step: Mapping[str, Any], image: Image.Image, *, mode: str,
+        self, step: Mapping[str, Any], image: Image.Image | bytes, *, mode: str,
     ) -> AssetRecord:
         def bind(connection: Connection, asset_id: str) -> None:
             browser_page = connection.execute(

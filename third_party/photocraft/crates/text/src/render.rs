@@ -171,19 +171,35 @@ fn decoration_to(sink: &mut impl LineSink, transform: &Xform, d: &DecorationRect
 /// baseline shift, and the vertical-type orientation.
 fn glyph_xform(layout: &TextLayout, g: &PlacedGlyph, face_skew_deg: f32) -> Xform {
     let Some(st) = layout.styles.get(g.style as usize) else { return Xform([1.0, 0.0, 0.0, -1.0, g.x as f64, g.y as f64]) };
-    let hs = f64::from(crate::layout::glyph_scale(st.horizontal_scale)) * f64::from(g.scale_x);
+    let scale = f64::from(g.scale_x);
+    let hs = f64::from(crate::layout::glyph_scale(st.horizontal_scale));
     let vs = f64::from(crate::layout::glyph_scale(st.vertical_scale));
     let skew_deg = if st.faux_italic { FAUX_ITALIC_DEG } else { 0.0 } + face_skew_deg;
-    let skew = (skew_deg as f64).to_radians().tan() * vs * f64::from(g.scale_x);
+    let shear = (skew_deg as f64).to_radians().tan();
     let shift = (st.baseline_shift_pt * layout.px_per_pt) as f64;
     let (x, y) = (g.x as f64, g.y as f64);
     match g.orient {
-        GlyphOrient::Horizontal => Xform([hs, 0.0, skew, -vs, x, y - shift]),
+        GlyphOrient::Horizontal => Xform([hs, 0.0, shear * vs, -vs, x, y - shift]),
         // Baseline shift moves upright glyphs in vertical type to the right.
-        GlyphOrient::Upright => Xform([hs, 0.0, skew, -vs, x + shift, y]),
-        // 90° clockwise: the glyph's up direction (and its baseline shift) points right.
-        GlyphOrient::Rotated => Xform([0.0, 1.0, -1.0, 0.0, x, y]).mul(&Xform([hs, 0.0, skew, -vs, 0.0, -shift])),
+        GlyphOrient::Upright => Xform([hs * scale, 0.0, shear * vs * scale, -vs, x + shift, y]),
+        // Rotate first, then scale in the document's horizontal and vertical axes.
+        GlyphOrient::Rotated => Xform([0.0, vs, hs, shear * hs, x + shift, y]),
     }
+}
+
+/// Ink relative to the pen, in the same scale and orientation as the rasterizer.
+pub(crate) fn local_glyph_bounds(layout: &TextLayout, g: &PlacedGlyph, orient: GlyphOrient) -> Option<[f32; 4]> {
+    let face = layout.faces.get(g.face as usize)?;
+    let style = layout.styles.get(g.style as usize)?;
+    let font = skrifa::FontRef::from_index(face.font.data.as_ref(), face.font.index).ok()?;
+    let outline = font.outline_glyphs().get(GlyphId::new(g.id))?;
+    let coords: Vec<_> = face.coords.iter().map(|&c| NormalizedCoord::from_bits(c)).collect();
+    let shift = style.baseline_shift_pt * layout.px_per_pt;
+    let local = PlacedGlyph { x: -shift, y: 0.0, orient, scale_x: 1.0, ..*g };
+    let mut bounds = Bounds::default();
+    outline.draw(DrawSettings::unhinted(Size::new(face.size_px), LocationRef::new(&coords)),
+        &mut Pen::new(&mut bounds, glyph_xform(layout, &local, face.skew_deg))).ok()?;
+    bounds.rect.filter(|b| b.iter().all(|v| v.is_finite())).map(|b| b.map(|v| v as f32))
 }
 
 /// The horizontal centre (text space) of a placed glyph: the pen position plus half its advance.

@@ -533,13 +533,16 @@ pub fn replace_text(t: &mut TextLayer, a: usize, b: usize, new: &str) {
     t.sync_summary();
 }
 
-/// Re-renders the layer's pixels and regenerates its PSD `TySh` data.
+/// Re-renders the pixels and updates an imported PSD template if present.
+/// Native layers write their `TySh` only when exported.
 pub fn refresh(doc: &Document, t: &mut TextLayer) {
     let dpi = doc.resolution_dpi;
     let mut eng = photocraft_text::shared().lock().unwrap_or_else(|e| e.into_inner());
     let (layout, r) = eng.render(t, dpi, doc.pixel_format());
     t.cache = Some(r.surface);
-    t.psd_raw = Some(Arc::new(photocraft_text::psd::build_tysh(t, dpi, layout.bounds())));
+    if t.psd_raw.is_some() {
+        t.psd_raw = Some(Arc::new(photocraft_text::psd::build_layout_tysh(t, dpi, &layout)));
+    }
 }
 
 /// Refuses to change a type layer under Lock All (its own or an enclosing group's), with
@@ -1095,6 +1098,15 @@ mod tests {
         }
     }
 
+    fn reopen_psd_text(s: &Session) -> TextLayer {
+        let bytes = photocraft_io::export(&s.active().unwrap().doc, "text.psd", &Default::default()).unwrap().bytes;
+        let reopened = photocraft_io::import("text.psd", &bytes).unwrap();
+        reopened.document.walk().into_iter().find_map(|(_, _, layer)| match &layer.content {
+            LayerContent::Text(text) => Some(text.clone()),
+            _ => None,
+        }).unwrap()
+    }
+
     #[test]
     fn new_text_inherits_the_host_overflow_default() {
         let mut s = session();
@@ -1220,15 +1232,14 @@ mod tests {
         let t = text_layer(&s, id);
         assert_eq!(t.text, "Hello");
         assert_eq!(t.runs[0].style.size_pt, 24.0);
-        assert!(t.cache.is_some() && t.psd_raw.is_some());
+        assert!(t.cache.is_some() && t.psd_raw.is_none());
         let l = s.active().unwrap().doc.layer(LayerId(id)).unwrap();
         assert_eq!(l.name, "Hello");
         // Red pixels exist.
         let c = t.cache.as_ref().unwrap();
         let r = c.content_bounds();
         assert!(c.read_region(r).as_chunks::<4>().0.iter().any(|p| p[3] > 0.9 && p[0] > 0.9 && p[1] < 0.1));
-        // The TySh we generated parses back to the same model.
-        let back = photocraft_text::psd::text_layer_from_tysh(t.psd_raw.as_ref().unwrap(), 72.0).unwrap();
+        let back = reopen_psd_text(&s);
         assert_eq!(back.text, "Hello");
         let strip = |mut r: Vec<TextRun>| {
             for x in &mut r {
@@ -1430,8 +1441,7 @@ mod tests {
         assert_eq!(styled["paragraphs"][1]["end"], 4);
         assert_eq!(styled["paragraphs"][1]["style"]["align"], "Right");
         assert_eq!(styled["lines"][1], previous_line, "the preceding paragraph must not move");
-        let raw = text_layer(&s, id).psd_raw.clone().unwrap();
-        let round_trip = photocraft_text::psd::text_layer_from_tysh(&raw, 72.0).unwrap();
+        let round_trip = reopen_psd_text(&s);
         assert_eq!(round_trip.paragraph_runs().last().unwrap().style.align, TextAlign::Right);
 
         // Typing directly into the previously empty final paragraph retains its style.

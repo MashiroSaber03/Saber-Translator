@@ -3876,6 +3876,16 @@ def test_native_jobs_keep_clean_projection_and_paint_in_sync(
     assert expected_pixel != (255, 255, 255)
 
     fake = DeterministicFakeProvider()
+    rendered_pngs = []
+    original_prepare = NativeEditor.prepare
+
+    def prepare(editor, *args, **kwargs):
+        result = original_prepare(editor, *args, **kwargs)
+        if result.translated is not None:
+            rendered_pngs.append(result.translated)
+        return result
+
+    monkeypatch.setattr(NativeEditor, "prepare", prepare)
     for name in ('detect', 'ocr', 'colors', 'translate', 'repair'):
         method = getattr(fake, name)
         monkeypatch.setattr(CoreTranslationAlgorithms, name,
@@ -3897,6 +3907,14 @@ def test_native_jobs_keep_clean_projection_and_paint_in_sync(
             assert connection.execute(select(render_requests.c.id).where(
                 render_requests.c.page_id == page, render_requests.c.status.in_(('pending', 'running')))).first() is None
     with platform['engine'].connect() as connection:
+        if mode == 'standard':
+            translated_path = connection.execute(select(assets.c.relative_path).join(
+                page_assets, page_assets.c.asset_id == assets.c.id).where(
+                page_assets.c.page_id == page, page_assets.c.role == 'translated')).scalar_one()
+            published_png = storage.resolve_relative_path(translated_path).read_bytes()
+            assert published_png == rendered_pngs[-1]
+            with Image.open(BytesIO(published_png)) as image:
+                assert image.mode == 'RGB' and 'saber.page' not in image.info
         clean_path = connection.execute(select(assets.c.relative_path).join(
             page_assets, page_assets.c.asset_id == assets.c.id).where(
             page_assets.c.page_id == page, page_assets.c.role == 'clean')).scalar_one()

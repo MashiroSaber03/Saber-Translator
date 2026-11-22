@@ -4,6 +4,7 @@ from io import BytesIO
 from contextlib import nullcontext
 import base64
 import json
+import os
 from pathlib import Path
 import subprocess
 from threading import Event
@@ -245,9 +246,14 @@ def test_full_catalog_never_promotes_a_partial_score_and_cache_respects_model(tm
     assert result["method"] == "m7" and len(evidence["ranks"]) == 5
     assert fresh.seen[:3] == [("style", 2), ("style", 2), ("style", 1)]
     assert fresh.seen.count(("candidate", 9)) == 5
+    profile_paths = list((tmp_path / "profiles").glob("*.json"))
+    assert len(profile_paths) == 5
+    for path in profile_paths:
+        os.utime(path, (1, 1))
     fallback = ContractModel("reference")
     assert compare_library(fallback, *args, evidence)["method"] == "style_only"
     assert evidence["cachedProfiles"] == 5 and ("candidate", 9) not in fallback.seen
+    assert all(path.stat().st_mtime > 1 for path in profile_paths)
     another = ContractModel()
     another.model = "jev-1.13.0"
     compare_library(another, *args, evidence)

@@ -441,7 +441,7 @@ cargo install wasm-bindgen-cli --version 0.2.129 --locked
 .\venv\Scripts\python.exe scripts/build_editor.py
 ```
 
-`editor-runtime.json` 固定内核源码指纹，与应用版本独立；修改内核时将它与源码一起提交。dev 推送会触发 `Publish Editor Runtime`，生成配套本地程序和浏览器 WASM 的 ZIP 与校验文件；正式发行工作流复用同一个包。源码指纹校验会阻止遗漏版本更新，已发布的内核包不覆盖。首次发布或内核更新时，需要等待这项构建成功后再部署该版本源码。其他平台目前保留自行构建入口。
+`editor-runtime.json` 固定内核源码指纹，与应用版本独立。修改内核时将它与源码一起提交。PR、dev 推送和正式发行均在本次工作流内验证并传递同一份本地程序和浏览器 WASM 包。dev 推送和发行模式会发布源码用户需要的内核包，PR 和仅验证流程使用工作流产物。首次发布或内核更新时，需要等待内核包发布后再部署该版本源码。其他平台目前保留自行构建入口。
 
 开发参考：[前端说明](vue-frontend/README.md) · [HTTP 契约](openapi/v2.yaml) · [插件开发](plugins/README.md) · [存储升级](docs/storage-migrations.md)。
 

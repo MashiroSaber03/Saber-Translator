@@ -150,7 +150,7 @@ impl Bridge {
                 // Validate before closing the previous page, so a failed load keeps the work.
                 let mut replacement = photocraft_engine::Session::new();
                 photocraft_saber::open(&mut replacement, bytes, page)?;
-                photocraft_saber::refresh(&mut replacement);
+                photocraft_saber::render_pending_text(&mut replacement);
                 while !app.session.documents().is_empty() {
                     app.session.close(0);
                 }
@@ -208,7 +208,7 @@ impl Bridge {
             "replace" => {
                 let mut replacement = photocraft_engine::Session::new();
                 photocraft_saber::open(&mut replacement, bytes, &self.page)?;
-                photocraft_saber::refresh(&mut replacement);
+                photocraft_saber::render_pending_text(&mut replacement);
                 let mut updated = replacement.active().ok_or("没有打开的文档")?.doc.as_ref().clone();
                 photocraft_ui_egui::type_tool::commit(app);
                 app.session

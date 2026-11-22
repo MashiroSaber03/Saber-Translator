@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import suppress
 from functools import lru_cache
 from io import BytesIO
+import os
 from pathlib import Path
 from statistics import median
 from tempfile import NamedTemporaryFile
@@ -24,6 +26,11 @@ MAX_PIXELS = 20_000_000
 def cache_key(*parts: object) -> str:
     serialized = json.dumps(parts, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def mark_cache_used(path: Path) -> None:
+    with suppress(OSError):
+        os.utime(path)
 
 
 def png(image: Image.Image) -> bytes:
@@ -92,6 +99,7 @@ def sample_for_font(path: Path, cache: Path) -> tuple[str, Path]:
     if not sample[1].is_file():
         _sample_for_font.cache_clear()
         return _sample_for_font(path, cache, state)
+    mark_cache_used(sample[1])
     return sample
 
 

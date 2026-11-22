@@ -14,7 +14,7 @@ from sqlalchemy import Connection, Engine, Row, select
 from src.backend_v2.api.request_helpers import error_response, require_idempotency_key, validate_multipart_fields
 from src.backend_v2.auth.credential_broker import BROKER_TOKEN_ENV, credential_reference
 from src.backend_v2.auth.ownership import effective_owner_id
-from src.backend_v2.font_matching.config import DOMAIN, VALEN_IDS, endpoint, model_supported
+from src.backend_v2.font_matching.config import CACHE_DIRECTORY, DOMAIN, VALEN_IDS, endpoint, model_supported
 from src.backend_v2.font_matching.decisions import DecisionError, OnlineDecisions
 from src.backend_v2.font_matching.images import (
     MAX_UPLOAD_BYTES, UnsupportedSample, png, read_reference, reference_views, sample_for_font, trim_reference,
@@ -29,6 +29,7 @@ from src.backend_v2.storage.platform_repositories import FontRepository, Setting
 from src.backend_v2.storage.schema import assets, job_asset_inputs
 from src.shared.model_catalog import model_available
 from src.storage_migrator.control import reject_links
+from src.storage_migrator.paths import filesystem_path
 
 
 LOCAL_STEP = "font_matching_local"
@@ -163,7 +164,7 @@ class FontMatching:
                 "progress": {"phase": phase, "done": done, "total": total},
             })
 
-        cache = self.storage.data_root / "runtime" / "font-match-cache" / effective_owner_id()
+        cache = filesystem_path(self.storage.data_root / CACHE_DIRECTORY / effective_owner_id())
         try:
             for folder in (cache.parent.parent, cache.parent, cache, cache / "samples", cache / "profiles"):
                 reject_links(folder)

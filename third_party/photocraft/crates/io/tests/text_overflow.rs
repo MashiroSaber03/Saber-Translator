@@ -4,7 +4,94 @@ use photocraft_doc::{
     Document, Layer, LayerContent, TextLayer,
     text::{Orientation, ParagraphRun, ParagraphStyle, TextAlign, TextShape},
 };
-use photocraft_geom::{Affine, Size};
+use photocraft_geom::{Affine, Point, Size};
+
+#[test]
+fn editable_comic_export_projects_text_even_with_project_text_metadata() {
+    let mut doc = Document::new("comic", Size::new(300, 300), ColorMode::Rgb, SampleType::U8);
+    let mut text = TextLayer {
+        text: "田‼⁉田⁈⁇田...田".into(),
+        font_family: "Inter".into(),
+        orientation: Orientation::Vertical,
+        shape: TextShape::Box { x: 0.0, y: 0.0, width: 80.0, height: 260.0 },
+        size_pt: 23.0,
+        overflow_visible: true,
+        ..Default::default()
+    };
+    let layout = photocraft_text::shared().lock().unwrap().layout(&text, doc.resolution_dpi);
+    let native = photocraft_text::psd::build_layout_tysh(&text, doc.resolution_dpi, &layout);
+    assert_eq!(photocraft_text::psd::text_layer_from_tysh(&native, doc.resolution_dpi).unwrap().text, text.text);
+    text.psd_raw = Some(std::sync::Arc::new(native));
+    doc.layers.push(Layer::new("comic", LayerContent::Text(text.clone())));
+
+    let bytes = photocraft_io::export(&doc, "comic.psd", &Default::default()).unwrap().bytes;
+    let file = photocraft_psd::PsdFile::from_bytes(&bytes).unwrap();
+    let txt2 = file.global_blocks.iter().find(|block| block.key == *b"Txt2").unwrap();
+    let txt2 = photocraft_text::psd::parse_txt2(&txt2.data).unwrap();
+    let objects = txt2.path(&["1", "1"]).unwrap().as_array().unwrap();
+    let expected = "田!!\u{200C}!?田?!\u{200C}??田…田";
+    assert_eq!(objects[0].path(&["0", "0"]).and_then(photocraft_text::engine_data::Value::as_str), Some(format!("{expected}\r").as_str()));
+    let reopened = photocraft_io::import("comic.psd", &bytes).unwrap().document;
+    let LayerContent::Text(editable) = &reopened.layers[0].content else { panic!("expected editable text") };
+    assert_eq!(editable.text, expected);
+    assert_eq!(doc.layers[0].content, LayerContent::Text(text));
+}
+
+#[test]
+fn narrow_cjk_psd_links_the_strict_rule_to_each_editable_paragraph() {
+    let mut doc = Document::new("narrow", Size::new(640, 640), ColorMode::Rgb, SampleType::U8);
+    doc.resolution_dpi = 72.0;
+    for (orientation, width, height) in [(Orientation::Horizontal, 125.0, 190.0), (Orientation::Vertical, 190.0, 125.0)] {
+        let text = TextLayer {
+            text: "甲「乙」甲\n丙😀".into(),
+            orientation,
+            shape: TextShape::Box { x: 0.0, y: 0.0, width, height },
+            size_pt: 36.0,
+            overflow_visible: true,
+            transform: Affine::translate(160.0, 80.0),
+            ..Default::default()
+        };
+        doc.layers.push(Layer::new("narrow", LayerContent::Text(text)));
+    }
+    let bytes = photocraft_io::export(&doc, "narrow.psd", &Default::default()).unwrap().bytes;
+    let file = photocraft_psd::PsdFile::from_bytes(&bytes).unwrap();
+    let txt2 = file.global_blocks.iter().find(|block| block.key == *b"Txt2").unwrap();
+    let txt2 = photocraft_text::psd::parse_txt2(&txt2.data).unwrap();
+    use photocraft_text::engine_data::Value;
+    let Value::Dict(resources) = txt2.get("0").unwrap() else { panic!("expected ordered document resources") };
+    assert_eq!(resources.iter().map(|(key, _)| key.as_str()).collect::<Vec<_>>(), ["1", "2", "3", "4", "5", "6", "8"]);
+    let Value::Dict(document) = txt2.get("1").unwrap() else { panic!("expected ordered text document") };
+    assert_eq!(document.iter().map(|(key, _)| key.as_str()).collect::<Vec<_>>(), ["0", "1"]);
+    let rules = txt2.path(&["0", "4", "0"]).unwrap().as_array().unwrap();
+    let objects = txt2.path(&["1", "1"]).unwrap().as_array().unwrap();
+    let frames = txt2.path(&["0", "8", "0"]).unwrap().as_array().unwrap();
+    assert_eq!((objects.len(), frames.len()), (2, 2));
+    for object in objects {
+        let model = object.get("0").unwrap();
+        assert_eq!(model.get("0").unwrap().as_str(), Some("甲「乙」甲\r丙😀\r"));
+        let paragraphs = model.path(&["5", "0"]).unwrap().as_array().unwrap();
+        assert_eq!(paragraphs.len(), 2);
+        for (paragraph, len) in paragraphs.iter().zip([6, 4]) {
+            assert_eq!(paragraph.get("1").unwrap().as_i64(), Some(len));
+            let sheet = paragraph.path(&["0", "0"]).unwrap();
+            assert_eq!(sheet.get("6").and_then(Value::as_i64), Some(0));
+            let props = sheet.get("5").unwrap();
+            let rule = props.get("27").unwrap().as_i64().unwrap() as usize;
+            assert_eq!(rules[rule].path(&["0", "0"]).unwrap().as_str(), Some("Hard"));
+            assert_eq!(props.get("29").and_then(|value| value.as_bool()), Some(false));
+            assert_eq!(props.get("35").and_then(|value| value.as_i64()), Some(1));
+        }
+        let style = model.path(&["6", "0"]).unwrap().as_array().unwrap().first().unwrap();
+        assert_eq!(style.path(&["0", "0", "5"]).and_then(Value::as_i64), Some(0));
+    }
+    let reopened = photocraft_io::import("narrow.psd", &bytes).unwrap().document;
+    for (before, after) in doc.layers.iter().zip(&reopened.layers) {
+        let (LayerContent::Text(before), LayerContent::Text(after)) = (&before.content, &after.content) else { panic!("expected editable text") };
+        assert_eq!(before.orientation, after.orientation);
+        assert_eq!(before.shape, after.shape);
+        assert_eq!(before.text, after.text);
+    }
+}
 
 #[test]
 fn block_alignment_survives_native_and_editable_psd_roundtrips() {
@@ -43,10 +130,10 @@ fn block_alignment_survives_native_and_editable_psd_roundtrips() {
                 let LayerContent::Text(psd) = &mut imported.layers[0].content else { panic!("PSD text") };
                 let actual = photocraft_text::shared().lock().unwrap().layout(psd, 72.0);
                 assert_eq!(actual.glyphs.len(), expected.glyphs.len());
-                let world = |m: [f64; 6], x: f32, y: f32| (m[0] * f64::from(x) + m[2] * f64::from(y) + m[4], m[1] * f64::from(x) + m[3] * f64::from(y) + m[5]);
                 for (before, after) in expected.glyphs.iter().zip(&actual.glyphs) {
-                    let (a, b) = (world(original.transform.m, before.x, before.y), world(psd.transform.m, after.x, after.y));
-                    assert!((a.0 - b.0).abs() < 0.2 && (a.1 - b.1).abs() < 0.2, "{orientation:?}/{align:?}/{extent}: {a:?} -> {b:?}");
+                    let a = original.transform.apply(Point::new(f64::from(before.x), f64::from(before.y)));
+                    let b = psd.transform.apply(Point::new(f64::from(after.x), f64::from(after.y)));
+                    assert!((a.x - b.x).abs() < 0.2 && (a.y - b.y).abs() < 0.2, "{orientation:?}/{align:?}/{extent}: {a:?} -> {b:?}");
                 }
                 let bounds = original.cache.as_ref().unwrap().content_bounds();
                 assert_eq!(psd.cache.as_ref().unwrap().read_region(bounds), original.cache.as_ref().unwrap().read_region(bounds));
@@ -101,6 +188,7 @@ fn visible_text_keeps_its_project_frame_and_survives_psd_edit_save_reopen() {
             let mut psd = photocraft_io::import("comic.psd", &bytes).unwrap().document;
             let LayerContent::Text(text) = &mut psd.layers[0].content else { panic!("editable PSD text missing") };
             assert!(!text.overflow_visible, "PSD uses standard bounded paragraph text");
+            assert!(matches!(text.shape, TextShape::Box { x: 0.0, y: 0.0, .. }));
             assert_eq!(text.text.replace('\n', ""), content);
             assert_eq!(
                 text.cache.as_ref().unwrap().read_region(original.cache.as_ref().unwrap().content_bounds()),
@@ -110,7 +198,9 @@ fn visible_text_keeps_its_project_frame_and_survives_psd_edit_save_reopen() {
             assert_eq!(actual.glyphs.len(), expected.glyphs.len());
             for (a, b) in expected.glyphs.iter().zip(&actual.glyphs) {
                 assert_eq!(a.id, b.id);
-                assert!((a.x - b.x).abs() < 0.1 && (a.y - b.y).abs() < 0.1, "{orientation:?} {align:?}: {a:?} -> {b:?}");
+                let before = original.transform.apply(Point::new(f64::from(a.x), f64::from(a.y)));
+                let after = text.transform.apply(Point::new(f64::from(b.x), f64::from(b.y)));
+                assert!((before.x - after.x).abs() < 0.1 && (before.y - after.y).abs() < 0.1, "{orientation:?} {align:?}: {before:?} -> {after:?}");
             }
             text.text.replace_range(0..1, "Z");
             text.psd_raw = None;

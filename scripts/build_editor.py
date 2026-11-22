@@ -14,11 +14,15 @@ import shutil
 import subprocess
 import os
 import sys
+import tomllib
+from collections.abc import Iterator
 from zipfile import ZipFile, ZIP_DEFLATED
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "third_party" / "photocraft"
+RUNTIME_APPS = ("saber-editor", "photocraft-web")
+WEB_HOST_FILES = ("index.html", "host.js")
 sys.path.insert(0, str(ROOT))
 
 from src.backend_v2.editor_runtime import (
@@ -26,16 +30,50 @@ from src.backend_v2.editor_runtime import (
 )
 
 
+def runtime_crate_inputs(source: Path, workspace: dict) -> Iterator[Path]:
+    workspace_dependencies = workspace["workspace"].get("dependencies", {})
+    pending = [source / "apps" / name for name in RUNTIME_APPS]
+    seen = set()
+    while pending:
+        crate = pending.pop().resolve()
+        if crate in seen:
+            continue
+        seen.add(crate)
+        manifest = crate / "Cargo.toml"
+        yield manifest
+        config = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        for table in (config, *config.get("target", {}).values()):
+            for section in ("dependencies", "build-dependencies"):
+                for name, dependency in table.get(section, {}).items():
+                    if not isinstance(dependency, dict):
+                        continue
+                    base = crate
+                    if dependency.get("workspace"):
+                        dependency = workspace_dependencies.get(name)
+                        base = source
+                    if isinstance(dependency, dict) and "path" in dependency:
+                        pending.append(base / dependency["path"])
+        for path in (crate / "src").rglob("*"):
+            if (path.is_file() and "tests" not in path.relative_to(crate).parts
+                    and path.name != "tests.rs" and not path.name.endswith("_tests.rs")):
+                yield path
+        build = config.get("package", {}).get("build", "build.rs")
+        if isinstance(build, str) and (crate / build).is_file():
+            yield crate / build
+
+
 def source_fingerprint(root: Path) -> str:
     """Content identity independent of checkout location and Git line endings."""
+    root = root.resolve()
     source = root / "third_party/photocraft"
-    inputs = [source / "Cargo.toml", source / "Cargo.lock", root / "scripts/build_editor.py",
-              root / "src/backend_v2/editor_runtime.py", root / ".github/workflows/editor-runtime.yml"]
-    inputs.extend(source / name for name in NOTICE_FILES if len(Path(name).parts) == 1)
-    for directory in ("crates", "apps", "assets", ".cargo"):
-        inputs.extend(path for path in (source / directory).rglob("*")
-                      if path.is_file() and not {"target", ".git"}.intersection(path.relative_to(source).parts))
-    inputs.extend(path for path in (root / "scripts/editor").rglob("*") if path.is_file())
+    workspace = source / "Cargo.toml"
+    inputs = {workspace, source / "Cargo.lock", root / "scripts/build_editor.py",
+              root / "src/backend_v2/editor_runtime.py", root / ".github/workflows/editor-runtime.yml"}
+    inputs.update(runtime_crate_inputs(source, tomllib.loads(workspace.read_text(encoding="utf-8"))))
+    inputs.update(source / name for name in NOTICE_FILES)
+    for directory in ("assets", ".cargo", "contributors"):
+        inputs.update(path for path in (source / directory).rglob("*") if path.is_file())
+    inputs.update(root / "scripts/editor" / name for name in WEB_HOST_FILES)
     digest = hashlib.sha256()
     for path in sorted(inputs, key=lambda item: item.relative_to(root).as_posix()):
         data = path.read_bytes()
@@ -113,7 +151,7 @@ def main():
         output.mkdir(exist_ok=True, parents=True)
         run(bindgen, str(target / "wasm32-unknown-unknown" / "wasm-release" / "photocraft-web.wasm"),
             "--target", "web", "--out-name", "photocraft", "--out-dir", str(output))
-        for filename in ("index.html", "host.js"):
+        for filename in WEB_HOST_FILES:
             shutil.copy2(ROOT / "scripts" / "editor" / filename, output / filename)
     if not args.native_only and not args.web_only:
         for name in NOTICE_FILES:

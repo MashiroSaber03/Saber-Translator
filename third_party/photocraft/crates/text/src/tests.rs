@@ -1,7 +1,7 @@
 use photocraft_color::{Color, PixelFormat, SampleType};
 use photocraft_doc::TextLayer;
 use photocraft_doc::text::{Caps, CharStyle, FontFeature, Orientation, ParagraphRun, ParagraphStyle, TextAlign, TextDirection, TextRun, TextShape};
-use photocraft_geom::Affine;
+use photocraft_geom::{Affine, Point};
 
 use crate::{TextEngine, fonts};
 
@@ -215,20 +215,20 @@ fn psd_visible_overflow_copy_preserves_all_glyphs_styles_and_positions() {
                 } else {
                     TextShape::Box { x: 0.0, y: 0.0, width: inline, height: 18.0 }
                 };
-                let text = "Ab中😀 CD EF\nGH IJ KL";
+                let text = "Abb中😀 CDE EFG\nGHK IJK KLM";
                 let t = TextLayer {
                     shape: shape.clone(),
                     orientation,
                     overflow_visible: true,
                     paragraphs: vec![ParagraphRun { len: text.len(), style: ParagraphStyle { align, ..Default::default() } }],
                     runs: vec![
-                        TextRun { len: 2, style: CharStyle { size_pt: 24.0, color: Color::rgb(1.0, 0.0, 0.0), ..Default::default() } },
-                        TextRun { len: text.len() - 2, style: CharStyle { size_pt: 40.0, ..Default::default() } },
+                        TextRun { len: 3, style: CharStyle { size_pt: 24.0, color: Color::rgb(1.0, 0.0, 0.0), ..Default::default() } },
+                        TextRun { len: text.len() - 3, style: CharStyle { size_pt: 40.0, ..Default::default() } },
                     ],
                     ..point(text, 40.0)
                 };
                 let layout = engine.layout(&t, 72.0);
-                let exported = crate::psd::visible_overflow_for_psd(&t, &layout).unwrap();
+                let exported = crate::psd::prepare_text_for_psd(&t, 72.0, &layout, &mut engine.fonts, false).unwrap();
                 let psd = engine.layout(&exported, 72.0);
                 assert_eq!(t.text, text);
                 assert_eq!(t.shape, shape);
@@ -247,7 +247,9 @@ fn psd_visible_overflow_copy_preserves_all_glyphs_styles_and_positions() {
                 );
                 for (a, b) in layout.glyphs.iter().zip(&psd.glyphs) {
                     assert_eq!((a.id, a.style), (b.id, b.style));
-                    assert!((a.x - b.x).abs() < 0.1 && (a.y - b.y).abs() < 0.1, "{orientation:?} {align:?} {inline}: {a:?} -> {b:?}");
+                    let before = t.transform.apply(Point::new(f64::from(a.x), f64::from(a.y)));
+                    let after = exported.transform.apply(Point::new(f64::from(b.x), f64::from(b.y)));
+                    assert!((before.x - after.x).abs() < 0.1 && (before.y - after.y).abs() < 0.1, "{orientation:?} {align:?} {inline}: {before:?} -> {after:?}");
                 }
             }
         }
@@ -1157,7 +1159,7 @@ fn txt2_carries_opentype_features() {
 fn build_txt2_round_trips_kerning_modes() {
     use photocraft_doc::text::Kerning;
     let style = |kerning: Kerning, kern: f32| CharStyle { kerning, kern, ..Default::default() };
-    let t = runs_of("AVAT", &[(2, style(Kerning::Optical, 0.0)), (1, style(Kerning::Metrics, 0.0)), (1, style(Kerning::Off, 0.0))]);
+    let t = runs_of("A😀AT", &[(5, style(Kerning::Optical, 0.0)), (1, style(Kerning::Metrics, 0.0)), (1, style(Kerning::Off, 0.0))]);
     let tysh = with_text_index(&crate::psd::build_tysh(&t, 72.0, None), 0);
     let mut back = crate::psd::text_layer_from_tysh(&tysh, 72.0).unwrap();
     assert!(
@@ -1168,7 +1170,7 @@ fn build_txt2_round_trips_kerning_modes() {
     let txt2 = crate::psd::parse_txt2(&crate::psd::build_txt2(&[(0, &t)], None)).unwrap();
     crate::psd::apply_txt2(&mut back, &tysh, &txt2);
     let modes: Vec<(usize, Kerning)> = back.char_runs().iter().map(|r| (r.len, r.style.kerning)).collect();
-    assert_eq!(modes, vec![(2, Kerning::Optical), (1, Kerning::Metrics), (1, Kerning::Off)]);
+    assert_eq!(modes, vec![(5, Kerning::Optical), (1, Kerning::Metrics), (1, Kerning::Off)]);
     // A manual kern (a nonzero pair value) is the manual mode, as in the EngineData pair fields.
     let manual = runs_of("AB", &[(1, style(Kerning::Metrics, 50.0)), (1, style(Kerning::Metrics, 0.0))]);
     let tysh = with_text_index(&crate::psd::build_tysh(&manual, 72.0, None), 0);

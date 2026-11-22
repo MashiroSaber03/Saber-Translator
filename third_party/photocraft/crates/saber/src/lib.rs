@@ -2,8 +2,11 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+use std::collections::HashMap;
+
 use base64::Engine as _;
 use photocraft_doc::{ColorMode, Document, Layer, LayerContent, LayerId, PixelFormat};
+use photocraft_doc::text::BlockAlign;
 use photocraft_engine::Session;
 use serde_json::{Value, json};
 use skrifa::{MetadataProvider, string::StringId};
@@ -18,6 +21,24 @@ pub fn metadata(doc: &Document) -> Value {
 fn put_metadata(doc: &mut Document, value: &Value) {
     doc.metadata.text.retain(|(key, _)| key != KEY);
     doc.metadata.text.push((KEY.into(), value.to_string()));
+}
+
+fn bubble_entries(meta: &Value) -> HashMap<LayerId, &Value> {
+    let mut by_layer = HashMap::new();
+    for entry in meta.get("bubbles").and_then(Value::as_object).into_iter().flat_map(|entries| entries.values()) {
+        if let Some(id) = entry.get("layer").and_then(Value::as_u64) {
+            by_layer.entry(LayerId(id)).or_insert(entry);
+        }
+    }
+    by_layer
+}
+
+fn block_align(value: &str) -> BlockAlign {
+    match value {
+        "center" => BlockAlign::Center,
+        "end" => BlockAlign::End,
+        _ => BlockAlign::Start,
+    }
 }
 
 pub fn user_mask(session: &mut Session, bytes: Option<&[u8]>) -> Result<()> {
@@ -87,6 +108,7 @@ pub fn set_fonts(session: &mut Session, fonts: &Value) -> Result<()> {
     Ok(())
 }
 
+/// Loads the page model. Its text pixels are drawn with the current fonts and layout on refresh.
 pub fn open(session: &mut Session, bytes: &[u8], page_id: &str) -> Result<()> {
     let mut imported = photocraft_io::import("page.pcraft", bytes).map_err(|e| e.to_string())?;
     let meta = metadata(&imported.document);
@@ -95,29 +117,25 @@ pub fn open(session: &mut Session, bytes: &[u8], page_id: &str) -> Result<()> {
     }
     rgb_document(&mut imported.document);
     normalize_background(&mut imported.document)?;
-    // Old dev projects predate visible overflow. Only native text's drawing policy changes;
-    // its frame, repair geometry and already-published image assets stay intact.
+    let entries = bubble_entries(&meta);
     for id in imported.document.walk().iter().map(|(_, _, layer)| layer.id).collect::<Vec<_>>() {
-        if let Some(Layer { content: LayerContent::Text(text), .. }) = imported.document.layer_mut(id) {
+        if let Some(Layer { content: LayerContent::Text(text), psd_blocks, .. }) = imported.document.layer_mut(id) {
             text.overflow_visible = true;
+            text.cache = None;
+            // Early Saber projects saved a generated TySh alongside the typed model.
+            // Only imported layers have a PSD template to carry across edits.
+            if text.psd_raw.is_some() && !psd_blocks.iter().any(|(key, _)| key == b"TySh") {
+                text.psd_raw = None;
+            }
             // Previous dev documents kept this preference in host metadata and tried to
             // implement it with first-paragraph spacing, which the type engine ignores.
-            if let Some(align) = meta
-                .get("bubbles")
-                .and_then(Value::as_object)
-                .and_then(|entries| entries.values().find(|entry| entry["layer"].as_u64() == Some(id.0)))
-                .and_then(|entry| entry.pointer("/payload/blockAlign"))
+            if let Some(align) = entries.get(&id).and_then(|entry| entry.pointer("/payload/blockAlign"))
                 .and_then(Value::as_str)
             {
-                text.block_align = match align {
-                    "center" => photocraft_doc::text::BlockAlign::Center,
-                    "end" => photocraft_doc::text::BlockAlign::End,
-                    _ => photocraft_doc::text::BlockAlign::Start,
-                };
-                if text.block_align != photocraft_doc::text::BlockAlign::Start {
+                text.block_align = block_align(align);
+                if text.block_align != BlockAlign::Start {
                     photocraft_engine::type_cmds::style_paragraphs(text, 0, 0, &|style| style.space_before_pt = 0.0);
                 }
-                text.cache = None;
             }
         }
     }
@@ -442,18 +460,11 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
                 })
                 .map_err(|e| e.to_string())?;
         }
-        if changed("blockAlign") || changed("richText") || existing.is_none() {
+        if changed("blockAlign") || existing.is_none() {
             session
                 .edit("文本块位置", |doc, _| {
                     if let Some(Layer { content: LayerContent::Text(t), .. }) = doc.layer_mut(LayerId(layer)) {
-                        t.block_align = match payload.get("blockAlign").and_then(Value::as_str) {
-                            Some("center") => photocraft_doc::text::BlockAlign::Center,
-                            Some("end") => photocraft_doc::text::BlockAlign::End,
-                            _ => photocraft_doc::text::BlockAlign::Start,
-                        };
-                        if t.block_align != photocraft_doc::text::BlockAlign::Start {
-                            photocraft_engine::type_cmds::style_paragraphs(t, 0, 0, &|style| style.space_before_pt = 0.0);
-                        }
+                        t.block_align = block_align(payload.get("blockAlign").and_then(Value::as_str).unwrap_or("start"));
                         t.cache = None;
                     }
                     Ok(())
@@ -502,14 +513,18 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
             Ok(())
         })
         .map_err(|e| e.to_string())?;
-    refresh(session);
+    render_pending_text(session);
     Ok(())
 }
 
-pub fn refresh(session: &mut Session) {
+/// Rebuilds the cache of loaded or invalidated layers. Engine commands already draw their edits.
+pub fn render_pending_text(session: &mut Session) {
     let layers = session
         .active()
-        .map(|st| st.doc.walk().into_iter().filter_map(|(_, _, l)| matches!(l.content, LayerContent::Text(_)).then_some((st.doc.id, l.id))).collect::<Vec<_>>())
+        .map(|st| st.doc.walk().into_iter().filter_map(|(_, _, layer)| match &layer.content {
+            LayerContent::Text(text) if text.cache.is_none() => Some((st.doc.id, layer.id)),
+            _ => None,
+        }).collect::<Vec<_>>())
         .unwrap_or_default();
     session.refresh_type_layers(&layers);
 }
@@ -576,12 +591,12 @@ pub fn project(session: &Session) -> Result<Value> {
     let doc = active(session)?;
     let meta = metadata(doc);
     let page = meta.get("pageId").and_then(Value::as_str).unwrap_or("");
-    let entries = meta.get("bubbles").and_then(Value::as_object);
+    let entries = bubble_entries(&meta);
     let fonts = meta.get("fonts").and_then(Value::as_object);
     let mut bubbles = Vec::new();
     for (_, _, layer) in doc.walk() {
         let LayerContent::Text(t) = &layer.content else { continue };
-        let entry = entries.and_then(|e| e.values().find(|v| v.get("layer").and_then(Value::as_u64) == Some(layer.id.0)));
+        let entry = entries.get(&layer.id).copied();
         let id = entry.and_then(|e| e.get("bubbleId")).and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| text_id(page, layer.id.0));
         let mut bubble = entry.map(text_entry).unwrap_or_else(|| json!({"bubbleId":id,"fontId":fonts.and_then(|f|f.get("__defaultId")),"payload":{}}));
         let p = &mut bubble["payload"];
@@ -660,11 +675,21 @@ pub fn snapshot(session: &Session) -> Result<Vec<u8>> {
     }
     meta["bubbles"] = Value::Object(entries);
     put_metadata(&mut doc, &meta);
+    // Saber redraws these layers from the typed model after opening a page.
+    let ids = doc.walk().into_iter().filter_map(|(_, _, layer)|
+        matches!(layer.content, LayerContent::Text(_)).then_some(layer.id)).collect::<Vec<_>>();
+    for id in ids {
+        if let Some(Layer { content: LayerContent::Text(text), .. }) = doc.layer_mut(id) {
+            text.cache = None;
+        }
+    }
     photocraft_format::PcraftWriter::default().save_zip(&doc, &Default::default()).map(|(bytes, _)| bytes).map_err(|e| e.to_string())
 }
 
 pub fn png(session: &Session, background: bool) -> Result<Vec<u8>> {
     let mut doc = active(session)?.clone();
+    // The page binding and other host data belong to the editable project.
+    doc.metadata.text.retain(|(key, _)| key != KEY);
     if background {
         let ids = doc.walk().into_iter().filter_map(|(_, _, l)| matches!(l.content, LayerContent::Text(_)).then_some(l.id)).collect::<Vec<_>>();
         for id in ids {
@@ -790,6 +815,40 @@ mod tests {
     }
     fn fonts() -> Value {
         json!({"font-1":"Inter"})
+    }
+
+    #[test]
+    fn old_projects_keep_only_imported_psd_templates() {
+        for imported in [false, true] {
+            let mut session = session();
+            set_bubbles(&mut session, &[bubble()], &fonts()).unwrap();
+            let projection = project(&session).unwrap();
+            let id = LayerId(projection["bubbles"][0]["layer"].as_u64().unwrap());
+            session.edit("legacy fixture", |doc, _| {
+                let layer = doc.layer_mut(id).unwrap();
+                let LayerContent::Text(text) = &mut layer.content else { panic!("text layer") };
+                assert!(text.psd_raw.is_none(), "new native edits do not maintain a PSD copy");
+                let tysh = std::sync::Arc::new(photocraft_text::psd::build_tysh(text, 72.0, None));
+                if imported {
+                    layer.psd_blocks.push((*b"TySh", tysh.clone()));
+                }
+                text.psd_raw = Some(tysh);
+                Ok(())
+            }).unwrap();
+            let legacy = snapshot(&session).unwrap();
+            let before = png(&session, false).unwrap();
+            open(&mut session, &legacy, "p").unwrap();
+            assert_eq!(project(&session).unwrap(), projection);
+            let LayerContent::Text(text) = &active(&session).unwrap().layer(id).unwrap().content else { panic!("text layer") };
+            assert_eq!(text.psd_raw.is_some(), imported);
+            assert!(text.cache.is_none());
+            render_pending_text(&mut session);
+            let drawn = session.active().unwrap().revision;
+            render_pending_text(&mut session);
+            assert_eq!(session.active().unwrap().revision, drawn);
+            assert_eq!(png(&session, false).unwrap(), before);
+            assert!(psd(&session).unwrap().starts_with(b"8BPS"));
+        }
     }
 
     #[test]
@@ -941,7 +1000,7 @@ mod tests {
         session
             .edit("pixels", |doc, _| {
                 for id in doc.walk().iter().map(|(_, _, layer)| layer.id).collect::<Vec<_>>() {
-                    if let Some(surface) = doc.layer_mut(id).and_then(Layer::surface_mut) {
+                    if let Some(Layer { content: LayerContent::Raster(surface), .. }) = doc.layer_mut(id) {
                         surface.write_pixel(10, 10, &[1.0, 0.0, 0.0, 1.0]);
                     }
                 }
@@ -954,6 +1013,7 @@ mod tests {
             let bytes = snapshot(&session).unwrap();
             let mut imported = Session::new();
             open(&mut imported, &bytes, "p").unwrap();
+            render_pending_text(&mut imported);
             let mut updated = imported.active().unwrap().doc.as_ref().clone();
             let mut meta = metadata(&updated);
             meta["hostRevision"] = json!(index);
@@ -1039,7 +1099,15 @@ mod tests {
         let mut value = bubble();
         value["payload"]["originalText"] = json!("database business data");
         set_bubbles(&mut session, &[value], &fonts()).unwrap();
+        let before = png(&session, false).unwrap();
         let bytes = snapshot(&session).unwrap();
+        let stored = photocraft_io::import("page.pcraft", &bytes).unwrap().document;
+        let text = stored.walk().into_iter().find_map(|(_, _, layer)| match &layer.content {
+            LayerContent::Text(text) => Some(text),
+            _ => None,
+        }).expect("saved text layer");
+        assert!(text.cache.is_none(), "saved pages must not contain derived text pixels");
+        assert_eq!(png(&session, false).unwrap(), before, "saving must keep the active canvas cache");
         let mut reopened = Session::new();
         open(&mut reopened, &bytes, "p").unwrap();
         let meta = metadata(active(&reopened).unwrap());
@@ -1049,6 +1117,28 @@ mod tests {
         assert!(payload.get("blockAlign").is_none());
         assert!(payload.get("originalText").is_none());
         assert_eq!(project(&reopened).unwrap()["bubbles"][0]["payload"]["translatedText"], "A中😀B");
+        render_pending_text(&mut reopened);
+        assert_eq!(png(&reopened, false).unwrap(), before);
+        let flat = photocraft_io::import("page.png", &before).unwrap().document;
+        assert!(!flat.metadata.text.iter().any(|(key, _)| key == KEY));
+    }
+
+    #[test]
+    fn ordinary_block_alignment_keeps_native_paragraph_spacing() {
+        let mut session = session();
+        set_bubbles(&mut session, &[bubble()], &fonts()).unwrap();
+        let layer = project(&session).unwrap()["bubbles"][0]["layer"].as_u64().unwrap();
+        session.execute("type.setStyle", json!({"layer":layer,"spaceBefore":14})).unwrap();
+        let mut updated = project(&session).unwrap()["bubbles"][0].clone();
+        updated["payload"]["blockAlign"] = json!("center");
+        set_bubbles(&mut session, &[updated], &fonts()).unwrap();
+        let saved = project(&session).unwrap();
+        let payload = &saved["bubbles"][0]["payload"];
+        assert_eq!(payload["blockAlign"], "center");
+        assert_eq!(payload["richText"]["paragraphs"][0]["style"]["space_before_pt"], 14.0);
+        let mut reopened = Session::new();
+        open(&mut reopened, &snapshot(&session).unwrap(), "p").unwrap();
+        assert_eq!(project(&reopened).unwrap(), saved);
     }
 
     #[test]
@@ -1239,6 +1329,7 @@ mod tests {
         let text = project(&session).unwrap()["bubbles"].clone();
         let mut reopened = Session::new();
         open(&mut reopened, &snapshot(&session).unwrap(), "p").unwrap();
+        render_pending_text(&mut reopened);
         assert_eq!(png(&reopened, false).unwrap(), before);
         assert_eq!(project(&reopened).unwrap()["bubbles"], text);
         assert_eq!(active(&reopened).unwrap().layers.len(), 2);

@@ -617,9 +617,7 @@ impl Ex {
                 crate::vector_map::shape_blocks(sh, &mut raw, w, h, self.dpi);
             }
             LayerContent::Text(t) => {
-                // Text layers without PSD data (created here) get a generated TySh.
-                let generated = t.psd_raw.is_none().then(|| std::sync::Arc::new(photocraft_text::psd::build_tysh(t, self.dpi, None)));
-                let src = t.psd_raw.as_ref().or(generated.as_ref());
+                let src = t.psd_raw.as_ref();
                 // Character/paragraph style sheets from the document's styles.
                 let styled = src.and_then(|d| crate::text_styles_map::export_tysh(d, t, &self.text_styles, self.dpi)).map(std::sync::Arc::new);
                 // `TextIndex` names the layer's object in the document's `Txt2` (where the
@@ -629,7 +627,7 @@ impl Ex {
                 // however, even when no style sheet needed rebuilding: otherwise two
                 // layers may read the same Txt2 object and acquire the wrong kerning.
                 let idx = self.text_index.get(&l.id).copied().unwrap_or(0);
-                let rewrite = styled.as_ref().or(generated.as_ref()).or_else(|| src.filter(|d| photocraft_text::psd::text_index(d.as_slice()) != Some(idx)));
+                let rewrite = styled.as_ref().or_else(|| src.filter(|d| photocraft_text::psd::text_index(d.as_slice()) != Some(idx)));
                 let fresh = rewrite.and_then(|d| photocraft_text::psd::set_text_index(d.as_slice(), idx)).map(std::sync::Arc::new);
                 set_principal(&mut raw, &[b"TySh"], fresh.as_ref().or(styled.as_ref().or(src)));
                 if !raw.iter().any(|(k, _)| k == b"TySh") {
@@ -1482,11 +1480,13 @@ pub(crate) fn psd_size_exceeds_limit(doc: &Document) -> bool {
 /// [`document_to_psd_with`] for a document embedded `depth` smart objects deep.
 fn document_to_psd_nested(doc: &Document, opts: &PsdExportOptions, depth: u32, ctl: &Interrupt) -> (PsdFile, Vec<String>) {
     let mut export = std::borrow::Cow::Borrowed(doc);
+    let build_composition = !doc.metadata.psd_global_blocks.iter().any(|(_, key, _)| key == b"Txt2");
     for (_, _, layer) in doc.walk() {
         let LayerContent::Text(text) = &layer.content else { continue };
-        if text.overflow_visible || text.block_align != photocraft_doc::text::BlockAlign::Start {
-            let layout = photocraft_text::shared().lock().unwrap_or_else(|e| e.into_inner()).layout(text, doc.resolution_dpi);
-            if let Some(fitted) = photocraft_text::psd::visible_overflow_for_psd(text, &layout)
+        if text.overflow_visible || text.block_align != photocraft_doc::text::BlockAlign::Start || text.psd_raw.is_none() {
+            let mut engine = photocraft_text::shared().lock().unwrap_or_else(|e| e.into_inner());
+            let layout = engine.layout(text, doc.resolution_dpi);
+            if let Some(fitted) = photocraft_text::psd::prepare_text_for_psd(text, doc.resolution_dpi, &layout, &mut engine.fonts, build_composition)
                 && let Some(target) = export.to_mut().layer_mut(layer.id)
             {
                 target.content = LayerContent::Text(fitted);
@@ -1701,14 +1701,17 @@ fn document_to_psd_nested(doc: &Document, opts: &PsdExportOptions, depth: u32, c
             _ => None,
         })
         .collect();
-    let previous = (!text_layers.is_empty()).then(|| preserved.iter().find(|(_, key, _)| key == b"Txt2").map(|(_, _, data)| data.to_vec())).flatten();
-    // A generated Txt2 contains kerning runs but not Photoshop's document/font/frame model.
-    // Photoshop rejects that incomplete block on open. Only update an existing model;
-    // new text stays editable through TySh, with Optical falling back to Metrics on edit.
-    if previous.is_none() && photocraft_text::psd::needs_txt2(&text_layers) {
+    let txt2 = if text_layers.is_empty() {
+        None
+    } else if let Some((_, _, data)) = preserved.iter().find(|(_, key, _)| key == b"Txt2") {
+        Some(photocraft_text::psd::build_txt2(&text_layers, Some(data)))
+    } else {
+        let tysh = ex.records.iter().flat_map(|record| &record.blocks).filter(|block| block.key == *b"TySh").map(|block| block.data.as_slice());
+        photocraft_text::psd::build_composition_txt2(tysh, &text_layers)
+    };
+    if txt2.is_none() && photocraft_text::psd::needs_txt2(&text_layers) {
         ex.warnings.push("New optical text uses Metrics kerning when edited in Photoshop; its saved appearance and editable text are preserved.".into());
     }
-    let txt2 = previous.as_deref().map(|data| photocraft_text::psd::build_txt2(&text_layers, Some(data)));
     for (sig, key, data) in preserved {
         if txt2.is_some() && key == *b"Txt2" {
             continue;
@@ -1722,9 +1725,9 @@ fn document_to_psd_nested(doc: &Document, opts: &PsdExportOptions, depth: u32, c
         global_blocks.push(global_block(block_signature(sig, version), key, &data));
     }
     if let Some(txt2) = txt2 {
-        let mut tb = TaggedBlock::new(*b"Txt2", txt2.clone());
-        tb.signature = *b"8BIM";
-        tb.padding = Some(vec![0; (4 - txt2.len() % 4) % 4]);
+        let padding = (4 - txt2.len() % 4) % 4;
+        let mut tb = TaggedBlock::new(*b"Txt2", txt2);
+        tb.padding = Some(vec![0; padding]);
         global_blocks.push(tb);
     }
     let comps_resource = ex.comps.is_some().then(|| crate::comps_map::write_comps_resource(doc));

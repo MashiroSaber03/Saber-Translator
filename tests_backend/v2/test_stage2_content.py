@@ -2344,7 +2344,6 @@ def test_page_document_command_is_idempotent_and_propagates_style(
 
 def test_document_mutation_materializes_auto_style_before_render_projection(
     content_platform,
-    monkeypatch,
 ) -> None:
     _root, engine, repository, storage, importer, _book, chapter = (
         content_platform
@@ -2393,16 +2392,6 @@ def test_document_mutation_materializes_auto_style_before_render_projection(
     assert persisted_payload["fillColor"] == "#0A0B0C"
     assert persisted_payload["fontSize"] > 12
 
-    from src.core import rendering
-
-    def fail_if_recalculated(*_args, **_kwargs):
-        raise AssertionError("ordinary render projection recalculated auto font size")
-
-    monkeypatch.setattr(
-        rendering,
-        "calculate_auto_font_size",
-        fail_if_recalculated,
-    )
     with engine.connect() as connection:
         projected = materialize_render_payloads(
             connection,

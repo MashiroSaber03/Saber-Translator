@@ -19,25 +19,35 @@ from src.backend_v2.storage.schema import pages
 
 def publish_png_asset(
     storage: AssetStorageService,
-    image: Image.Image,
+    image: Image.Image | bytes,
     *,
     mode: str | None = None,
     bind: Callable[[Connection, str], None] | None = None,
 ) -> AssetRecord:
-    converted = image if mode is None or image.mode == mode else image.convert(mode)
-    try:
-        with BytesIO() as output:
-            converted.save(output, format="PNG")
-            payload = output.getvalue()
-    finally:
-        if converted is not image:
-            converted.close()
+    if isinstance(image, bytes):
+        with Image.open(BytesIO(image), formats=["PNG"]) as encoded:
+            width, height = encoded.size
+            # Pillow also reports 16-bit RGB PNGs as RGB. The IHDR bit depth
+            # distinguishes them so the requested 8-bit output remains intact.
+            if mode is not None and (encoded.mode != mode or image[24] != 8):
+                return publish_png_asset(storage, encoded, mode=mode, bind=bind)
+        payload = image
+    else:
+        width, height = image.size
+        converted = image if mode is None or image.mode == mode else image.convert(mode)
+        try:
+            with BytesIO() as output:
+                converted.save(output, format="PNG")
+                payload = output.getvalue()
+        finally:
+            if converted is not image:
+                converted.close()
     return storage.publish_bytes(
         payload,
         extension="png",
         mime_type="image/png",
-        width=image.width,
-        height=image.height,
+        width=width,
+        height=height,
         bind=bind,
     )
 

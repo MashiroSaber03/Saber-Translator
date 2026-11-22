@@ -10,22 +10,27 @@
 //! into text space: a line becomes a column running top to bottom, and successive columns advance
 //! right to left. Within a column, CJK characters stay upright (centred on the column, placed with
 //! the font's vertical metrics: `VORG`, `vhea`/`vmtx`, else the ideographic em box).
-//! Brackets and the long-vowel mark can use vertical alternates. Comic digits and sentence
-//! marks stay upright, while linear punctuation and Latin text run sideways. Lines, clusters, carets
-//! and hit tests stay in line space; [`TextLayout::to_text`] / [`TextLayout::to_line`] convert.
+//! Font alternates and proportional metrics are resolved before wrapping. Lines, clusters,
+//! carets and hit tests stay in line space; [`TextLayout::to_text`] / [`TextLayout::to_line`] convert.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::ops::Range;
 
+use icu_properties::{CodePointMapData, props::{GeneralCategory, LineBreak}};
 use parley::{
     Alignment, AlignmentOptions, FontData, FontFamily, FontFeatures, FontStyle, FontVariations, FontWeight, IndentOptions, Layout, LayoutContext,
-    PositionedLayoutItem, StyleProperty,
+    OverflowWrap, PositionedLayoutItem, StyleProperty,
 };
 use photocraft_doc::TextLayer;
 use photocraft_doc::text::{Caps, CharStyle, Kerning, Orientation, TextAlign, TextDirection, TextShape};
 use skrifa::raw::types::Tag;
 
-use crate::fonts::FontDb;
+use unicode_segmentation::UnicodeSegmentation;
+
+use crate::fonts::{DEFAULT_FAMILY, FontDb};
+use crate::mojikumi::{self, Cell as SpacingCell};
+use crate::vertical::{VERTICAL_METRICS, VerticalForm, VerticalMetrics, sideways_baseline};
 
 /// Photoshop synthesizes small caps for faces without an OpenType `smcp` table. Keep the same
 /// readable hierarchy for every font instead of silently rendering lowercase text unchanged.
@@ -72,202 +77,33 @@ fn small_caps_mode(caps: Caps, face_has_smcp: bool) -> SmallCapsMode {
 
 /// Character style index and the orientation of the characters shaped with it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct RunBrush(u32, VClass);
-
-/// How a character is set in vertical type (a simplification of Unicode's
-/// `Vertical_Orientation`, UAX #50).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum VClass {
-    /// Rotated 90° clockwise (Latin and most symbols).
-    #[default]
-    Rotate,
-    /// Upright CJK, using a vertical alternate when the font has one.
-    Upright,
-    /// Use the font's vertical alternate if supplied, otherwise rotate the glyph.
-    AlternateOrRotate,
-    /// Upright in an em cell, centred across the column.
-    Centered,
-    /// Low sentence marks are also centred along the cell.
-    LowMark,
-    /// Rotated once, with the visible ink centred across the column.
-    Linear,
-}
-
-impl VClass {
-    fn uses_cell(self) -> bool {
-        matches!(self, Self::Centered | Self::LowMark)
-    }
-
-    fn is_upright(self, glyph: u32, plain: Option<u32>) -> bool {
-        self.uses_cell() || self == Self::Upright || (self == Self::AlternateOrRotate && plain.is_some_and(|id| id != glyph))
-    }
-}
-
-// Comic emphasis marks that override the usual rotation of half-width text.
-fn emphasis_override(c: char) -> bool {
-    matches!(c, '!' | '?' | '！' | '？' | '¡' | '¿' | '؟' | '‼' | '⁇' | '⁈' | '⁉' | '﹖' | '﹗' | '︕' | '︖' | 'ǃ' | '❕' | '❗' | '❢' | '❣' | '‽')
-}
-
-fn combine_mark(c: char) -> bool { matches!(c, '!' | '?' | '！' | '？') }
-
-fn compound_mark(c: char) -> Option<&'static str> {
-    match c {
-        '‼' => Some("!!"),
-        '⁉' => Some("!?"),
-        '⁇' => Some("??"),
-        '⁈' => Some("?!"),
-        _ => None,
-    }
-}
-
-/// Short comic punctuation sequences share a cell. A literal compound has its own cell.
-fn combined_ranges(text: &str) -> Vec<Range<usize>> {
-    let mut groups = Vec::new();
-    let mut start = 0;
-    let mut count = 0;
-    for (at, c) in text.char_indices().chain(std::iter::once((text.len(), '\n'))) {
-        if combine_mark(c) {
-            if count == 0 { start = at; }
-            count += 1;
-            if count == 3 {
-                groups.push(start..at + c.len_utf8());
-                count = 0;
-            }
-        } else {
-            if count > 1 { groups.push(start..at); }
-            count = 0;
-            if compound_mark(c).is_some() { groups.push(at..at + c.len_utf8()); }
-        }
-    }
-    groups
-}
-
-fn combined_at(groups: &[Range<usize>], at: usize) -> Option<usize> {
-    let index = groups.partition_point(|r| r.end <= at);
-    groups.get(index).filter(|r| r.contains(&at)).map(|_| index)
-}
-
-fn comic_break(cx: parley::LineBreakContext) -> Option<bool> {
-    (combine_mark(cx.before) && combine_mark(cx.after)).then_some(true)
-}
-
-fn linear_family(c: char) -> Option<u8> {
-    match c {
-        '.' | '…' | '⋯' => Some(0),
-        '-' | '‐' | '‑' | '‒' | '–' | '—' | '―' | '─' | '−' | '－' => Some(1),
-        '~' | '～' | '〜' | '〰' => Some(2),
-        _ => None,
-    }
-}
-
-fn linear_ranges(text: &str) -> Vec<Range<usize>> {
-    let mut groups = Vec::new();
-    let mut start = 0;
-    let mut family = None;
-    for (at, c) in text.char_indices().chain(std::iter::once((text.len(), '\n'))) {
-        let next = linear_family(c);
-        if next != family {
-            if family.is_some() && text[start..at].chars().count() > 1 { groups.push(start..at); }
-            start = at;
-            family = next;
-        }
-    }
-    groups
-}
-
-/// Prefer equivalent punctuation from the chosen face before asking font fallback for a glyph.
-fn local_mark(fonts: &mut FontDb, style: &CharStyle, mark: char) -> char {
-    let equivalents = match mark {
-        '!' => "！", '！' | '﹗' | '❕' | '❗' => "！!",
-        '?' => "？", '？' | '﹖' => "?？",
-        '.' => "．", '．' => ".", ',' => "，", '，' => ",",
-        ':' => "：", '：' => ":", ';' => "；", '；' => ";",
-        '·' => "・", '・' => "·", '⋯' => "…", '…' => "⋯",
-        '—' | '―' | '─' | '−' | '－' => "—–-",
-        '～' | '〜' | '〰' => "～〜~",
-        '(' => "（", '（' => "(", ')' => "）", '）' => ")",
-        '[' => "［", '［' => "[", ']' => "］", '］' => "]",
-        '{' => "｛", '｛' => "{", '}' => "｝", '｝' => "}",
-        _ => return mark,
-    };
-    let mut has = |c| fonts.selected_face_has_character(&style.font_family, style.weight, style.italic, c);
-    if has(mark) { mark } else { equivalents.chars().filter(|&c| c != mark).find(|&c| has(c)).unwrap_or(mark) }
-}
-
-/// Only substitutions with different byte lengths need an entry. Parley sees the displayed text,
-/// while styles and carets keep addressing the document's original UTF-8 ranges.
-struct Substitution {
-    source: Range<usize>,
-    display: Range<usize>,
-}
-
-fn display_offset(changes: &[Substitution], offset: usize, prefix_len: usize) -> usize {
-    let i = changes.partition_point(|c| c.source.end <= offset);
-    if let Some(c) = changes.get(i).filter(|c| c.source.contains(&offset)) {
-        c.display.start
-    } else {
-        changes[..i].last().map_or(offset + prefix_len, |c| c.display.end + (offset - c.source.end))
-    }
-}
-
-fn source_offset(changes: &[Substitution], offset: usize, prefix_len: usize, end: bool) -> usize {
-    let i = changes.partition_point(|c| c.display.end <= offset);
-    if let Some(c) = changes.get(i).filter(|c| c.display.contains(&offset)) {
-        if end && offset > c.display.start { c.source.end } else { c.source.start }
-    } else {
-        changes[..i].last().map_or(offset.saturating_sub(prefix_len), |c| c.source.end + (offset - c.display.end))
-    }
-}
+struct RunBrush(u32, VerticalForm);
 
 pub(crate) fn glyph_scale(scale: f32) -> f32 {
     if scale.is_finite() && scale > 0.0 { scale } else { 1.0 }
 }
 
 fn shaping_scale(style: &CharStyle, vertical: bool) -> f32 {
-    if vertical { 1.0 } else { glyph_scale(style.horizontal_scale) }
+    glyph_scale(if vertical { style.vertical_scale } else { style.horizontal_scale })
 }
 
-/// The vertical-type class of a character.
-pub fn vertical_class(c: char) -> VClass {
-    if c.is_ascii_digit() || emphasis_override(c) || matches!(c, '|' | '⋮' | '\u{fe10}'..='\u{fe1f}' | '\u{fe30}'..='\u{fe4f}') {
-        return VClass::Centered;
+fn cross_scale(style: &CharStyle, vertical: bool) -> f32 {
+    glyph_scale(if vertical { style.horizontal_scale } else { style.vertical_scale })
+}
+
+// East Asian line composition keeps inseparable marks together and treats directional
+// quotes as opening and closing punctuation next to ideographs. Other boundaries use ICU.
+fn cjk_line_break(cx: parley::LineBreakContext) -> Option<bool> {
+    use LineBreak as Break;
+
+    let breaks = CodePointMapData::<Break>::new();
+    let categories = CodePointMapData::<GeneralCategory>::new();
+    match (breaks.get(cx.before), breaks.get(cx.after)) {
+        (Break::Ideographic, Break::Inseparable) => Some(true),
+        (Break::Ideographic, Break::Quotation) if categories.get(cx.after) == GeneralCategory::InitialPunctuation => Some(true),
+        (Break::Quotation, Break::Ideographic) if categories.get(cx.before) == GeneralCategory::FinalPunctuation => Some(true),
+        _ => None,
     }
-    if matches!(c, '.' | '．' | '。' | ',' | '，' | '、' | '·' | '・' | '‥') {
-        return VClass::LowMark;
-    }
-    if linear_family(c).is_some() || matches!(c, ':' | ';' | '：' | '；') {
-        return VClass::Linear;
-    }
-    let u = c as u32;
-    let alt = matches!(
-        u,
-        0x2016
-            | 0x2329
-            | 0x232A
-            | 0x3008..=0x3011
-            | 0x3014..=0x301F
-            | 0x30A0
-            | 0x30FC
-            | 0xFE59..=0xFE5E
-            | 0xFF08
-            | 0xFF09
-            | 0xFF1C..=0xFF1E
-            | 0xFF3B
-            | 0xFF3D
-            | 0xFF3F
-            | 0xFF5B..=0xFF60
-            | 0xFFE3
-    ) || matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '“' | '”' | '‘' | '’' | '«' | '»');
-    if alt {
-        return VClass::AlternateOrRotate;
-    }
-    // Half-width katakana and Hangul rotate like other half-width text.
-    if (0xFF61..=0xFFDC).contains(&u) {
-        return VClass::Rotate;
-    }
-    let upright = crate::cjk::classify(c).is_some()
-        || matches!(u, 0xA7 | 0xA9 | 0xAE | 0xB1 | 0xBC..=0xBE | 0xD7 | 0xF7 | 0x2E80..=0x2EFF | 0x1F000..=0x1FAFF);
-    if upright { VClass::Upright } else { VClass::Rotate }
 }
 
 /// How a placed glyph's outline is oriented in text space.
@@ -307,8 +143,8 @@ pub struct PlacedGlyph {
     pub style: u32,
     /// Orientation of the outline (vertical type).
     pub orient: GlyphOrient,
-    /// Layout-only compression for a combined upright cell; never changes the character style.
-    pub scale_x: f32,
+    /// Layout-only width adjustment for upright comic punctuation sharing a cell.
+    pub(crate) scale_x: f32,
 }
 
 /// Character decoration bounds (text space px).
@@ -337,6 +173,11 @@ pub struct LineInfo {
     pub ascent: f32,
     pub descent: f32,
     pub paragraph: usize,
+    /// Unscaled type metrics used when projecting the baseline spacing into editable PSD text.
+    pub(crate) nominal_size: f32,
+    pub(crate) nominal_leading: f32,
+    /// The distance from the preceding baseline, before paragraph spacing.
+    pub(crate) baseline_step: f32,
 }
 
 /// A grapheme cluster (caret stops, hit testing, selection), in line space.
@@ -347,7 +188,7 @@ pub struct ClusterInfo {
     pub advance: f32,
     pub line: usize,
     pub rtl: bool,
-    /// Character bounds in text space for side-by-side marks within a vertical cell.
+    /// Character hit region within a side-by-side vertical cell, in text space.
     pub combined: Option<[f32; 4]>,
 }
 
@@ -361,6 +202,10 @@ pub struct TextLayout {
     pub clusters: Vec<ClusterInfo>,
     /// Resolved character styles (one per run of the layer).
     pub styles: Vec<CharStyle>,
+    pub(crate) japanese_styles: Vec<bool>,
+    /// Comic groups in source coordinates, also used when writing editable PSD text.
+    pub(crate) comic_groups: crate::comic::Groups,
+    pub(crate) comic_scales: HashMap<usize, f32>,
     /// Pixels per point used (dpi / 72).
     pub px_per_pt: f32,
     /// Vertical type: line space is turned 90° clockwise into text space.
@@ -602,6 +447,7 @@ struct KernSlot {
     run: usize,
     /// Byte offset in the paragraph text.
     start: usize,
+    clusters: Option<Range<usize>>,
     first: Option<u32>,
     last: Option<u32>,
     font: FontData,
@@ -615,8 +461,134 @@ struct KernSlot {
     tab: bool,
     /// Vertical type, upright glyph (its outline doesn't run along the column).
     upright: bool,
-    /// Corresponding output cluster, assigned when emitting the line.
-    cluster: Option<usize>,
+}
+
+struct InlineCluster {
+    range: Range<usize>,
+    cell: SpacingCell,
+    tracking: f32,
+    base_advance: f32,
+    metric_delta: f32,
+}
+
+struct BoundarySpacing {
+    range: Range<usize>,
+    gap: f32,
+    reduction: f32,
+    closing_margin: f32,
+}
+
+#[derive(Clone, Copy, Default)]
+struct LineCompression {
+    edge: f32,
+    fraction: f32,
+}
+
+#[derive(Clone)]
+struct CompositionFace {
+    japanese: bool,
+    font: Option<FontData>,
+}
+
+impl InlineCluster {
+    fn append_spacing(self, next: Option<&Self>, advances: &mut Vec<(Range<usize>, f32)>, edges: &mut Vec<BoundarySpacing>) {
+        let next = next.filter(|next| next.range.start == self.range.end);
+        let gap = next.map_or(0.0, |next| next.cell.spacing_before(&self.cell).max(-self.base_advance));
+        let closing_margin = self.cell.closing_margin();
+        if gap.abs() > 0.001 || closing_margin > 0.001 {
+            let reduction = next.map_or(0.0, |next| self.cell.spacing_reduction(&next.cell, gap));
+            edges.push(BoundarySpacing { range: self.range.clone(), gap, reduction, closing_margin });
+        }
+        let delta = self.metric_delta + gap;
+        if delta.abs() > 0.001 {
+            advances.push((self.range, self.tracking + delta));
+        }
+    }
+}
+
+/// Measure Parley's legal break segments using the final glyph advances. At a possible
+/// line end, discard the gap to the next line and allow a closing mark's margin to fit.
+fn break_contextual_lines(layout: &mut Layout<RunBrush>, width: f32, first_indent: f32, edges: &[BoundarySpacing], unbroken: &[Range<usize>]) -> Vec<LineCompression> {
+    struct Measure {
+        end: usize,
+        advance: f32,
+        space: bool,
+        legal: bool,
+        ligature_continuation: bool,
+        gap: f32,
+        margin: f32,
+        reduction: f32,
+    }
+    // OverflowWrap::Normal at zero width exposes the same legal breaks (including
+    // the CJK override) that Parley would consider when filling the actual box.
+    layout.break_all_lines(Some(0.0));
+    let mut clusters = Vec::new();
+    for line in layout.lines() {
+        let line_end = line.text_range().end;
+        for run in line.runs() {
+            for c in run.clusters() {
+                let end = c.text_range().end;
+                let edge = edges.binary_search_by_key(&end, |edge| edge.range.end).ok().and_then(|i| edges.get(i));
+                clusters.push(Measure {
+                    end, advance: c.advance(), space: c.is_space_or_nbsp(), legal: end == line_end,
+                    ligature_continuation: c.is_ligature_continuation(),
+                    gap: edge.map_or(0.0, |edge| edge.gap),
+                    margin: edge.map_or(0.0, |edge| edge.closing_margin),
+                    reduction: edge.map_or(0.0, |edge| edge.reduction),
+                });
+            }
+        }
+    }
+    clusters.sort_by_key(|c| c.end);
+    let max_saving = edges.iter().map(|e| e.gap + e.closing_margin).fold(0.0, f32::max);
+    let mut builder = layout.break_lines();
+    builder.state_mut().set_layout_max_advance(width);
+    builder.state_mut().set_line_max_advance(width);
+    let mut compression = Vec::new();
+    let mut start = 0;
+    while start < clusters.len() {
+        let available = width - if start == 0 { first_indent } else { 0.0 };
+        let mut width = 0.0;
+        let mut whitespace = 0.0;
+        let mut reduction = 0.0;
+        let mut regular = None;
+        let mut emergency = None;
+        let mut first = None;
+        for (i, c) in clusters.iter().enumerate().skip(start) {
+            width += c.advance;
+            whitespace = if c.space { whitespace + c.advance } else { 0.0 };
+            reduction += c.reduction;
+            let next = i + 1;
+            if clusters.get(next).is_some_and(|n| n.ligature_continuation)
+                || crate::comic::range_at(unbroken, c.end).is_some_and(|i| unbroken[i].start < c.end)
+            {
+                continue;
+            }
+            first.get_or_insert(next);
+            let excess = width - whitespace - c.gap - available;
+            let interior = reduction - c.reduction;
+            if excess <= c.margin + interior + 0.001 {
+                let edge = excess.clamp(0.0, c.margin);
+                let fraction = if interior > 0.0 { ((excess - edge) / interior).clamp(0.0, 1.0) } else { 0.0 };
+                let fit = (next, LineCompression { edge, fraction });
+                emergency = Some(fit);
+                if c.legal {
+                    regular = Some(fit);
+                }
+            } else if width - whitespace - reduction > available + max_saving {
+                break;
+            }
+        }
+        let (end, trim) = regular.or(emergency).unwrap_or((first.unwrap_or(start + 1), LineCompression::default()));
+        let count = u32::try_from(end - start).unwrap_or(u32::MAX);
+        if builder.break_next_with_length(count).is_none() {
+            break;
+        }
+        compression.push(trim);
+        start = end;
+    }
+    builder.finish();
+    compression
 }
 
 impl Layouter {
@@ -671,6 +643,7 @@ impl Layouter {
         let para_style_at = |off: usize| &paras[para_starts.iter().rposition(|&s| s <= off).unwrap_or(0)].style;
 
         let text = &t.text;
+        let comic_groups = crate::comic::Groups::for_text(text, vertical);
         let (box_rect, is_box) = match t.shape {
             TextShape::Box { x, y, width, height } => ((x, y, width, height), true),
             // Path text is laid out as one point-text line, then bent onto the path.
@@ -691,6 +664,27 @@ impl Layouter {
                 _ => SmallCapsMode::None,
             })
             .collect();
+        let east_asian_text = !text.is_ascii();
+        let composition: Vec<CompositionFace> = if !vertical && !east_asian_text {
+            Vec::new()
+        } else {
+            let mut by_face = HashMap::new();
+            out.styles.iter().map(|st| {
+                let mut face = by_face.entry((st.font_family.as_str(), st.weight, st.italic)).or_insert_with(|| {
+                    let data = fonts.selected_face(&st.font_family, st.weight, st.italic);
+                    CompositionFace {
+                        japanese: mojikumi::uses_japanese_spacing(None, data.as_ref()),
+                        font: data,
+                    }
+                }).clone();
+                if st.language.is_some() {
+                    face.japanese = mojikumi::uses_japanese_spacing(st.language.as_deref(), None);
+                }
+                face
+            }).collect()
+        };
+        if east_asian_text { out.japanese_styles = composition.iter().map(|face| face.japanese).collect(); }
+        let compose_japanese = out.japanese_styles.iter().any(|&enabled| enabled);
         for (pi, prange) in split_paragraphs(text).into_iter().enumerate() {
             if stop {
                 break;
@@ -712,9 +706,9 @@ impl Layouter {
             // Offsets in `ptext` of the spaces standing in for tabs.
             let mut tabs: Vec<usize> = Vec::new();
             let tab_px = DEFAULT_TAB_STOP_PT * k;
-            let mut changes = Vec::new();
-            let mut chars = content.char_indices().peekable();
-            while let Some((i, ch)) = chars.next() {
+            let mut offsets = crate::comic::SourceOffsets::new(prefix.len());
+            let mut chars = content.char_indices().map(|(i, ch)| (prange.start + i, ch)).peekable();
+            while let Some((at, ch)) = chars.next() {
                 // A forced line break ends the line but not the paragraph. The line breaker knows
                 // it as a newline, which has the same length, so text offsets don't move.
                 if ch == FORCED_LINE_BREAK {
@@ -730,37 +724,14 @@ impl Layouter {
                     ptext.push(' ');
                     continue;
                 }
-                let si = style_at(prange.start + i);
+                let si = style_at(at);
                 let style = &out.styles[si];
+                let font = composition.get(si).and_then(|face| face.font.as_ref());
                 let start = ptext.len();
-                let mut end = i + ch.len_utf8();
-                if vertical {
-                    if let Some(marks) = compound_mark(ch) {
-                        ptext.extend(marks.chars().map(|c| local_mark(fonts, style, c)));
-                    } else if ch == '.' && chars.peek().is_some_and(|&(j, c)| c == '.' && style_at(prange.start + j) == si) {
-                        // Use the font's ellipsis for two or three dots of the same style.
-                        let mark = local_mark(fonts, style, '…');
-                        if fonts.selected_face_has_character(&style.font_family, style.weight, style.italic, mark) {
-                            chars.next();
-                            end += 1;
-                            if chars.peek().is_some_and(|&(j, c)| c == '.' && style_at(prange.start + j) == si) {
-                                chars.next();
-                                end += 1;
-                            }
-                            ptext.push(mark);
-                        }
-                    } else {
-                        let mark = local_mark(fonts, style, ch);
-                        if mark != ch { ptext.push(mark); }
+                if let Some(end) = crate::comic::push_display_mark(&mut ptext, (at, ch), &mut chars, &comic_groups, font, vertical, |next| style_at(next) == si) {
+                    if end - at != ch.len_utf8() || ptext.len() - start != ch.len_utf8() || crate::comic::compound(ch).is_some() {
+                        offsets.record(at - prange.start..end - prange.start, start..ptext.len());
                     }
-                    if ptext.len() > start {
-                        if ptext.len() - start != end - i || compound_mark(ch).is_some() || end > i + ch.len_utf8() {
-                            changes.push(Substitution { source: i..end, display: start..ptext.len() });
-                        }
-                        continue;
-                    }
-                } else if matches!(ch, '❕' | '❗') && !fonts.selected_face_has_character(&style.font_family, style.weight, style.italic, ch) {
-                    ptext.push('！');
                     continue;
                 }
                 let caps = style.caps;
@@ -777,12 +748,47 @@ impl Layouter {
                 }
                 ptext.push(ch);
             }
-            let display = |off| display_offset(&changes, off, prefix.len());
-            let map = |off| prange.start + source_offset(&changes, off, prefix.len(), false);
-            let map_end = |off| prange.start + source_offset(&changes, off, prefix.len(), true);
+            let map = |off: usize| prange.start + offsets.source(off, false);
+            let map_end = |off: usize| prange.start + offsets.source(off, true);
             let first_style = &out.styles[style_at(prange.start)];
-            let combined: Vec<_> = if vertical { combined_ranges(content).into_iter().map(|r| display(r.start)..display(r.end)).collect() } else { Vec::new() };
-            let linear = if vertical { linear_ranges(&ptext) } else { Vec::new() };
+            use crate::comic::GroupKind;
+            let groups = comic_groups.within(prange.start..content_end);
+            let display_range = |g: &crate::comic::Group| offsets.display(g.range.start - prange.start)..offsets.display(g.range.end - prange.start);
+            let cells: Vec<_> = groups.iter().filter(|g| g.kind == GroupKind::Upright).map(display_range).collect();
+            let linear: Vec<_> = groups.iter().filter(|g| g.kind == GroupKind::Linear).map(display_range).collect();
+            let unbroken: Vec<_> = groups.iter().map(display_range)
+                .filter(|r| ptext[r.clone()].chars().nth(1).is_some()).collect();
+            let cell_steps: Vec<_> = cells.iter().map(|range| {
+                let members = &ptext[range.clone()];
+                let size = members.char_indices().map(|(at, _)| {
+                    let style = &out.styles[style_at(map(range.start + at))];
+                    style.size_pt * k * glyph_scale(style.vertical_scale)
+                }).fold(0.01f32, f32::max);
+                let count = members.chars().count().max(1) as f32;
+                (size / count, count)
+            }).collect();
+            let mut forms: Vec<(Range<usize>, VerticalForm)> = Vec::new();
+            if vertical {
+                for (start, grapheme) in ptext.grapheme_indices(true) {
+                    let Some(ch) = grapheme.chars().next() else { continue };
+                    let end = start + grapheme.len();
+                    let si = style_at(map(start));
+                    let face = composition.get(si);
+                    let font = face.and_then(|face| face.font.as_ref());
+                    let paired = crate::comic::range_at(&cells, start).is_some_and(|i| cell_steps[i].1 > 1.0);
+                    // Shape the members of a linear group on the same horizontal baseline
+                    // before rotating the line; independent vertical forms can break its stroke.
+                    let rotated = start >= prefix.len() && comic_groups.at(map(start)).is_some_and(|g| g.kind != GroupKind::Upright);
+                    let form = if paired || rotated { VerticalForm::Sideways } else {
+                        VerticalForm::of(ch, face.is_some_and(|face| face.japanese), font, out.styles[si].language.as_deref())
+                    };
+                    if let Some((range, _)) = forms.last_mut().filter(|(_, prior)| *prior == form) {
+                        range.end = end;
+                    } else {
+                        forms.push((start..end, form));
+                    }
+                }
+            }
             let first_px = first_style.size_pt * k;
             // Scripts the loaded fonts may lack (Arabic, Japanese, …): a host serving a font for them
             // fetches it (`served`); it joins the fallback stack once it arrives.
@@ -792,16 +798,21 @@ impl Layouter {
             let build = |lcx: &mut LayoutContext<RunBrush>,
                          fcx: &mut parley::FontContext,
                          tab_spacing: &[f32],
-                         advances: &[(Range<usize>, f32)]|
+                         advances: &[(Range<usize>, f32)],
+                         contextual_wrap: bool|
              -> Layout<RunBrush> {
                 let mut b = lcx.ranged_builder(fcx, &ptext, 1.0, false);
-                if vertical {
-                    b.set_line_break_override(Some(&comic_break));
+                if is_box {
+                    b.set_line_break_override(Some(&cjk_line_break));
+                    // Fall back to grapheme boundaries only when a whole segment is too wide.
+                    if !contextual_wrap {
+                        b.push_default(StyleProperty::OverflowWrap(OverflowWrap::BreakWord));
+                    }
                 }
                 // Paragraph-start style as the default (covers the direction mark and empty
                 // paragraphs), then every run piece intersecting this paragraph.
                 let si0 = style_at(prange.start);
-                for p in style_props(&out.styles[si0], k * shaping_scale(&out.styles[si0], vertical), &fallback, si0 as u32, small_caps[si0]) {
+                for p in style_props(&out.styles[si0], k * shaping_scale(&out.styles[si0], vertical), &fallback, si0 as u32, small_caps[si0], vertical) {
                     b.push_default(p);
                 }
                 for (ri, st) in out.styles.iter().enumerate() {
@@ -810,52 +821,42 @@ impl Layouter {
                     if a >= z {
                         continue;
                     }
-                    let range = display(a - prange.start)..display(z - prange.start);
-                    // Shape at the drawn inline width so wrapping, bidi and kerning see it too.
-                    for p in style_props(st, k * shaping_scale(st, vertical), &fallback, ri as u32, small_caps[ri]) {
+                    let range = offsets.display(a - prange.start)..offsets.display(z - prange.start);
+                    // A style run covering only a hidden comic tag has no shaping range.
+                    if range.is_empty() {
+                        continue;
+                    }
+                    for p in style_props(st, k * shaping_scale(st, vertical), &fallback, ri as u32, small_caps[ri], vertical) {
                         b.push(p, range.clone());
                     }
-                    if vertical {
-                        // Only faces drawn in a vertical form receive vertical substitutions.
-                        let piece = ptext.get(range.clone()).unwrap_or("");
-                        let mut seg: Option<(usize, VClass)> = None;
-                        let flush = |b: &mut parley::RangedBuilder<'_, RunBrush>, from: usize, to: usize, cls: VClass| {
-                            if cls == VClass::Rotate || from >= to {
-                                return;
-                            }
-                            let r = (range.start + from)..(range.start + to);
-                            let mut feats = feature_list(st, small_caps[ri]);
-                            if matches!(cls, VClass::Upright | VClass::AlternateOrRotate) {
-                                feats.push("\"vert\" 1".into());
-                            } else {
-                                feats.extend(["\"vert\" 0".into(), "\"vrt2\" 0".into()]);
-                            }
+                    let mut first = forms.partition_point(|(r, _)| r.end <= range.start);
+                    while let Some((span, form)) = forms.get(first).filter(|(r, _)| r.start < range.end) {
+                        if *form != VerticalForm::Sideways {
+                            let r = (range.start.max(span.start))..(range.end.min(span.end));
+                            let feats = feature_list(st, small_caps[ri], Some(*form));
                             b.push(StyleProperty::FontFeatures(FontFeatures::Source(Cow::Owned(feats.join(", ")))), r.clone());
-                            b.push(StyleProperty::Brush(RunBrush(ri as u32, cls)), r);
-                        };
-                        for (i, ch) in piece.char_indices() {
-                            let cls = if ch == '.' && combined_at(&linear, range.start + i).is_some() { VClass::Linear } else { vertical_class(ch) };
-                            match seg {
-                                Some((_, c)) if c == cls => {}
-                                Some((from, c)) => {
-                                    flush(&mut b, from, i, c);
-                                    seg = Some((i, cls));
-                                }
-                                None => seg = Some((i, cls)),
-                            }
+                            b.push(StyleProperty::Brush(RunBrush(ri as u32, *form)), r);
                         }
-                        if let Some((from, c)) = seg {
-                            flush(&mut b, from, piece.len(), c);
+                        first += 1;
+                    }
+                    let mut first = cells.partition_point(|cell| cell.end <= range.start);
+                    while let Some(cell) = cells.get(first).filter(|cell| cell.start < range.end) {
+                        if cell_steps[first].1 > 1.0 {
+                            // Changing letter spacing on the second shaping pass can disable
+                            // kerning and ligatures. Disable them in both passes for fixed cells.
+                            let mut features = feature_list(st, small_caps[ri], Some(VerticalForm::Sideways));
+                            features.extend(["\"kern\" 0", "\"liga\" 0", "\"clig\" 0", "\"dlig\" 0"].map(str::to_string));
+                            let span = range.start.max(cell.start)..range.end.min(cell.end);
+                            b.push(StyleProperty::FontFeatures(FontFeatures::Source(Cow::Owned(features.join(", ")))), span);
                         }
+                        first += 1;
                     }
                 }
                 for (range, size) in &synthetic_small_caps {
                     b.push(StyleProperty::FontSize(*size), range.clone());
                 }
-                for range in combined.iter().chain(&linear) {
-                    // Parley uses the preceding character's wrap mode at a boundary.
-                    // Allow wrapping before/after a cell, never between its members.
-                    if let Some((last, _)) = ptext.get(range.clone()).and_then(|s| s.char_indices().next_back()) {
+                for range in &unbroken {
+                    if let Some((last, _)) = ptext[range.clone()].char_indices().next_back() && last != 0 {
                         b.push(StyleProperty::TextWrapMode(parley::TextWrapMode::NoWrap), range.start..range.start + last);
                     }
                 }
@@ -873,11 +874,15 @@ impl Layouter {
             // Box extent along the lines: width, or height for vertical type (columns).
             let (line_origin, line_len) = if vertical { (box_rect.1, box_rect.3) } else { (box_rect.0, box_rect.2) };
             let avail = if is_box { Some((line_len - indent_start - indent_end).max(1.0)) } else { None };
-            let break_lines = |layout: &mut Layout<RunBrush>| {
+            let break_lines = |layout: &mut Layout<RunBrush>, edges: &[BoundarySpacing], contextual_wrap: bool| {
                 if first_indent != 0.0 {
                     layout.set_text_indent(first_indent, IndentOptions::default());
                 }
+                if contextual_wrap && let Some(width) = avail {
+                    return break_contextual_lines(layout, width, first_indent, edges, &unbroken);
+                }
                 layout.break_all_lines(avail);
+                Vec::new()
             };
             // Paragraph text: a tab is never wider than a space plus one tab interval, so breaking
             // lines at that width keeps the expanded tabs inside the box, but can wrap early.
@@ -885,69 +890,75 @@ impl Layouter {
             // settle, keep the safe layout.
             let wide = if is_box { tab_px } else { 0.0 };
             let tab_spacing = vec![wide; tabs.len()];
-            let mut layout = build(&mut self.lcx, &mut fonts.fcx, &tab_spacing, &[]);
-            // The column consumes height for an upright glyph and width for a sideways one.
-            // Use the same advances to wrap, align and position glyphs/carets.
+            let mut layout = build(&mut self.lcx, &mut fonts.fcx, &tab_spacing, &[], false);
+            // Convert upright clusters to vertical font metrics, then resolve Japanese boundary
+            // spacing from the same advances the line breaker and the caret will use.
             let mut advances = Vec::new();
-            if vertical && (ptext.chars().any(|c| vertical_class(c).uses_cell())
-                || out.styles.iter().any(|s| glyph_scale(s.horizontal_scale) != 1.0 || glyph_scale(s.vertical_scale) != 1.0))
-            {
+            let mut edges = Vec::new();
+            let mut contextual_wrap = false;
+            if compose_japanese || !cells.is_empty() || !unbroken.is_empty() || forms.iter().any(|(_, form)| *form != VerticalForm::Sideways) {
                 layout.break_all_lines(None);
-                let cells: Vec<_> = combined.iter().map(|range| {
-                    let group = &ptext[range.clone()];
-                    let height = group.char_indices().map(|(at, _)| {
-                        let st = &out.styles[style_at(map(range.start + at))];
-                        st.size_pt * k * glyph_scale(st.vertical_scale)
-                    }).fold(0.0f32, f32::max);
-                    (height, group.chars().count() as f32)
-                }).collect();
                 for line in layout.lines() {
+                    let mut prior: Option<InlineCluster> = None;
                     for run in line.runs() {
-                        let vm = VMetrics::new(run.font(), run.normalized_coords(), run.font_size());
+                        let mut metrics = None;
+                        let mut metrics_style = None;
                         for cluster in run.visual_clusters() {
-                            let RunBrush(si, class) = cluster.first_style().brush;
+                            let RunBrush(si, form) = cluster.first_style().brush;
                             let range = cluster.text_range();
-                            if range.start < prefix.len() || tabs.binary_search(&range.start).is_ok() {
+                            let cell = crate::comic::range_at(&cells, range.start).map(|i| cell_steps[i]);
+                            if range.start < prefix.len() || (!compose_japanese && form == VerticalForm::Sideways && cell.is_none()) {
                                 continue;
                             }
                             let st = &out.styles[si as usize];
-                            let tracking = st.tracking / 1000.0 * st.size_pt * k;
-                            let glyph = cluster.glyphs().next();
-                            let mark = ptext.get(range.clone()).and_then(|s| s.chars().next());
-                            let plain = if class == VClass::AlternateOrRotate { mark.and_then(|c| vm.cmap(c)) } else { None };
-                            let upright = cluster.is_space_or_nbsp() || glyph.is_some_and(|g| class.is_upright(g.id, plain));
-                            let scale = glyph_scale(if upright { st.vertical_scale } else { st.horizontal_scale });
-                            let advance = if let Some(i) = combined_at(&combined, range.start) {
-                                let (height, count) = cells[i];
-                                (height + tracking) / count
-                            } else if class.uses_cell() {
-                                run.font_size() * scale + tracking
-                            } else {
-                                (cluster.advance() - tracking) * scale + tracking
-                            };
-                            let delta = advance - cluster.advance();
-                            if delta.abs() > 0.01 {
+                            if form == VerticalForm::Upright && metrics_style != Some(si) {
+                                metrics = VerticalMetrics::new(run.font(), run.normalized_coords(), run.font_size(), st);
+                                metrics_style = Some(si);
+                            }
+                            let tracking = st.tracking / 1000.0 * run.font_size();
+                            let source = ptext.get(range.clone()).and_then(|s| s.chars().next());
+                            let base_advance = if let Some((step, _)) = cell { Some(step) } else if form == VerticalForm::Upright {
+                                metrics.as_ref().zip(cluster.glyphs().next()).map(|(vm, glyph)| vm.advance(vm.glyph(glyph.id, source)))
+                            } else { None }.unwrap_or(cluster.advance() - tracking);
+                            let cell_tracking = cell.map_or(tracking, |(_, count)| tracking / count);
+                            let delta = base_advance + cell_tracking - cluster.advance();
+                            if compose_japanese && !cluster.is_rtl() && let Some(ch) = source
+                            {
+                                let japanese = composition[si as usize].japanese;
+                                let cell = if cell.is_some() { SpacingCell::ideographic(run.font_size(), japanese) }
+                                    else { SpacingCell::new(ch, run.font_size(), base_advance, japanese) };
+                                let next = InlineCluster { range, cell, tracking, base_advance, metric_delta: delta };
+                                if let Some(previous) = prior.replace(next) {
+                                    previous.append_spacing(prior.as_ref(), &mut advances, &mut edges);
+                                }
+                            } else if delta.abs() > 0.001 {
                                 advances.push((range, tracking + delta));
                             }
                         }
                     }
+                    if let Some(last) = prior {
+                        last.append_spacing(None, &mut advances, &mut edges);
+                    }
                 }
-                if !advances.is_empty() {
+                contextual_wrap = is_box && (!edges.is_empty() || !unbroken.is_empty()) && !ptext.contains('\n');
+                edges.sort_by_key(|edge| edge.range.end);
+                if !advances.is_empty() || contextual_wrap {
                     advances.sort_by_key(|(range, _)| range.start);
-                    layout = build(&mut self.lcx, &mut fonts.fcx, &tab_spacing, &advances);
+                    layout = build(&mut self.lcx, &mut fonts.fcx, &tab_spacing, &advances, contextual_wrap);
                 }
             }
-            break_lines(&mut layout);
+            let mut compression = break_lines(&mut layout, &edges, contextual_wrap);
             if is_box && !tabs.is_empty() {
                 let first = tab_widths(&layout, &tabs, indent_start, first_indent, tab_px);
                 let mut want: Vec<f32> = first.iter().map(|t| t.width).collect();
                 for _ in 0..4 {
                     let spacing: Vec<f32> = first.iter().zip(&want).map(|(t, w)| w - (t.advance - tab_px)).collect();
-                    let mut next = build(&mut self.lcx, &mut fonts.fcx, &spacing, &advances);
-                    break_lines(&mut next);
+                    let mut next = build(&mut self.lcx, &mut fonts.fcx, &spacing, &advances, contextual_wrap);
+                    let adjusted = break_lines(&mut next, &edges, contextual_wrap);
                     let got: Vec<f32> = tab_widths(&next, &tabs, indent_start, first_indent, tab_px).iter().map(|t| t.width).collect();
                     if got.iter().zip(&want).all(|(a, b)| (a - b).abs() < 0.01) {
                         layout = next;
+                        compression = adjusted;
                         break;
                     }
                     want = got;
@@ -976,6 +987,7 @@ impl Layouter {
                 let mut leading = 0.0f32;
                 let mut emphasis_leading = 0.0f32;
                 let mut col_half = 0.0f32;
+                let (mut nominal_size, mut nominal_leading) = (0.0f32, 0.0f32);
                 let (mut line_ascent, mut line_descent) = (0.0f32, 0.0f32);
                 let mut auto_column = vertical;
                 for item in line.items() {
@@ -984,7 +996,10 @@ impl Layouter {
                         let run = gr.run();
                         let font_scale = shaping_scale(st, vertical);
                         let px = run.font_size() / font_scale;
-                        let cell = px * if vertical { cross_scale(run, gr.style().brush.1, st, &ptext) } else { glyph_scale(st.vertical_scale) };
+                        let cell = px * cross_scale(st, vertical);
+                        let nominal = st.size_pt * k;
+                        nominal_size = nominal_size.max(nominal);
+                        nominal_leading = nominal_leading.max(st.leading_pt.map_or(ps.auto_leading * nominal, |l| l * k));
                         col_half = col_half.max(cell * 0.5);
                         let cross = glyph_scale(st.vertical_scale) / font_scale;
                         line_ascent = line_ascent.max(run.metrics().ascent * cross);
@@ -1001,6 +1016,11 @@ impl Layouter {
                     let st = &out.styles[style_at(prange.start)];
                     leading = st.leading_pt.map_or(ps.auto_leading * st.size_pt * k, |l| l * k);
                     auto_column &= st.leading_pt.is_none();
+                }
+                if nominal_size == 0.0 {
+                    let st = &out.styles[style_at(prange.start)];
+                    nominal_size = st.size_pt * k;
+                    nominal_leading = st.leading_pt.map_or(ps.auto_leading * nominal_size, |l| l * k);
                 }
                 // Preserve the requested spacing whenever it already has room for the dots.
                 if !vertical && emphasis_leading > 0.0 {
@@ -1022,10 +1042,10 @@ impl Layouter {
                 };
                 let baseline = match prev_baseline {
                     // Photoshop offsets the first vertical baseline by half the capital height.
-                    None if is_box && vertical => -(box_rect.0 + box_rect.2) + first_ascent(&line, 'H', &out.styles, true).map(|h| h * 0.5).unwrap_or(col_half),
+                    None if is_box && vertical => -(box_rect.0 + box_rect.2) + first_ascent(&line, 'H', &out.styles, k).map(|h| h * 0.5).unwrap_or(col_half),
                     // Photoshop's "first baseline: ascent": the top of the tallest ascender
                     // (height of 'd') touches the box top, not the font's hhea ascent.
-                    None if is_box => box_rect.1 + first_ascent(&line, 'd', &out.styles, false).unwrap_or(ascent),
+                    None if is_box => box_rect.1 + first_ascent(&line, 'd', &out.styles, k).unwrap_or(ascent),
                     None => 0.0,
                     Some(b) => b + step + pending_space,
                 };
@@ -1068,6 +1088,7 @@ impl Layouter {
                         slots.push(KernSlot {
                             run: run.index(),
                             start: c.text_range().start,
+                            clusters: None,
                             first,
                             last,
                             font: run.font().clone(),
@@ -1075,17 +1096,17 @@ impl Layouter {
                             size: run.font_size() / shaping_scale(st, vertical),
                             rtl: c.is_rtl(),
                             blank: first.is_none() || c.is_space_or_nbsp() || c.text_range().end <= prefix.len(),
-                            upright: vertical && c.first_style().brush.1 != VClass::Rotate,
+                            upright: vertical && (c.first_style().brush.1 == VerticalForm::Upright
+                                || crate::comic::range_at(&cells, c.text_range().start).is_some()),
                             advance: c.advance(),
                             tab: tabs.binary_search(&c.text_range().start).is_ok(),
-                            cluster: None,
                         });
                     }
                 }
                 let mut kern_px: Vec<f32> = vec![0.0; slots.len()];
                 for j in 0..slots.len().saturating_sub(1) {
                     let (a, b) = (&slots[j], &slots[j + 1]);
-                    if a.start < prefix.len() || map(a.start) == map(b.start) {
+                    if a.start < prefix.len() {
                         continue;
                     }
                     let st = &out.styles[style_at(map(a.start))];
@@ -1116,6 +1137,26 @@ impl Layouter {
                         }
                     }
                     kern_px[j] = units / 1000.0 * a.size;
+                }
+                // A soft line break separates the neighbours, so their contextual space
+                // does not contribute to the visible line extent or the end caret.
+                let lr = line.text_range();
+                let trim = compression.get(li).copied().unwrap_or_default();
+                if trim.fraction > 0.0 {
+                    for (slot, adjustment) in slots.iter().zip(&mut kern_px) {
+                        if let Ok(i) = edges.binary_search_by_key(&slot.start, |edge| edge.range.start) {
+                            let edge = &edges[i];
+                            if edge.range.end < lr.end {
+                                *adjustment -= edge.reduction * trim.fraction;
+                            }
+                        }
+                    }
+                }
+                if let Ok(i) = edges.binary_search_by_key(&lr.end, |edge| edge.range.end)
+                    && let Some(edge) = edges.get(i)
+                    && let Some(j) = slots.iter().position(|slot| slot.start == edge.range.start)
+                {
+                    kern_px[j] -= edge.gap + trim.edge;
                 }
                 // Tabs: the "kerning" after a tab takes the pen to the next stop, measured from
                 // the anchor or the box edge as if the line were left-aligned (alignment then
@@ -1183,11 +1224,10 @@ impl Layouter {
                 };
                 let justify_all = is_box && last_line && ps.align == TextAlign::JustifyAll;
                 let line_index = out.lines.len();
-                let lr = line.text_range();
                 let g0 = out.glyphs.len();
                 let c0 = out.clusters.len();
-                let d0 = out.decorations.len();
-                let mut vinfo: Vec<VGlyph> = Vec::new();
+                let mut cell_members = Vec::new();
+                let mut inline_positions = Vec::new();
                 let mut extra = 0.0f32;
                 let mut seen_runs: Vec<usize> = Vec::new();
                 for item in line.items() {
@@ -1197,10 +1237,8 @@ impl Layouter {
                     let run = gr.run();
                     let si = gr.style().brush.0;
                     let st = &out.styles[si as usize];
-                    let hs = glyph_scale(st.horizontal_scale);
-                    let vs = glyph_scale(st.vertical_scale);
                     let font_scale = shaping_scale(st, vertical);
-                    let metric_scale = if vertical { 1.0 } else { vs / font_scale };
+                    let metric_scale = cross_scale(st, vertical) / font_scale;
                     let synth = run.synthesis();
                     let face = out.faces.len() as u32;
                     out.faces.push(GlyphFace {
@@ -1221,35 +1259,43 @@ impl Layouter {
                             if r.end > prefix.len() || prefix.is_empty() {
                                 let source = map(r.start)..map_end(r.end);
                                 let index = if let Some(previous) = out.clusters.last_mut().filter(|last| last.line == line_index && last.range == source) {
-                                    // Both glyphs of a literal compound belong to one character.
+                                    // The two glyphs of an encoded compound are one source character.
                                     previous.advance += a;
                                     out.clusters.len() - 1
                                 } else {
                                     let index = out.clusters.len();
-                                    let dots = ptext.get(r).is_some_and(|s| matches!(s, "…" | "⋯"))
-                                        && text.get(source.clone()).is_some_and(|s| s.starts_with(".."));
-                                    let count = if dots { source.len() } else { 1 };
+                                    let original = text.get(source.clone()).unwrap_or_default();
+                                    let count = if ptext.get(r).is_some_and(|s| s.chars().nth(1).is_none()) {
+                                        original.chars().count().max(1)
+                                    } else { 1 };
                                     let advance = a / count as f32;
+                                    let mut chars = original.char_indices();
                                     for i in 0..count {
-                                        let range = if dots { source.start + i..source.start + i + 1 } else { source.clone() };
+                                        let range = if count == 1 { source.clone() } else {
+                                            let Some((at, ch)) = chars.next() else { break };
+                                            source.start + at..source.start + at + ch.len_utf8()
+                                        };
                                         out.clusters.push(ClusterInfo { range, x: cx + i as f32 * advance, advance, line: line_index, rtl: c.is_rtl(), combined: None });
                                     }
                                     index
                                 };
-                                if let Some(slot) = slots.get_mut(base + ci) { slot.cluster = Some(index); }
+                                if let Some(slot) = slots.get_mut(base + ci) { slot.clusters = Some(index..out.clusters.len()); }
                             }
                             cx += a;
                         }
                     }
                     let rm = run.metrics();
-                    let vm = if vertical { Some(VMetrics::new(run.font(), run.normalized_coords(), run.font_size())) } else { None };
-                    let class = gr.style().brush.1;
+                    let form = gr.style().brush.1;
+                    let vm = (vertical && form != VerticalForm::Sideways)
+                        .then(|| VerticalMetrics::new(run.font(), run.normalized_coords(), run.font_size(), st)).flatten();
+                    let sideways = if vertical && vm.is_none() {
+                        sideways_baseline(run.font(), run.font_size(), (rm.ascent - rm.descent) * 0.5)
+                    } else { 0.0 };
                     let mut pen = gr.offset();
                     let mut cursor = cursors.iter_mut().find(|c| c.0 == run.index());
+                    let mut missing_face = None;
                     for g in gr.glyphs() {
                         let slot = cursor.as_deref().and_then(|c| c.1.get(c.2)).and_then(|&i| slots.get(i));
-                        let group = slot.and_then(|s| combined_at(&combined, s.start));
-                        let cluster = slot.and_then(|s| s.cluster);
                         // Kerning of the clusters before this glyph's cluster.
                         if let Some(c) = cursor.as_deref_mut() {
                             if let Some(&slot) = c.1.get(c.2) {
@@ -1260,41 +1306,48 @@ impl Layouter {
                             }
                             c.2 += 1;
                         }
-                        out.glyphs.push(PlacedGlyph {
-                            face,
-                            id: g.id,
-                            x: dx + pen + g.x + extra,
-                            y: baseline + g.y * metric_scale,
-                            style: si,
-                            orient: GlyphOrient::Horizontal,
-                            scale_x: 1.0,
+                        let inline = dx + pen + extra;
+                        let glyph = vm.as_ref().map_or(g.id, |metrics| {
+                            let source = slot.and_then(|s| ptext.get(s.start..)).and_then(|s| s.chars().next());
+                            metrics.glyph(g.id, source)
                         });
-                        if let Some(v) = &vm {
-                            let plain = if class == VClass::AlternateOrRotate {
-                                slot.and_then(|s| ptext.get(s.start..)?.chars().next()).and_then(|c| v.cmap(c))
-                            } else { None };
-                            let upright = class.is_upright(g.id, plain);
-                            let width = v.advance_width(g.id).unwrap_or(run.font_size()) * hs;
-                            let skew = (if st.faux_italic { crate::render::FAUX_ITALIC_DEG } else { 0.0 } + synth.skew().unwrap_or(0.0)).to_radians().tan() * vs;
-                            let ink = if class.uses_cell() || class == VClass::Linear { v.ink_bounds(g.id, hs, vs, skew) } else { None };
-                            let origin = if class == VClass::LowMark {
-                                ink.map_or(v.origin(g.id) * vs, |b| (run.font_size() * vs - b[1] - b[3]) * 0.5)
-                            } else if upright {
-                                v.origin(g.id) * vs
-                            } else {
-                                0.0
-                            };
-                            vinfo.push(VGlyph {
-                                upright,
-                                centre_x: ink.map_or(width * 0.5, |b| (b[0] + b[2]) * 0.5),
-                                origin,
-                                centre: ink.map_or((rm.ascent - rm.descent) * vs * 0.5, |b| -(b[1] + b[3]) * 0.5),
-                                group,
-                                cluster,
-                                ink_width: ink.map_or(width, |b| b[2] - b[0]),
-                                size: run.font_size() * hs,
-                            });
+                        let (x, y, orient) = if !vertical {
+                            (inline + g.x, baseline + g.y * metric_scale, GlyphOrient::Horizontal)
+                        } else if let Some(metrics) = vm.as_ref() {
+                            let (across, down) = metrics.origin(glyph);
+                            (-baseline + (across + g.x) * metric_scale, inline + down + g.y, GlyphOrient::Upright)
+                        } else {
+                            (-baseline - (sideways + g.y) * metric_scale, inline + g.x, GlyphOrient::Rotated)
+                        };
+                        if justify_all {
+                            inline_positions.push(inline + g.x);
                         }
+                        let face = if g.id == 0 && fonts.missing_glyph_protection() && slot.is_some_and(|s| {
+                            use icu_properties::{CodePointSetData, props::DefaultIgnorableCodePoint};
+                            !s.blank && ptext[s.start..].chars().next().is_some_and(|c| {
+                                !c.is_control() && !CodePointSetData::new::<DefaultIgnorableCodePoint>().contains(c)
+                            })
+                        }) {
+                            *missing_face.get_or_insert_with(|| {
+                                let Some(replacement) = visible_missing_face(fonts, &out.faces[face as usize]) else { return face };
+                                let index = out.faces.len() as u32;
+                                out.faces.push(replacement);
+                                index
+                            })
+                        } else {
+                            face
+                        };
+                        let mut placed = PlacedGlyph { face, id: glyph, x, y, style: si, orient, scale_x: 1.0 };
+                        if let Some(slot) = slot {
+                            if let Some(group) = crate::comic::range_at(&cells, slot.start) && let Some(clusters) = &slot.clusters {
+                                cell_members.push(crate::comic::Member { group, glyph: out.glyphs.len(), clusters: clusters.clone() });
+                            } else if orient == GlyphOrient::Rotated && crate::comic::range_at(&linear, slot.start).is_some()
+                                && let Some([left, _, right, _]) = crate::render::local_glyph_bounds(&out, &placed, orient)
+                            {
+                                placed.x = -baseline - (left + right) * 0.5;
+                            }
+                        }
+                        out.glyphs.push(placed);
                         pen += g.advance;
                     }
                     // The run's last glyph: its remaining clusters' kerning follows it.
@@ -1312,14 +1365,14 @@ impl Layouter {
                     if vertical {
                         // Underline to the right of the column, strikethrough through its centre
                         // (stored directly in text space).
-                        let half = run.font_size() * 0.5;
+                        let half = run.font_size() * metric_scale * 0.5;
                         let mut push = |v0: f32, v1: f32| out.decorations.push(DecorationRect { x0: -v1, y0: run_x0, x1: -v0, y1: run_x1, style: si, round: false });
                         if gr.style().underline.is_some() {
                             let v1 = baseline - half;
-                            push(v1 - rm.underline_size.max(1.0), v1);
+                            push(v1 - (rm.underline_size * metric_scale).max(1.0), v1);
                         }
                         if gr.style().strikethrough.is_some() {
-                            let sz = rm.strikethrough_size.max(1.0);
+                            let sz = (rm.strikethrough_size * metric_scale).max(1.0);
                             push(baseline - sz * 0.5, baseline + sz * 0.5);
                         }
                     } else if gr.style().underline.is_some() {
@@ -1331,56 +1384,29 @@ impl Layouter {
                         out.decorations.push(DecorationRect { x0: run_x0, y0, x1: run_x1, y1: y0 + (rm.strikethrough_size * metric_scale).max(1.0), style: si, round: false });
                     }
                 }
-                let mut alignment_shift = 0.0;
-                if vertical {
-                    let cut = squeeze_punctuation(text, &mut out.clusters[c0..], &mut out.glyphs[g0..]);
-                    alignment_shift = match ps.align {
-                        TextAlign::Center => cut * 0.5,
-                        TextAlign::Right => cut,
-                        TextAlign::JustifyCenter if last_line => cut * 0.5,
-                        TextAlign::JustifyRight if last_line => cut,
-                        _ => 0.0,
-                    };
-                    extra -= cut;
-                    for cluster in &mut out.clusters[c0..] { cluster.x += alignment_shift; }
-                    for glyph in &mut out.glyphs[g0..] { glyph.x += alignment_shift; }
-                    for d in &mut out.decorations[d0..] {
-                        d.y0 += alignment_shift;
-                        d.y1 += alignment_shift;
-                    }
-                }
                 if justify_all {
                     let slack = avail.unwrap_or(0.0) - (adv + extra);
-                    let n = out.clusters.len() - c0;
-                    if n > 1 && slack > 0.0 {
-                        let step = slack / (n - 1) as f32;
-                        let starts: Vec<f32> = out.clusters[c0..].iter().map(|c| c.x).collect();
-                        for (i, c) in out.clusters[c0..].iter_mut().enumerate() {
-                            c.x += step * i as f32;
+                    if out.clusters.len() > c0 + 1 && slack > 0.0 {
+                        let mut previous = None;
+                        let mut gaps = 0;
+                        let starts: Vec<_> = out.clusters[c0..].iter().enumerate().map(|(i, c)| {
+                            let group = crate::comic::range_at(&unbroken, offsets.display(c.range.start.saturating_sub(prange.start)));
+                            if i > 0 && (group.is_none() || group != previous) { gaps += 1; }
+                            previous = group;
+                            (c.x, gaps)
+                        }).collect();
+                        let step = if gaps > 0 { slack / gaps as f32 } else { 0.0 };
+                        for (c, &(_, gap)) in out.clusters[c0..].iter_mut().zip(&starts) {
+                            c.x += step * gap as f32;
                         }
-                        for g in &mut out.glyphs[g0..] {
-                            let i = starts.iter().rposition(|&s| s <= g.x + 1e-3).unwrap_or(0);
-                            g.x += step * i as f32;
+                        for (g, inline) in out.glyphs[g0..].iter_mut().zip(inline_positions) {
+                            let gap = starts.iter().rfind(|&&(x, _)| x <= inline + 1e-3).map_or(0, |&(_, gap)| gap);
+                            if vertical { g.y += step * gap as f32; } else { g.x += step * gap as f32; }
                         }
-                        extra += slack;
+                        extra += step * gaps as f32;
                     }
                 }
-                if vertical {
-                    // Line space → text space (90° clockwise); upright glyphs centred on the column.
-                    for (g, v) in out.glyphs[g0..].iter_mut().zip(&vinfo) {
-                        let (u, cross) = (g.x, g.y);
-                        if v.upright {
-                            g.x = -baseline - v.centre_x;
-                            g.y = u + v.origin;
-                            g.orient = GlyphOrient::Upright;
-                        } else {
-                            g.x = -(cross + v.centre);
-                            g.y = u;
-                            g.orient = GlyphOrient::Rotated;
-                        }
-                    }
-                    combine_glyphs(&mut out.glyphs[g0..], &vinfo, &mut out.clusters, baseline);
-                }
+                crate::comic::place_cells(&mut out, &cell_members, baseline);
                 for cluster in &out.clusters[c0..] {
                     let si = style_at(cluster.range.start);
                     let st = &out.styles[si];
@@ -1404,7 +1430,7 @@ impl Layouter {
                         out.decorations.push(DecorationRect { x0: x - radius, y0: y - radius, x1: x + radius, y1: y + radius, style: si as u32, round: true });
                     }
                 }
-                let x0 = dx + m.offset + alignment_shift;
+                let x0 = dx + m.offset;
                 out.lines.push(LineInfo {
                     range: map(lr.start)..map_end(lr.end).min(content_end),
                     baseline,
@@ -1413,6 +1439,9 @@ impl Layouter {
                     ascent,
                     descent,
                     paragraph: pi,
+                    nominal_size,
+                    nominal_leading,
+                    baseline_step: step,
                 });
             }
             pending_space += ps.space_after_pt * k;
@@ -1443,33 +1472,21 @@ impl Layouter {
                 decoration.y0 += dy;
                 decoration.y1 += dy;
             }
+            for cluster in &mut out.clusters {
+                if let Some(b) = &mut cluster.combined {
+                    b[0] += dx;
+                    b[1] += dy;
+                    b[2] += dx;
+                    b[3] += dy;
+                }
+            }
             for line in &mut out.lines {
                 line.baseline += offset;
             }
-            for cluster in &mut out.clusters {
-                if let Some(b) = &mut cluster.combined {
-                    b[0] += dx; b[2] += dx;
-                    b[1] += dy; b[3] += dy;
-                }
-            }
             out.block_offset = offset;
         }
+        out.comic_groups = comic_groups;
         out
-    }
-}
-
-fn cross_scale(run: &parley::Run<'_, RunBrush>, class: VClass, st: &CharStyle, text: &str) -> f32 {
-    let (width, height) = (glyph_scale(st.horizontal_scale), glyph_scale(st.vertical_scale));
-    match class {
-        VClass::Rotate | VClass::Linear => height,
-        VClass::AlternateOrRotate if width != height => {
-            let metrics = VMetrics::new(run.font(), run.normalized_coords(), run.font_size());
-            run.visual_clusters().map(|cluster| {
-                let plain = text.get(cluster.text_range()).and_then(|s| s.chars().next()).and_then(|c| metrics.cmap(c));
-                if cluster.glyphs().any(|g| class.is_upright(g.id, plain)) { width } else { height }
-            }).reduce(f32::max).unwrap_or(width)
-        }
-        _ => width,
     }
 }
 
@@ -1552,168 +1569,19 @@ fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace(['\\', '"'], ""))
 }
 
-/// Placement data of one vertical-type glyph (before mapping to text space).
-struct VGlyph {
-    upright: bool,
-    /// Horizontal ink/advance centre of the upright glyph (px).
-    centre_x: f32,
-    /// Upright: distance from the top of the glyph's cell down to its baseline (px).
-    origin: f32,
-    /// Rotated: distance from the column centre line to the glyph's baseline (px).
-    centre: f32,
-    group: Option<usize>,
-    cluster: Option<usize>,
-    ink_width: f32,
-    size: f32,
-}
-
-/// Pack visible ink side by side; each member retains its own style, selection and caret.
-/// Only layout geometry is changed. The shared cell was already measured by line breaking.
-fn combine_glyphs(glyphs: &mut [PlacedGlyph], info: &[VGlyph], clusters: &mut [ClusterInfo], baseline: f32) {
-    let mut start = 0;
-    while let Some(first) = info.get(start) {
-        let Some(group) = first.group else { start += 1; continue };
-        let end = start + info.iter().skip(start).take_while(|v| v.group == Some(group)).count();
-        let Some(members) = info.get(start..end) else { break };
-        let Some(placed) = glyphs.get_mut(start..end) else { break };
-        let mut top = f32::INFINITY;
-        let mut bottom = f32::NEG_INFINITY;
-        let mut size = 0.0f32;
-        let mut origin = 0.0f32;
-        let mut width = 0.0f32;
-        for v in members {
-            if let Some(c) = v.cluster.and_then(|i| clusters.get(i)) {
-                top = top.min(c.x);
-                bottom = bottom.max(c.x + c.advance);
-            }
-            size = size.max(v.size);
-            origin = origin.max(v.origin);
-            width += v.ink_width.max(0.01);
-        }
-        if !top.is_finite() || !bottom.is_finite() || size <= 0.0 { start = end; continue; }
-        let gap = size * 0.08;
-        width += gap * members.len().saturating_sub(1) as f32;
-        let scale = (size / width).min(1.0);
-        let mut left = -baseline - width * scale * 0.5;
-        for (g, v) in placed.iter_mut().zip(members) {
-            let right = left + v.ink_width.max(0.01) * scale;
-            g.scale_x = scale;
-            g.x = (left + right) * 0.5 - v.centre_x * scale;
-            g.y = top + origin;
-            if let Some(c) = v.cluster.and_then(|i| clusters.get_mut(i)) {
-                let b = [left - gap * scale * 0.5, top, right + gap * scale * 0.5, bottom];
-                c.combined = Some(c.combined.map_or(b, |a| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])]));
-            }
-            left = right + gap * scale;
-        }
-        start = end;
-    }
-}
-
-/// Vertical metrics of a font instance: `VORG`, `vhea`/`vmtx`, else the ideographic em box.
-struct VMetrics<'a> {
-    font: Option<skrifa::FontRef<'a>>,
-    coords: Vec<skrifa::instance::NormalizedCoord>,
-    /// px per font unit.
-    scale: f32,
-    /// Em-box fallback origin (px below the cell top).
-    em_origin: f32,
-}
-
-impl<'a> VMetrics<'a> {
-    fn new(fd: &'a FontData, coords: &[i16], size: f32) -> Self {
-        use skrifa::MetadataProvider;
-        let font = skrifa::FontRef::from_index(fd.data.as_ref(), fd.index).ok();
-        let coords: Vec<skrifa::instance::NormalizedCoord> = coords.iter().map(|&c| skrifa::instance::NormalizedCoord::from_bits(c)).collect();
-        let (scale, em_origin) = match &font {
-            Some(f) => {
-                let m = f.metrics(skrifa::instance::Size::unscaled(), skrifa::instance::LocationRef::new(&coords));
-                let upem = f32::from(m.units_per_em).max(1.0);
-                let (asc, desc) = (m.ascent, -m.descent);
-                // Ideographic em box: the em centred on the font's ascent/descent span.
-                let r = if asc + desc > 0.0 && asc.is_finite() && desc.is_finite() { (asc / (asc + desc)).clamp(0.0, 1.0) } else { 0.88 };
-                (size / upem, size * r)
-            }
-            None => (0.0, size * 0.88),
-        };
-        Self { font, coords, scale, em_origin }
-    }
-
-    fn cmap(&self, c: char) -> Option<u32> {
-        use skrifa::MetadataProvider;
-        self.font.as_ref()?.charmap().map(c).map(|g| g.to_u32())
-    }
-
-    fn advance_width(&self, gid: u32) -> Option<f32> {
-        use skrifa::MetadataProvider;
-        self.font.as_ref()?.glyph_metrics(skrifa::instance::Size::unscaled(), skrifa::instance::LocationRef::new(&self.coords))
-            .advance_width(skrifa::GlyphId::new(gid)).map(|width| width * self.scale)
-    }
-
-    fn ink_bounds(&self, gid: u32, horizontal_scale: f32, vertical_scale: f32, skew: f32) -> Option<[f32; 4]> {
-        use skrifa::MetadataProvider;
-        use crate::raster::{Bounds, Pen, Xform};
-        let f = self.font.as_ref()?;
-        let outline = f.outline_glyphs().get(skrifa::GlyphId::new(gid))?;
-        let mut bounds = Bounds::default();
-        let xf = Xform([f64::from(horizontal_scale * self.scale), 0.0, f64::from(skew * self.scale), -f64::from(vertical_scale * self.scale), 0.0, 0.0]);
-        outline.draw(skrifa::outline::DrawSettings::unhinted(skrifa::instance::Size::unscaled(), skrifa::instance::LocationRef::new(&self.coords)), &mut Pen::new(&mut bounds, xf)).ok()?;
-        Some(bounds.rect?.map(|v| v as f32))
-    }
-
-    /// Distance from the top of an upright glyph's cell to its baseline (px).
-    fn origin(&self, gid: u32) -> f32 {
-        self.vertical_origin(gid).filter(|v| v.is_finite()).unwrap_or(self.em_origin)
-    }
-
-    fn vertical_origin(&self, gid: u32) -> Option<f32> {
-        use skrifa::MetadataProvider;
-        use skrifa::raw::TableProvider;
-        let f = self.font.as_ref()?;
-        let g = skrifa::GlyphId::new(gid);
-        if let Ok(vorg) = f.vorg() {
-            return Some(f32::from(vorg.vertical_origin_y(g)) * self.scale);
-        }
-        let tsb = f.vmtx().ok()?.side_bearing(g)?;
-        // Top of the outline (font units), from the outline itself (glyf and CFF alike).
-        let outline = f.outline_glyphs().get(g)?;
-        let mut pen = YMax(None);
-        let settings = skrifa::outline::DrawSettings::unhinted(skrifa::instance::Size::unscaled(), skrifa::instance::LocationRef::new(&self.coords));
-        outline.draw(settings, &mut pen).ok()?;
-        Some((pen.0? + f32::from(tsb)) * self.scale)
-    }
-}
-
-/// Outline pen recording the largest y.
-struct YMax(Option<f32>);
-
-impl YMax {
-    fn add(&mut self, y: f32) {
-        self.0 = Some(self.0.map_or(y, |m| m.max(y)));
-    }
-}
-
-impl skrifa::outline::OutlinePen for YMax {
-    fn move_to(&mut self, _x: f32, y: f32) {
-        self.add(y);
-    }
-    fn line_to(&mut self, _x: f32, y: f32) {
-        self.add(y);
-    }
-    fn quad_to(&mut self, _cx0: f32, cy0: f32, _x: f32, y: f32) {
-        self.add(cy0);
-        self.add(y);
-    }
-    fn curve_to(&mut self, _cx0: f32, cy0: f32, _cx1: f32, cy1: f32, _x: f32, y: f32) {
-        self.add(cy0);
-        self.add(cy1);
-        self.add(y);
-    }
-    fn close(&mut self) {}
+/// Use a visible .notdef when the selected face's missing glyph has no outline.
+fn visible_missing_face(fonts: &mut FontDb, original: &GlyphFace) -> Option<GlyphFace> {
+    use skrifa::{FontRef, GlyphId, MetadataProvider, instance::{LocationRef, Size}};
+    let has_ink = FontRef::from_index(original.font.data.as_ref(), original.font.index).ok()
+        .and_then(|font| font.glyph_metrics(Size::unscaled(), LocationRef::default()).bounds(GlyphId::new(0)))
+        .is_some_and(|bounds| bounds.x_min < bounds.x_max && bounds.y_min < bounds.y_max);
+    if has_ink { return None; }
+    let font = fonts.selected_face(DEFAULT_FAMILY, 400, false)?;
+    Some(GlyphFace { font, coords: Vec::new(), ..original.clone() })
 }
 
 /// OpenType feature settings of a character style (CSS `font-feature-settings` items).
-fn feature_list(st: &CharStyle, small_caps: SmallCapsMode) -> Vec<String> {
+fn feature_list(st: &CharStyle, small_caps: SmallCapsMode, form: Option<VerticalForm>) -> Vec<String> {
     let mut feats: Vec<String> = Vec::new();
     // Optical and manual kerning replace the font's kerning table; a character with a manual
     // kern is manually kerned whatever its mode (as in Photoshop).
@@ -1730,10 +1598,24 @@ fn feature_list(st: &CharStyle, small_caps: SmallCapsMode) -> Vec<String> {
     if small_caps == SmallCapsMode::OpenType {
         feats.push("\"smcp\" 1".into());
     }
+    let upright = form == Some(VerticalForm::Upright);
+    let explicit_width = st.features.iter().any(|f| f.tag == "palt"
+        || (f.value != 0 && matches!(f.tag.as_str(), "halt" | "fwid" | "hwid" | "twid" | "qwid" | "pwid")));
+    if !upright && !explicit_width {
+        feats.push("\"palt\" 1".into());
+    }
     for f in &st.features {
-        if f.tag.len() == 4 && f.tag.is_ascii() {
+        if f.tag.len() == 4 && f.tag.is_ascii()
+            && (form.is_none() || !matches!(f.tag.as_str(), "vert" | "vrt2"))
+            && !(form.is_some() && VERTICAL_METRICS.contains(&f.tag.as_str()))
+            && !(upright && matches!(f.tag.as_str(), "palt" | "halt"))
+        {
             feats.push(format!("\"{}\" {}", f.tag, f.value));
         }
+    }
+    if let Some(form) = form {
+        feats.push(if form == VerticalForm::Sideways { "\"vert\" 0" } else { "\"vert\" 1" }.into());
+        feats.push("\"vrt2\" 0".into());
     }
     feats
 }
@@ -1741,16 +1623,18 @@ fn feature_list(st: &CharStyle, small_caps: SmallCapsMode) -> Vec<String> {
 /// The font variations for a run: the explicit axis values, plus `opsz` at the type size when the
 /// style doesn't set it (as CSS `font-optical-sizing: auto`). A font without an `opsz` axis
 /// ignores it.
-fn variation_list(st: &CharStyle) -> Vec<String> {
-    let mut vars: Vec<String> =
-        st.variations.iter().filter(|v| v.axis.len() == 4 && v.axis.is_ascii() && v.value.is_finite()).map(|v| format!("\"{}\" {}", v.axis, v.value)).collect();
-    if st.size_pt.is_finite() && !st.variations.iter().any(|v| v.axis == "opsz") {
-        vars.push(format!("\"opsz\" {}", st.size_pt.max(0.01)));
-    }
-    vars
+pub(crate) fn variation_axes(st: &CharStyle) -> impl Iterator<Item = (&str, f32)> {
+    let optical_size = (st.size_pt.is_finite() && !st.variations.iter().any(|v| v.axis == "opsz"))
+        .then_some(("opsz", st.size_pt.max(0.01)));
+    st.variations.iter().filter(|v| v.axis.len() == 4 && v.axis.is_ascii() && v.value.is_finite())
+        .map(|v| (v.axis.as_str(), v.value)).chain(optical_size)
 }
 
-fn style_props(st: &CharStyle, k: f32, fallback: &[String], idx: u32, small_caps: SmallCapsMode) -> Vec<StyleProperty<'static, RunBrush>> {
+fn variation_list(st: &CharStyle) -> Vec<String> {
+    variation_axes(st).map(|(axis, value)| format!("\"{axis}\" {value}")).collect()
+}
+
+fn style_props(st: &CharStyle, k: f32, fallback: &[String], idx: u32, small_caps: SmallCapsMode, vertical: bool) -> Vec<StyleProperty<'static, RunBrush>> {
     let px = (st.size_pt * k).max(0.01);
     let mut fam: Vec<String> = Vec::new();
     if !st.font_family.is_empty() {
@@ -1763,7 +1647,7 @@ fn style_props(st: &CharStyle, k: f32, fallback: &[String], idx: u32, small_caps
         fam.extend(fallback.iter().map(|f| quote(f)));
     }
     fam.push("sans-serif".into());
-    let feats = feature_list(st, small_caps);
+    let feats = feature_list(st, small_caps, vertical.then_some(VerticalForm::Sideways));
     let vars = variation_list(st);
     vec![
         StyleProperty::FontFamily(FontFamily::Source(Cow::Owned(fam.join(", ")))),
@@ -1775,63 +1659,9 @@ fn style_props(st: &CharStyle, k: f32, fallback: &[String], idx: u32, small_caps
         StyleProperty::LetterSpacing(st.tracking / 1000.0 * px),
         StyleProperty::Underline(st.underline),
         StyleProperty::Strikethrough(st.strikethrough),
-        StyleProperty::Brush(RunBrush(idx, VClass::Rotate)),
+        StyleProperty::Brush(RunBrush(idx, VerticalForm::Sideways)),
         StyleProperty::Locale(st.language.as_deref().and_then(|l| parley::fontique::Language::parse(l).ok())),
     ]
-}
-
-/// Closing CJK punctuation: its full-width cell has blank space after the mark.
-fn is_closing(c: char) -> bool {
-    matches!(c, '、' | '。' | '，' | '．' | '」' | '』' | '）' | '〕' | '】' | '〉' | '》' | '〙' | '〗' | '］' | '｝')
-}
-
-/// Opening CJK brackets: blank space before the mark.
-fn is_opening(c: char) -> bool {
-    matches!(c, '「' | '『' | '（' | '〔' | '【' | '〈' | '《' | '〘' | '〖' | '［' | '｛')
-}
-
-/// Basic Japanese punctuation squeeze (JIS X 4051 style) for one line in line space: between a
-/// closing mark and a following opening or closing mark, the closing mark's trailing half-em
-/// blank is removed; between two opening brackets, the second one's leading half-em. Clusters and
-/// glyphs from the squeezed point on move back. Returns the total length removed.
-pub(crate) fn squeeze_punctuation(text: &str, clusters: &mut [ClusterInfo], glyphs: &mut [PlacedGlyph]) -> f32 {
-    let first = |c: &ClusterInfo| text.get(c.range.clone()).and_then(|s| s.chars().next());
-    let last = |c: &ClusterInfo| text.get(c.range.clone()).and_then(|s| s.chars().next_back());
-    // Shift to apply from each cluster on.
-    let mut shifts = vec![0.0f32; clusters.len()];
-    let mut total = 0.0f32;
-    for i in 1..clusters.len() {
-        let (Some(prev), Some(cur)) = (clusters.get(i - 1), clusters.get(i)) else { continue };
-        if prev.rtl || cur.rtl {
-            continue;
-        }
-        let (Some(a), Some(b)) = (last(prev), first(cur)) else { continue };
-        let cut = if is_closing(a) && (is_opening(b) || is_closing(b)) {
-            prev.advance * 0.5
-        } else if is_opening(a) && is_opening(b) {
-            cur.advance * 0.5
-        } else {
-            0.0
-        };
-        if cut.is_finite() && cut > 0.0 {
-            total += cut;
-        }
-        if let Some(s) = shifts.get_mut(i) {
-            *s = total;
-        }
-    }
-    if total <= 0.0 {
-        return 0.0;
-    }
-    let starts: Vec<f32> = clusters.iter().map(|c| c.x).collect();
-    for (c, s) in clusters.iter_mut().zip(&shifts) {
-        c.x -= s;
-    }
-    for g in glyphs.iter_mut() {
-        let i = starts.iter().rposition(|&s| s <= g.x + 1e-3).unwrap_or(0);
-        g.x -= shifts.get(i).copied().unwrap_or(0.0);
-    }
-    total
 }
 
 /// Whether to embolden a face synthetically. Font matching (fontique) asks for it whenever the
@@ -1843,20 +1673,22 @@ pub(crate) fn synthetic_bold(matcher_says: bool, requested: u16, face_weight: f3
     matcher_says && requested >= 600 && face_weight <= 500.0
 }
 
-/// Tallest run's ascender: lowercase 'd' horizontally, uppercase 'H' vertically.
-fn first_ascent(line: &parley::Line<'_, RunBrush>, ascender: char, styles: &[CharStyle], vertical: bool) -> Option<f32> {
+/// The tallest nominal ascender: lowercase 'd' horizontally, uppercase 'H' vertically.
+/// Character proportions change the ink and advances, but not the frame's first baseline.
+fn first_ascent(line: &parley::Line<'_, RunBrush>, ascender: char, styles: &[CharStyle], px_per_pt: f32) -> Option<f32> {
     use skrifa::MetadataProvider;
     let mut best: Option<f32> = None;
-    for run in line.runs() {
+    for item in line.items() {
+        let PositionedLayoutItem::GlyphRun(glyphs) = item else { continue };
+        let run = glyphs.run();
         let fd = run.font();
         let Ok(font) = skrifa::FontRef::from_index(fd.data.as_ref(), fd.index) else {
             continue;
         };
         let coords: Vec<skrifa::instance::NormalizedCoord> = run.normalized_coords().iter().map(|&c| skrifa::instance::NormalizedCoord::from_bits(c)).collect();
         let loc = skrifa::instance::LocationRef::new(&coords);
-        let scale = run.clusters().next().and_then(|c| styles.get(c.first_style().brush.0 as usize))
-            .map_or(1.0, |st| if vertical { 1.0 } else { glyph_scale(st.vertical_scale) / shaping_scale(st, false) });
-        let size = skrifa::instance::Size::new(run.font_size() * scale);
+        let size = styles.get(glyphs.style().brush.0 as usize).map_or(run.font_size(), |st| st.size_pt * px_per_pt);
+        let size = skrifa::instance::Size::new(size);
         let h = font.charmap().map(ascender).and_then(|g| font.glyph_metrics(size, loc).bounds(g)).map(|b| b.y_max).or_else(|| {
             let m = font.metrics(size, loc);
             m.cap_height.or(Some(m.ascent * 0.75))
@@ -1945,8 +1777,8 @@ mod tests {
         let synthetic = small_caps_mode(style.caps, false);
 
         assert_eq!(real, SmallCapsMode::OpenType);
-        assert!(feature_list(&style, real).iter().any(|feature| feature == "\"smcp\" 1"));
+        assert!(feature_list(&style, real, None).iter().any(|feature| feature == "\"smcp\" 1"));
         assert_eq!(synthetic, SmallCapsMode::Synthetic);
-        assert!(!feature_list(&style, synthetic).iter().any(|feature| feature == "\"smcp\" 1"));
+        assert!(!feature_list(&style, synthetic, None).iter().any(|feature| feature == "\"smcp\" 1"));
     }
 }

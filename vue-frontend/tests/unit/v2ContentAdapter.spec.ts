@@ -107,7 +107,7 @@ describe('v2 content adapter', () => {
     },
   )
 
-  it.each(['rendering', 'awaiting_repair'] as const)(
+  it.each(['stale', 'rendering', 'awaiting_repair'] as const)(
     'maps the active %s render state to a processing image',
     (renderStatus) => {
       expect(pageSummaryToImage(pageSummary({ renderStatus })).translationStatus).toBe('processing')
@@ -123,8 +123,8 @@ describe('v2 content adapter', () => {
     })).translationStatus).toBe('completed')
     expect(pageSummaryToImage(pageSummary({
       documentRevision: 3,
-      renderedRevision: 3,
-      renderStatus: 'stale',
+      renderedRevision: 2,
+      renderStatus: 'ready',
       translatedUrl: '/translated',
     })).translationStatus).toBe('pending')
   })

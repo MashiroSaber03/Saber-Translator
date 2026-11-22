@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from datetime import timedelta
 import json
+import os
 from pathlib import Path
 
 import pytest
 from sqlalchemy import delete, insert, select, update
 
+from src.backend_v2.font_matching.config import CACHE_DIRECTORY
 from src.backend_v2.insight.gc import InsightReachabilityGarbageCollector
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.schema import (
@@ -74,6 +76,24 @@ def _operation_values(
         "created_at": timestamp,
         "updated_at": timestamp,
     }
+
+
+def test_worker_expires_only_unused_font_match_cache_files(maintenance_platform):
+    data_root, engine = maintenance_platform
+    cache = data_root / CACHE_DIRECTORY / "test-owner"
+    expired = [cache / "samples" / ("a" * 64 + ".png"), cache / "profiles" / ("b" * 64 + ".json")]
+    unrelated = [cache / "samples" / "manual.png", cache / "profiles" / ("c" * 64 + ".tmp")]
+    active = cache / "profiles" / ("d" * 64 + ".json")
+    old = (utcnow() - timedelta(days=31)).timestamp()
+    for path in [*expired, *unrelated, active]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"test cache")
+        if path != active:
+            os.utime(path, (old, old))
+
+    assert WorkerMaintenance(data_root=data_root, engine=engine).run_if_due(force=True)
+    assert not any(path.exists() for path in expired)
+    assert all(path.is_file() for path in (*unrelated, active))
 
 
 def test_maintenance_prunes_bounded_ttl_records_without_active_work(

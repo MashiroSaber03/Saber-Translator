@@ -28,6 +28,7 @@ import EditWorkspace from '@/components/edit/EditWorkspace.vue'
 import ProductHeaderAction from '@/components/product/ProductHeaderAction.vue'
 import ProductPageHeader from '@/components/product/ProductPageHeader.vue'
 import ProductThemeToggle from '@/components/product/ProductThemeToggle.vue'
+import { waitForPageRender } from '@/composables/useEditRender'
 import { useTextStyleSync } from '@/composables/useTextStyleSync'
 import { useTranslateViewActions } from './useTranslateViewActions'
 import {
@@ -200,12 +201,22 @@ function handleWorkspaceKeydown(event: KeyboardEvent): void {
 }
 
 watch(
-  () => currentImage.value?.id,
-  pageId => {
-    if (!pageId) isEditMode.value = false
-    else if (isEditMode.value && currentChapterId.value) {
+  [() => currentImage.value?.id, () => imageStore.isTranslationInProgress],
+  ([pageId, translating], [previousPageId], onCleanup) => {
+    if (!pageId) {
+      isEditMode.value = false
+      return
+    }
+    if (pageId !== previousPageId && isEditMode.value && currentChapterId.value) {
       translateInit.queueLastVisitedPageWrite(currentChapterId.value, pageId)
     }
+    const image = currentImage.value
+    if (translating || image?.translationStatus !== 'processing' || image.documentRevision === undefined) return
+    const controller = new AbortController()
+    onCleanup(() => controller.abort())
+    void waitForPageRender(pageId, image.documentRevision, controller.signal).catch(() => {
+      // The page keeps its current preview if the status request times out.
+    })
   },
 )
 

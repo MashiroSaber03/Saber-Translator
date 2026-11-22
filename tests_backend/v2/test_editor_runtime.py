@@ -189,6 +189,25 @@ def test_manual_zip_install_works_offline(checkout, tmp_path, monkeypatch):
     runtime.ensure_editor_runtime(root=checkout)
 
 
+def test_local_runtime_artifact_checks_sidecar_and_installs_offline(checkout, tmp_path, monkeypatch):
+    write_runtime(checkout, BUILD)
+    built = tmp_path / "built"
+    write_runtime(built, NEXT_BUILD)
+    archive = package_runtime(built, tmp_path / "assets", NEXT_BUILD)
+    monkeypatch.setattr(runtime, "urlopen", lambda *_args, **_kwargs: pytest.fail("local install must work offline"))
+    with pytest.raises(RuntimeError, match="源码不匹配"):
+        runtime.ensure_editor_runtime(root=checkout, bundle=archive)
+    assert runtime.runtime_ready(checkout, BUILD)
+
+    (checkout / "editor-runtime.json").write_text(json.dumps({"build": NEXT_BUILD}), encoding="utf-8")
+    runtime.ensure_editor_runtime(root=checkout, bundle=archive)
+    assert runtime.runtime_ready(checkout, NEXT_BUILD)
+    archive.with_suffix(".zip.sha256").write_text("0" * 64, encoding="ascii")
+    with pytest.raises(RuntimeError, match="校验失败"):
+        runtime.ensure_editor_runtime(root=checkout, bundle=archive)
+    assert runtime.runtime_ready(checkout, NEXT_BUILD)
+
+
 def test_unpublished_version_reports_url_and_preserves_previous_runtime(checkout, tmp_path, monkeypatch):
     write_runtime(checkout, BUILD)
     (checkout / "editor-runtime.json").write_text(json.dumps({"build": NEXT_BUILD}), encoding="utf-8")
@@ -235,9 +254,13 @@ def test_frozen_packages_do_not_read_manifest_or_contact_network(monkeypatch, tm
 def test_build_fingerprint_matches_lf_and_crlf_checkout(tmp_path):
     root = Path(__file__).resolve().parents[2]
     # Exercise the actual input enumerator on a small source checkout.
-    for relative in ("third_party/photocraft/Cargo.toml", "third_party/photocraft/Cargo.lock",
+    source = root / "third_party/photocraft"
+    manifests = [path.relative_to(root) for group in ("apps", "crates")
+                 for path in (source / group).glob("*/Cargo.toml")]
+    for relative in ("third_party/photocraft/Cargo.toml", "third_party/photocraft/Cargo.lock", *manifests,
                      "third_party/photocraft/crates/text/src/layout.rs", "scripts/build_editor.py",
-                     "scripts/editor/host.js", "src/backend_v2/editor_runtime.py", ".github/workflows/editor-runtime.yml",
+                     "scripts/editor/host.js", "scripts/editor/index.html", "src/backend_v2/editor_runtime.py",
+                     ".github/workflows/editor-runtime.yml", "third_party/photocraft/contributors/contributors.json",
                      *(f"third_party/photocraft/{name}" for name in runtime.NOTICE_FILES)):
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -246,6 +269,16 @@ def test_build_fingerprint_matches_lf_and_crlf_checkout(tmp_path):
     for path in tmp_path.rglob("*"):
         if path.is_file():
             path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    assert source_fingerprint(tmp_path) == before
+    for relative in ("crates/text/src/vertical_tests.rs", "apps/photocraft-cli/src/main.rs"):
+        path = tmp_path / "third_party/photocraft" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("test-only or unrelated upstream change", encoding="utf-8")
+    assert source_fingerprint(tmp_path) == before
+    layout = tmp_path / "third_party/photocraft/crates/text/src/layout.rs"
+    layout.write_text("changed", encoding="utf-8")
+    assert source_fingerprint(tmp_path) != before
+    layout.write_bytes((root / layout.relative_to(tmp_path)).read_bytes())
     assert source_fingerprint(tmp_path) == before
     (tmp_path / "scripts/editor/host.js").write_text("changed", encoding="utf-8")
     assert source_fingerprint(tmp_path) != before

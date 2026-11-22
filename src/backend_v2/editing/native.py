@@ -90,9 +90,8 @@ class NativeEditor:
         return document
 
     @staticmethod
-    def _legacy_document(payload: bytes) -> str | None:
+    def _legacy_document(document: dict) -> str | None:
         """Return the migration needed; only old text metadata needs the stored text."""
-        document = NativeEditor._project_document(payload)
         text = dict(document.get("metadata", {}).get("text", []))
         metadata = json.loads(text.get("saber.page", "{}"))
         if any("translatedText" in entry.get("payload", {}) or "richText" in entry.get("payload", {})
@@ -120,7 +119,7 @@ class NativeEditor:
                 page_assets.c.page_id == page_id, page_assets.c.role == "editor_document")).scalar_one_or_none()
         if path is not None:
             payload = self.storage.resolve_relative_path(path).read_bytes()
-            if not self._legacy_document(payload):
+            if not self._legacy_document(self._project_document(payload)):
                 return payload
         # Read-only compatibility: old published images are never changed here.
         return self.prepare(connection, page_id).document
@@ -260,9 +259,10 @@ class NativeEditor:
         pointers = {row.role: self.storage.resolve_relative_path(row.relative_path) for row in pointer_rows}
         records = {row.role: row for row in pointer_rows}
         current = pointers["editor_document"].read_bytes() if "editor_document" in pointers else None
-        legacy = self._legacy_document(current) if current is not None else None
+        current_document = self._project_document(current) if current is not None else None
+        legacy = self._legacy_document(current_document) if current_document is not None else None
         clean = records.get("clean")
-        clean_is_current = (current is not None and not legacy and clean is not None
+        clean_is_current = (current_document is not None and not legacy and clean is not None
                             and clean.input_source_revision == page["source_revision"]
                             and clean.input_document_revision == page["document_revision"]
                             and pointers["clean"].is_file())
@@ -346,7 +346,7 @@ class NativeEditor:
             # image as current when a text edit follows them.
             clean_asset_id = None
             if clean_is_current and document is not None and "clean" not in request:
-                if self._background(self._project_document(current)) == self._background(self._project_document(document)):
+                if self._background(current_document) == self._background(self._project_document(document)):
                     clean_asset_id = clean.asset_id
             return EditingResult(document if writing else
                                  (current if not render and not text_only else None), projected,

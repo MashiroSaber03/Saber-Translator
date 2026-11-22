@@ -281,7 +281,9 @@ function pagePathFields(logicalSourcePath: string): Pick<ImageDataLoadInput, 'fi
   }
 }
 
-function translationStatus(page: V2PageSummary): TranslationStatus {
+export function pageTranslationStatus(
+  page: Pick<V2PageSummary, 'renderStatus' | 'translatedUrl' | 'renderedRevision' | 'documentRevision'>,
+): TranslationStatus {
   if (page.renderStatus === 'render_failed' || page.renderStatus === 'repair_failed') {
     return 'failed'
   }
@@ -290,14 +292,14 @@ function translationStatus(page: V2PageSummary): TranslationStatus {
     && page.translatedUrl
     && page.renderedRevision === page.documentRevision
   ) return 'completed'
-  if (page.renderStatus === 'rendering' || page.renderStatus === 'awaiting_repair') {
+  if (page.renderStatus === 'stale' || page.renderStatus === 'rendering' || page.renderStatus === 'awaiting_repair') {
     return 'processing'
   }
   return 'pending'
 }
 
 export function pageSummaryToImage(page: V2PageSummary): ImageDataLoadInput {
-  const status = translationStatus(page)
+  const status = pageTranslationStatus(page)
   return {
     id: page.id,
     chapterId: page.chapterId,

@@ -5,7 +5,7 @@
 #   1. 在要发布的提交上推送版本标签:
 #      git tag v3.3.0
 #      git push origin v3.3.0
-#   2. dev 推送、PR 或手动触发：运行相同的构建验证，不发布
+#   2. dev 推送、PR 或手动触发：运行相同的构建验证；dev 推送更新源码用户的编辑内核
 #   3. 手动发布：Run workflow 勾选 publish
 #
 # 流程:
@@ -169,14 +169,14 @@ jobs:
   # ============================================================================
   editor_runtime:
     needs: prepare
-    if: needs.prepare.outputs.publish == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
     permissions:
       contents: write
     uses: ./.github/workflows/editor-runtime.yml
+    with:
+      publish: ${{ needs.prepare.outputs.publish == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/dev') }}
 
   build:
     needs: [prepare, editor_runtime]
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && (needs.editor_runtime.result == 'success' || needs.editor_runtime.result == 'skipped') }}
     runs-on: windows-latest
     permissions:
       contents: write
@@ -242,10 +242,16 @@ jobs:
             vue-frontend/package-lock.json
             browser-extension/package-lock.json
 
-      - name: Prepare shared editing engine
+      - uses: actions/download-artifact@v5
+        with:
+          name: saber-editor-runtime
+          path: .tmp-editor-dist
+
+      - name: Install the verified shared editing engine
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          python -m src.backend_v2.editor_runtime
+          $build = (Get-Content editor-runtime.json -Raw | ConvertFrom-Json).build
+          python -m src.backend_v2.editor_runtime --bundle ".tmp-editor-dist/saber-editor-$build-windows-x86_64.zip"
 
       - name: Build v2 frontend
         working-directory: vue-frontend

@@ -178,6 +178,27 @@ def test_failed_font_copy_does_not_publish_partial_install(directory_fonts, monk
     assert not list((root / 'fonts').glob('.install-*'))
 
 
+def test_shared_font_install_retries_a_temporary_windows_access_denial(directory_fonts, monkeypatch):
+    root, _, _, _, payload = directory_fonts
+    replace = os.replace
+    installs = []
+
+    def temporarily_blocked(source, destination):
+        if destination.name == 'shared' and source.name.startswith('.install-'):
+            installs.append(source)
+            if len(installs) == 1:
+                error = PermissionError('directory temporarily in use')
+                error.winerror = 5
+                raise error
+        return replace(source, destination)
+
+    monkeypatch.setattr(os, 'replace', temporarily_blocked)
+    font_files.prepare_font_directory(root)
+    assert len(installs) == 2 and installs[0] == installs[1]
+    assert (root / 'fonts/shared/Alpha.ttf').read_bytes() == payload
+    assert not list((root / 'fonts').glob('.install-*'))
+
+
 def _windows_acl_is_protected(path):
     import ctypes
     from ctypes import wintypes

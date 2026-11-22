@@ -18,6 +18,43 @@ pub enum CjkScript {
     Korean,
 }
 
+pub(crate) const JIS_CODE_PAGE: u32 = 1 << 17;
+pub(crate) const CJK_CODE_PAGES: u32 = 0b1_1111 << 17;
+
+/// A pan-CJK font supports the text but does not choose a regional composition convention.
+pub(crate) fn regional_code_pages(pages: u32) -> u32 {
+    let regional = pages & CJK_CODE_PAGES;
+    if regional == CJK_CODE_PAGES { 0 } else { regional }
+}
+
+/// The two symbol rows of Windows-31J (JIS X 0208 pointers 0–187).
+/// Source: https://encoding.spec.whatwg.org/index-jis0208.txt
+pub(crate) fn is_jis_symbol(ch: char) -> bool {
+    const SYMBOLS: &str = concat!(
+        "\u{3000}、。，．・：；？！゛゜´｀¨＾￣＿ヽヾゝゞ〃仝々〆〇ー―‐",
+        "／＼～∥｜…‥‘’“”（）〔〕［］｛｝〈〉《》「」『』【】＋",
+        "－±×÷＝≠＜＞≦≧∞∴♂♀°′″℃￥＄￠￡％＃＆＊＠§☆★",
+        "○●◎◇◆□■△▲▽▼※〒→←↑↓〓∈∋⊆⊇⊂⊃∪∩∧∨￢⇒",
+        "⇔∀∃∠⊥⌒∂∇≡≒≪≫√∽∝∵∫∬Å‰♯♭♪†‡¶◯",
+    );
+    SYMBOLS.contains(ch)
+}
+
+/// JIS symbol coverage for legacy vertical composition, including the Roman replacements
+/// from X 0201 and the Unicode mappings of X 0208 that differ from Windows-31J.
+pub(crate) fn is_legacy_jis_symbol(ch: char) -> bool {
+    is_jis_symbol(ch) || "¥‾〜‖−¢£¬".contains(ch)
+}
+
+pub(crate) fn code_pages(face: &parley::FontData) -> u32 {
+    use skrifa::{FontRef, raw::TableProvider};
+
+    FontRef::from_index(face.data.as_ref(), face.index).ok()
+        .and_then(|font| font.os2().ok())
+        .and_then(|os2| os2.ul_code_page_range_1())
+        .unwrap_or(0)
+}
+
 /// The kind of CJK character that needs a fallback font.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CjkChar {

@@ -9,6 +9,7 @@ import ImageUpload from '@/components/translate/ImageUpload.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
+import * as editRender from '@/composables/useEditRender'
 import * as pagePersistence from '@/services/pageDocumentPersistence'
 import { createBubbleState } from '@/utils/bubbleFactory'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
@@ -286,6 +287,28 @@ describe('TranslateView', () => {
     imageStore.setCurrentImageIndex(1)
     await nextTick()
     expect(queueLastVisitedPageWriteMock).toHaveBeenCalledWith('chapter-1', 'page-2')
+  })
+
+  it('resumes existing page rendering after loading and stops observing on navigation', async () => {
+    const poll = vi.spyOn(editRender, 'waitForPageRender').mockResolvedValue(undefined)
+    const save = vi.spyOn(pagePersistence, 'queuePageDocumentSave')
+    mountTranslateView()
+    const imageStore = useImageStore()
+    imageStore.setImages((['processing', 'completed'] as const).map((translationStatus, index) => ({
+      id: `page-${index + 1}`, chapterId: 'chapter-1', fileName: `${index + 1}.png`,
+      sourceAssetUrl: '/source', cleanAssetUrl: null, thumbnailSourceUrl: '/thumb',
+      translatedAssetUrl: '/previous', translationStatus,
+      documentRevision: 4, renderedRevision: index === 0 ? 3 : 4, hasUnsavedChanges: false, bubbleStates: [],
+    })))
+    await nextTick()
+    expect(poll).toHaveBeenCalledExactlyOnceWith('page-1', 4, expect.any(AbortSignal))
+    const signal = poll.mock.calls[0]![2]
+    expect(signal.aborted).toBe(false)
+    imageStore.setCurrentImageIndex(1)
+    await nextTick()
+    expect(signal.aborted).toBe(true)
+    expect(poll).toHaveBeenCalledOnce()
+    expect(save).not.toHaveBeenCalled()
   })
 
   it('passes the current sidebar style to imports before the first page exists', async () => {

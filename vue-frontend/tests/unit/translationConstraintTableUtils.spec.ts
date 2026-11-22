@@ -25,8 +25,8 @@ describe('translation constraint table utils', () => {
     expect(importRowsFromJson(json, columns)).toEqual(rows)
   })
 
-  it('round-trips constraint rows through XLSX import/export', () => {
-    const buffer = exportRowsToXlsxBuffer(rows, columns)
-    expect(importRowsFromXlsxBuffer(buffer, columns)).toEqual(rows)
+  it('round-trips constraint rows through XLSX import/export', async () => {
+    const buffer = await exportRowsToXlsxBuffer(rows, columns)
+    expect(await importRowsFromXlsxBuffer(buffer, columns)).toEqual(rows)
   })
 })

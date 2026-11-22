@@ -21,12 +21,13 @@ fn process(request: Value) -> Result<Value, String> {
     photocraft_saber::set_fonts(&mut session, &fonts)?;
     if let Some(bubbles) = request.get("bubbles").and_then(Value::as_array) {
         photocraft_saber::set_bubbles(&mut session, bubbles, &fonts)?;
+    } else {
+        photocraft_saber::render_pending_text(&mut session);
     }
     if request.get("userMask").is_some() {
         let mask = if request.get("userMask").is_some_and(Value::is_null) { None } else { Some(read("userMask")?) };
         photocraft_saber::user_mask(&mut session, mask.as_deref())?;
     }
-    photocraft_saber::refresh(&mut session);
     if request.get("baseUpdate").is_some() {
         photocraft_saber::repair(&mut session, &read("baseUpdate")?)?;
     }

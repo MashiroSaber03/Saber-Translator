@@ -117,20 +117,22 @@ def materialize_render_payloads(
         ),
         partial=False,
     )
+    font_ids = [
+        (font_id_override if override_font_id else row["font_id"] or page["default_font_id"])
+        or DEFAULT_FONT_ID
+        for row in rows
+    ]
+    if not font_ids:
+        return []
+    paths_by_id = {
+        item["id"]: item["path"]
+        for item in resolve_font_paths(connection, storage, list(dict.fromkeys(font_ids)))
+    }
     result = []
-    for row in rows:
+    for row, font_id in zip(rows, font_ids, strict=True):
         persisted = validate_bubble_payload(
             json.loads(row["payload_json"]),
             render=False,
-        )
-        font_path = resolve_font_path(
-            connection,
-            storage,
-            (
-                font_id_override
-                if override_font_id
-                else row["font_id"] or page["default_font_id"]
-            ),
         )
         if (
             "layoutDirection" in initialize_auto_fields
@@ -153,7 +155,7 @@ def materialize_render_payloads(
                 persisted["fillColor"] = rgb_to_hex(persisted["autoBgColor"])
         persisted = validate_bubble_payload(persisted, render=False)
         render_payload = validate_bubble_payload(
-            {**persisted, "fontFamily": font_path},
+            {**persisted, "fontFamily": paths_by_id[font_id]},
             render=True,
         )
         result.append((str(row["id"]), persisted, render_payload))

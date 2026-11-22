@@ -22,6 +22,15 @@ fn ink(s: &Session, id: LayerId) -> photocraft_geom::Rect {
     s.active().unwrap().doc.layer(id).unwrap().surface().unwrap().content_bounds()
 }
 
+fn reopen_psd_text(s: &Session) -> TextLayer {
+    let exported = photocraft_io::export(&s.active().unwrap().doc, "text.psd", &Default::default()).unwrap();
+    let reopened = photocraft_io::import("text.psd", &exported.bytes).unwrap();
+    reopened.document.walk().into_iter().find_map(|(_, _, layer)| match &layer.content {
+        LayerContent::Text(text) => Some(text.clone()),
+        _ => None,
+    }).unwrap()
+}
+
 #[test]
 fn anti_alias_and_orientation_are_one_step_each() {
     let mut s = session(8);
@@ -221,9 +230,7 @@ fn warp_text_changes_pixels_and_round_trips() {
     assert_eq!(w.value, 60.0);
     let arced = ink(&s, id);
     assert!(arced.height() > flat.height() + 8, "{flat:?} → {arced:?}");
-    // The regenerated TySh carries the warp (PSD round trip).
-    let raw = text(&s, id).psd_raw.clone().unwrap();
-    let back = photocraft_text::psd::text_layer_from_tysh(&raw, 72.0).unwrap();
+    let back = reopen_psd_text(&s);
     assert_eq!(back.warp, Some(w));
     assert!(s.execute("type.warpText", json!({"style": "spiral"})).is_err());
     s.execute("type.warpText", json!({"style": "none"})).unwrap();
@@ -252,8 +259,7 @@ fn opentype_toggles_store_features() {
     s.execute("type.openType.fractions", json!({})).unwrap();
     assert!(!feature_on(&st(&s), "frac"));
     // PSD round trip of the toggles.
-    let raw = text(&s, id).psd_raw.clone().unwrap();
-    let back = photocraft_text::psd::text_layer_from_tysh(&raw, 72.0).unwrap();
+    let back = reopen_psd_text(&s);
     assert!(feature_on(&back.char_runs()[0].style, "swsh") && !back.char_runs()[0].style.ligatures);
 }
 

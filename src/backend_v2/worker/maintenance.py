@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import logging
 from pathlib import Path
+import re
 import shutil
 import time
 from typing import Callable
@@ -12,6 +13,7 @@ from typing import Callable
 from sqlalchemy import Engine, delete, exists, func, or_, select, tuple_
 
 from src.backend_v2.browser_extension.retention import cleanup_expired_browser_sessions
+from src.backend_v2.font_matching.config import CACHE_DIRECTORY
 from src.backend_v2.insight.derived import InsightVectorStore
 from src.backend_v2.insight.gc import InsightReachabilityGarbageCollector
 from src.backend_v2.insight.qa import TransientRequestRepository
@@ -30,12 +32,16 @@ from src.backend_v2.storage.schema import (
 )
 from src.backend_v2.timestamps import utcnow
 from src.shared.user_logging import user_log
+from src.storage_migrator.control import reject_links
+from src.storage_migrator.contracts import StorageError
+from src.storage_migrator.paths import filesystem_path
 
 
 LOGGER = logging.getLogger(__name__)
 
 TERMINAL_OPERATION_STATUSES = ("completed", "failed", "cancelled")
 OPERATION_RETENTION = timedelta(days=30)
+FONT_MATCH_CACHE_RETENTION = timedelta(days=30)
 MAINTENANCE_DELETE_LIMIT = 500
 
 
@@ -83,6 +89,7 @@ class WorkerMaintenance:
             ("恢复存储事务", self.storage.recover_journal),
             ("清理导入临时文件", self._prune_import_temp),
             ("清理插件任务临时目录", self._prune_plugin_worktrees),
+            ("清理过期字体匹配缓存", self._prune_font_match_cache),
             ("清理任务历史", self.jobs.prune_history),
             ("清理过期网页漫画任务", self._prune_browser_sessions),
             ("清理过期下载文件", self._prune_expired_artifacts),
@@ -125,6 +132,43 @@ class WorkerMaintenance:
 
     def _prune_browser_sessions(self) -> int:
         return cleanup_expired_browser_sessions(self.engine, data_root=self.data_root)
+
+    def _prune_font_match_cache(self) -> int:
+        root = filesystem_path(self.data_root / CACHE_DIRECTORY)
+        reject_links(root.parent)
+        reject_links(root)
+        if not root.is_dir():
+            return 0
+        cutoff = (utcnow() - FONT_MATCH_CACHE_RETENTION).timestamp()
+        removed = 0
+        for owner in root.iterdir():
+            try:
+                reject_links(owner)
+            except StorageError:
+                continue
+            if not owner.is_dir():
+                continue
+            for kind, suffix in (("samples", ".png"), ("profiles", ".json")):
+                directory = owner / kind
+                try:
+                    reject_links(directory)
+                except StorageError:
+                    continue
+                if not directory.is_dir():
+                    continue
+                for path in directory.glob(f"*{suffix}"):
+                    if not re.fullmatch(r"[0-9a-f]{64}", path.stem):
+                        continue
+                    try:
+                        reject_links(path)
+                        if path.is_file() and path.stat().st_mtime <= cutoff:
+                            path.unlink()
+                            removed += 1
+                    except (FileNotFoundError, StorageError):
+                        continue
+                    if removed == MAINTENANCE_DELETE_LIMIT:
+                        return removed
+        return removed
 
     def _prune_expired_artifacts(self) -> dict[str, int]:
         now = utcnow()

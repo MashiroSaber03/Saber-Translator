@@ -1,5 +1,3 @@
-import * as XLSX from 'xlsx'
-
 export interface TranslationConstraintColumn {
   key: string
   label: string
@@ -28,10 +26,11 @@ export function importRowsFromJson(
   })
 }
 
-export function exportRowsToXlsxBuffer(
+export async function exportRowsToXlsxBuffer(
   rows: TranslationConstraintTableRow[],
   columns: readonly TranslationConstraintColumn[],
-): ArrayBuffer {
+): Promise<ArrayBuffer> {
+  const XLSX = await import('xlsx')
   const data = rows.map(row => {
     const record: Record<string, string> = {}
     for (const column of columns) {
@@ -46,10 +45,11 @@ export function exportRowsToXlsxBuffer(
   return XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
 }
 
-export function importRowsFromXlsxBuffer(
+export async function importRowsFromXlsxBuffer(
   buffer: ArrayBuffer,
   columns: readonly TranslationConstraintColumn[],
-): TranslationConstraintTableRow[] {
+): Promise<TranslationConstraintTableRow[]> {
+  const XLSX = await import('xlsx')
   const workbook = XLSX.read(buffer, { type: 'array' })
   const firstSheetName = workbook.SheetNames[0]
   if (!firstSheetName) {

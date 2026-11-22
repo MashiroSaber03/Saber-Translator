@@ -11,7 +11,7 @@ import uuid
 from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
 from src.shared.constants import DEFAULT_FONT_FAMILY
 from src.shared.path_helpers import resource_path
-from src.storage_migrator.control import reject_links
+from src.storage_migrator.control import reject_links, replace_after_sharing_error
 from src.storage_migrator.paths import filesystem_path
 
 
@@ -200,7 +200,7 @@ def prepare_font_directory(root: Path) -> None:
             for font in bundled_font_files():
                 shutil.copyfile(font.path, staging / font.path.name)
             try:
-                os.rename(staging, shared)
+                replace_after_sharing_error(staging, shared)
             except OSError:
                 # A different process may have installed the same complete directory.
                 reject_links(shared)

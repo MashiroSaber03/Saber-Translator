@@ -10,7 +10,7 @@ from pathlib import Path
 import time
 
 from src.backend_v2.font_matching.decisions import DecisionError, Question, native_score
-from src.backend_v2.font_matching.images import REFERENCE_VERSION, cache_key
+from src.backend_v2.font_matching.images import REFERENCE_VERSION, cache_key, mark_cache_used
 from src.storage_migrator.control import atomic_json
 
 PROTOCOL_VERSION = "m7-1"
@@ -145,9 +145,10 @@ def compare_library(
                             for q in ATTRIBUTE_QUESTIONS
                         )):
                     cached = data
-            except (ValueError, DecisionError):
+            except (FileNotFoundError, ValueError, DecisionError):
                 pass
         if cached is not None:
+            mark_cache_used(path)
             profiles[font_id] = cached
             evidence["cachedProfiles"] += 1
         else:
