@@ -2972,7 +2972,7 @@ class TranslationPipelineService:
                     raise ValueError("render configuration fields are invalid")
                 native_editor = NativeEditor(self.storage)
                 documents = []
-                for (bubble_id, payload, _), render_payload in zip(projected, render_bubbles, strict=True):
+                for (bubble_id, _, _), render_payload in zip(projected, render_bubbles, strict=True):
                     value = dict(render_payload)
                     value.pop("fontFamily")
                     documents.append(dict(bubbleId=bubble_id, fontId=task_font_id if has_task_text_style else font_ids.get(bubble_id), payload=value))
@@ -2981,8 +2981,12 @@ class TranslationPipelineService:
                     with BytesIO() as output:
                         clean.save(output, format="PNG")
                         background = output.getvalue()
-                with self.engine.connect() as connection:
-                    native_result = native_editor.prepare(connection, page_id, documents=documents, render=True, background=background)
+                stored_documents = [dict(bubbleId=bubble_id, fontId=font_ids.get(bubble_id), payload=payload)
+                                    for bubble_id, payload in zip(snapshot.bubble_ids, snapshot.bubbles, strict=True)]
+                fields = native_editor.changed_fields(stored_documents, documents)
+                with read_transaction(self.engine) as connection:
+                    native_result = native_editor.prepare(connection, page_id, documents=documents, render=True,
+                                                          background=background, fields=fields)
                 rendered = native_result.translated
                 rendered_size = (native_result.width, native_result.height)
             else:

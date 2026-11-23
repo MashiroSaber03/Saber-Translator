@@ -126,16 +126,32 @@ class NativeEditor:
 
     def prepare_commit(self, connection, page_id, revision, documents, *, fields=None, **producer):
         """Prepare under a read snapshot; return the existing transaction's publisher."""
-        def native_values(items):
-            return [(item["bubbleId"], item["fontId"],
-                     {key: item["payload"].get(key) for key in NATIVE_BUBBLE_FIELDS}) for item in items]
-
-        explicit = any(set(keys).intersection(NATIVE_BUBBLE_FIELDS | {"fontId"})
-                       for keys in (fields or {}).values())
-        if not explicit and native_values(documents) == native_values(self.page_bubbles(connection, page_id)):
+        stored = self.page_bubbles(connection, page_id)
+        changes = self.changed_fields(stored, documents)
+        for bubble_id, keys in (fields or {}).items():
+            if bubble_id in changes:
+                changes[bubble_id].update(set(keys) & (NATIVE_BUBBLE_FIELDS | {"fontId"}))
+        if (not any(changes.values())
+                and [item["bubbleId"] for item in stored] == [item["bubbleId"] for item in documents]):
             return lambda writer: self._publish_bubbles(writer, page_id, revision, documents)
-        result = self.prepare(connection, page_id, documents=documents, fields=fields)
+        result = self.prepare(connection, page_id, documents=documents, fields=changes)
         return lambda writer: self.publish(writer, page_id, revision, result, **producer)
+
+    @staticmethod
+    def changed_fields(stored, documents):
+        """Identify what a producer changed relative to its stored input."""
+        previous = {item["bubbleId"]: item for item in stored}
+        changes = {}
+        for item in documents:
+            bubble_id = item["bubbleId"]
+            if bubble_id not in previous:
+                continue
+            old = previous[bubble_id]
+            changes[bubble_id] = {key for key in NATIVE_BUBBLE_FIELDS
+                                  if item["payload"].get(key) != old["payload"].get(key)}
+            if item["fontId"] != old["fontId"]:
+                changes[bubble_id].add("fontId")
+        return changes
 
     @staticmethod
     def invoke(request: dict) -> dict:
@@ -219,7 +235,7 @@ class NativeEditor:
 
     def _legacy_typography(self, connection, item, previous, default_font, fields):
         """Materialize pre-native spacing once as ordinary paragraph data."""
-        old = previous.get(item["bubbleId"], {}).get("payload", {})
+        old = previous.get(item.get("sourceBubbleId", item["bubbleId"]), {}).get("payload", {})
         if old.get("richText") is not None or not old.get("translatedText"):
             return item
         item = deepcopy(item)
@@ -300,9 +316,21 @@ class NativeEditor:
                 else:
                     request["base"] = str(root / "background.png")
             if documents is not None:
-                request["bubbles"] = [{**item, "fontId": item["fontId"] or page["default_font_id"],
-                                       "fields": sorted((fields or {}).get(item["bubbleId"], []))}
-                                      for item in documents]
+                request["bubbles"] = []
+                for item in documents:
+                    bubble_id = item["bubbleId"]
+                    keys = fields.get(bubble_id) if fields is not None else None
+                    patch = (current is not None and legacy != "text"
+                             and keys is not None and not item.get("replace"))
+                    selected = keys & NATIVE_BUBBLE_FIELDS if patch else NATIVE_BUBBLE_FIELDS
+                    spec = dict(bubbleId=bubble_id,
+                                payload={key: value for key, value in item["payload"].items() if key in selected},
+                                fields=sorted(keys or ()))
+                    if not patch or "fontId" in keys:
+                        spec["fontId"] = item["fontId"] or page["default_font_id"]
+                    if current is not None and "sourceBubbleId" in item:
+                        spec["sourceBubbleId"] = item["sourceBubbleId"]
+                    request["bubbles"].append(spec)
             if uploaded is None and (current is None or legacy or mask_override is not None):
                 request["userMask"] = str(pointers["user_mask"]) if "user_mask" in pointers else None
                 if mask_override is not None:

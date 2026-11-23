@@ -2237,8 +2237,9 @@ def test_translation_applies_extracted_colors_only_when_auto_color_is_enabled(
     assert payload["fillColor"] == "#F5F6F7"
 
 
+@pytest.mark.parametrize("stale_color", [False, True])
 def test_style_apply_auto_modes_keep_target_manual_fallbacks_and_publish(
-    translation_platform,
+    translation_platform, stale_color,
 ) -> None:
     platform = translation_platform
     content = ContentRepository(platform["engine"])
@@ -2274,7 +2275,7 @@ def test_style_apply_auto_modes_keep_target_manual_fallbacks_and_publish(
     )
     target_payload.update(
         {
-            "translatedText": "",
+            "translatedText": "目标页自动样式",
             "fontSize": 41,
             "textColor": "#445566",
             "fillColor": "#778899",
@@ -2283,7 +2284,7 @@ def test_style_apply_auto_modes_keep_target_manual_fallbacks_and_publish(
         }
     )
     target_payload.pop("autoTextDirection")
-    target_created, _ = content.mutate_page_document(
+    created, _ = content.mutate_page_document(
         page_id=target_page_id,
         base_revision=1,
         mutations=[
@@ -2302,16 +2303,13 @@ def test_style_apply_auto_modes_keep_target_manual_fallbacks_and_publish(
             "fillColor": "#AABBCC",
         },
     )
-    target_bubble_id = target_created["mutationResults"][0]["bubbleId"]
-    target_payload["translatedText"] = "目标页自动样式"
-    target_payload["autoTextDirection"] = "vertical"
-    with platform["engine"].begin() as connection:
-        connection.execute(
-            update(bubbles)
-            .where(bubbles.c.id == target_bubble_id)
-            .values(payload_json=json.dumps(target_payload))
-        )
-
+    if stale_color:
+        bubble = created["document"]["bubbles"][0]
+        with platform["engine"].begin() as connection:
+            connection.execute(
+                update(bubbles).where(bubbles.c.id == bubble["bubbleId"])
+                .values(payload_json=json.dumps({**bubble["payload"], "textColor": "#da00c7"}))
+            )
     AuxiliaryTranslationCommands(platform["engine"], profile=LOCAL_PROFILE).create_style_apply_job(
         chapter_id=str(platform["chapter"]["id"]),
         source_page_id=source_page_id,
@@ -2373,7 +2371,7 @@ def test_text_import_render_preserves_materialized_auto_styles_and_publishes(
     payload.update(
         {
             "originalText": "原文",
-            "translatedText": "",
+            "translatedText": "旧译文",
             "fontSize": 47,
             "textColor": "#123456",
             "fillColor": "#654321",
@@ -2382,7 +2380,7 @@ def test_text_import_render_preserves_materialized_auto_styles_and_publishes(
         }
     )
     payload.pop("autoTextDirection")
-    created, _ = content.mutate_page_document(
+    content.mutate_page_document(
         page_id=page_id,
         base_revision=1,
         mutations=[
@@ -2408,16 +2406,6 @@ def test_text_import_render_preserves_materialized_auto_styles_and_publishes(
             "useAutoTextColor": True,
         },
     )
-    bubble_id = created["mutationResults"][0]["bubbleId"]
-    payload["translatedText"] = "旧译文"
-    payload["autoTextDirection"] = "vertical"
-    with platform["engine"].begin() as connection:
-        connection.execute(
-            update(bubbles)
-            .where(bubbles.c.id == bubble_id)
-            .values(payload_json=json.dumps(payload))
-        )
-
     commands = AuxiliaryTranslationCommands(platform["engine"], profile=LOCAL_PROFILE)
     exported = commands.export_text(str(platform["chapter"]["id"]))
     imported = json.loads(json.dumps(exported))

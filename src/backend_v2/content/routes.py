@@ -354,10 +354,10 @@ def create_content_blueprint(
 
         public_access.require_feature("editMode")
         with read_transaction(engine) as connection:
-            document = repository._get_page_document(connection, page_id)
+            revision = repository._page_document_revision(connection, page_id)
             payload = NativeEditor(repository.storage).read_document(connection, page_id)
         response = Response(payload, mimetype="application/x-photocraft")
-        response.headers["X-Document-Revision"] = str(document["documentRevision"])
+        response.headers["X-Document-Revision"] = str(revision)
         response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -381,7 +381,7 @@ def create_content_blueprint(
 
         public_access.require_feature("editMode")
         with read_transaction(engine) as connection:
-            repository._get_page_document(connection, page_id)
+            repository._page_document_revision(connection, page_id)
             payload = NativeEditor(storage).export_psd(connection, page_id)
         return send_file(BytesIO(payload), mimetype="image/vnd.adobe.photoshop", as_attachment=True,
                          download_name=_asset_download_name(request.args.get("filename"), asset_id=page_id, suffix=".psd"), max_age=0)
@@ -422,7 +422,6 @@ def create_content_blueprint(
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("editor document is required")
-        repository.get_page_document(page_id)
         payload = upload.stream.read(128 * 1024 * 1024 + 1)
         if not payload or len(payload) > 128 * 1024 * 1024:
             raise ValueError("编辑文档为空或超过 128 MiB")

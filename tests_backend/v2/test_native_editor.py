@@ -711,6 +711,22 @@ def _pre_native_page(platform, direction):
     return page, bubble['bubbleId'], payload
 
 
+def test_first_edit_can_duplicate_a_legacy_text_box(content_platform):
+    page, source, fields = _pre_native_page(content_platform, 'vertical')
+    fields.pop('autoTextDirection')
+    fields['coords'] = [value + 5 for value in fields['coords']]
+    result, _ = content_platform[2].mutate_page_document(
+        page_id=page, base_revision=2, idempotency_key='duplicate-legacy',
+        mutations=[dict(op='create', clientMutationId='copy', sourceBubbleId=source, fields=fields)],
+    )
+    original, copy = result['document']['bubbles']
+    assert original['bubbleId'] == source
+    assert copy['bubbleId'] == result['mutationResults'][0]['bubbleId']
+    assert copy['payload']['translatedText'] == original['payload']['translatedText']
+    assert copy['payload']['richText'] == original['payload']['richText']
+    assert copy['payload']['coords'] == fields['coords']
+
+
 @pytest.mark.parametrize('direction', ['horizontal', 'vertical'])
 def test_pre_native_sidebar_fit_uses_the_same_prepared_typography_as_ordinary_fit(content_platform, direction):
     page, bubble, payload = _pre_native_page(content_platform, direction)
@@ -992,6 +1008,119 @@ def test_render_reads_native_text_and_does_not_republish_the_document_or_project
     assert _project_asset(content_platform, page) == before
     with engine.connect() as conn:
         assert json.loads(conn.execute(select(bubbles.c.payload_json).where(bubbles.c.page_id == page)).scalar_one()) == payload
+
+
+@pytest.mark.parametrize('entry', ['ordinary', 'sidebar', 'task'])
+def test_native_save_ignores_unedited_cached_styles_and_geometry(content_platform, entry):
+    page, document, _, fonts = _text_page(content_platform)
+    _, engine, repository, storage, *_ = content_platform
+    original = document['bubbles'][0]
+    bubble_id, revision = original['bubbleId'], document['documentRevision']
+    native = original['payload']
+    stale = json.loads(json.dumps(native))
+    stale.update(translatedText='WXYZ', fontSize=77, coords=[30, 40, 145, 166], position={'x': 9, 'y': 7},
+                 strokeEnabled=not native['strokeEnabled'], originalText='保留 OCR 原文')
+    stale['richText']['runs'][0]['style']['size_pt'] = 77
+    stale_font = next(font['id'] for font in fonts if font['id'] != original['fontId'])
+    with engine.begin() as connection:
+        connection.execute(update(bubbles).where(bubbles.c.id == bubble_id)
+                           .values(font_id=stale_font, payload_json=json.dumps(stale)))
+
+    if entry == 'ordinary':
+        repository.mutate_page_document(page_id=page, base_revision=revision, idempotency_key='rotate-only',
+            mutations=[dict(op='patch', clientMutationId='rotate', bubbleId=bubble_id, fields={'rotationAngle': 5})])
+    elif entry == 'sidebar':
+        repository.mutate_page_document(page_id=page, base_revision=revision, idempotency_key='page-style',
+            mutations=[], page_style_defaults_patch={'blockAlign': 'end'}, propagate_style_fields=['blockAlign'])
+    else:
+        editor = NativeEditor(storage)
+        with engine.connect() as connection:
+            documents = editor.page_bubbles(connection, page)
+            documents[0]['payload']['strokeWidth'] = 6
+            publish = editor.prepare_commit(connection, page, revision + 1, documents)
+        with engine.begin() as connection:
+            publish(connection)
+            connection.execute(update(pages).where(pages.c.id == page).values(document_revision=revision + 1))
+
+    bubble = repository.get_page_document(page)['bubbles'][0]
+    assert bubble['fontId'] == original['fontId']
+    saved = bubble['payload']
+    with engine.connect() as connection:
+        rendered = NativeEditor(storage).prepare(connection, page, render=True).bubbles[0]['payload']
+    for key in NATIVE_BUBBLE_FIELDS:
+        assert saved[key] == rendered[key], key
+    for key in ('translatedText', 'fontSize', 'richText', 'coords', 'position', 'strokeEnabled'):
+        assert saved[key] == native[key], key
+    assert saved['originalText'] == '保留 OCR 原文'
+    if entry == 'ordinary':
+        assert saved['rotationAngle'] == pytest.approx(5)
+    elif entry == 'sidebar':
+        assert saved['blockAlign'] == 'end'
+    else:
+        assert saved['strokeWidth'] == 6
+
+
+@pytest.mark.parametrize('export_format', ['saber', 'labelplus'])
+def test_text_export_keeps_one_snapshot_during_a_concurrent_edit(content_platform, export_format):
+    from src.backend_v2.runtime_profile import resolve_runtime_profile
+    from src.backend_v2.translation.auxiliary import AuxiliaryTranslationCommands
+
+    page_id, document, _, _ = _text_page(content_platform)
+    _, engine, repository, _, _, _, chapter = content_platform
+    exporter = AuxiliaryTranslationCommands(engine, profile=resolve_runtime_profile('local'))
+    revision = document['documentRevision']
+    committed = False
+
+    def commit_before_bubble_read(_conn, _cursor, statement, _parameters, _context, _many):
+        nonlocal committed
+        if committed or 'FROM bubbles JOIN pages' not in statement:
+            return
+        committed = True
+        repository.mutate_page_document(page_id=page_id, base_revision=revision, idempotency_key='during-export',
+            mutations=[dict(op='patch', clientMutationId='new-text', bubbleId=document['bubbles'][0]['bubbleId'],
+                            fields={'translatedText': 'new text'})])
+
+    event.listen(engine, 'before_cursor_execute', commit_before_bubble_read)
+    try:
+        if export_format == 'saber':
+            exported = exporter.export_text(chapter['id'])['pages'][0]
+            assert exported['document_revision'] == revision
+            assert exported['bubbles'][0]['translated_text'] == 'ABCD'
+        else:
+            exported = exporter.export_labelplus(chapter['id'])
+            assert 'ABCD' in exported
+            assert 'new text' not in exported
+    finally:
+        event.remove(engine, 'before_cursor_execute', commit_before_bubble_read)
+
+    assert committed
+    current = repository.get_page_document(page_id)
+    assert current['documentRevision'] == revision + 1
+    assert current['bubbles'][0]['payload']['translatedText'] == 'new text'
+
+
+def test_editor_document_and_psd_download_skip_the_cached_bubbles(content_platform):
+    page, document, _, _ = _text_page(content_platform)
+    data_root, engine, *_ = content_platform
+    app = create_api_app(ApiSettings(data_root=data_root, engine=engine,
+        identity=RuntimeIdentity(epoch_id='editor-download', epoch_token='test', test_mode=True)))
+    statements = []
+
+    def record(_conn, _cursor, statement, _parameters, _context, _many):
+        statements.append(statement)
+
+    event.listen(engine, 'before_cursor_execute', record)
+    try:
+        client = app.test_client()
+        editor = client.get(f'/api/v2/pages/{page}/editor-document')
+        psd = client.get(f'/api/v2/pages/{page}/export.psd')
+        assert editor.status_code == psd.status_code == 200
+        assert editor.headers['X-Document-Revision'] == str(document['documentRevision'])
+        assert psd.data.startswith(b'8BPS')
+        assert not any('FROM bubbles' in statement for statement in statements)
+    finally:
+        event.remove(engine, 'before_cursor_execute', record)
+        app.extensions['saber_v2_runtime'].close()
 
 
 def test_editor_read_uses_one_snapshot_for_revision_and_file(content_platform, tmp_path, monkeypatch):

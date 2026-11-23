@@ -224,10 +224,6 @@ fn active(session: &Session) -> Result<&Document> {
     session.active().map(|st| st.doc.as_ref()).ok_or_else(|| "没有打开的页面".into())
 }
 
-fn number(v: &Value, key: &str, fallback: f64) -> f64 {
-    v.get(key).and_then(Value::as_f64).unwrap_or(fallback)
-}
-
 // Text, character runs and block alignment live only in native layers.
 // Disabled stroke preferences still need to survive here.
 fn text_entry(bubble: &Value) -> Value {
@@ -276,7 +272,7 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
     let mut entries = serde_json::Map::new();
     for bubble in bubbles {
         let id = bubble.get("bubbleId").and_then(Value::as_str).ok_or("缺少文字对象 ID")?;
-        let payload = bubble.get("payload").ok_or("缺少文字数据")?;
+        let incoming = bubble.get("payload").and_then(Value::as_object).ok_or("缺少文字数据")?;
         let source = bubble.get("sourceBubbleId").and_then(Value::as_str);
         let prior = previous.get(id).or_else(|| source.and_then(|id| previous.get(id)));
         let mut existing =
@@ -287,16 +283,23 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
                 "name":format!("译文 {}", entries.len()+1)})).map_err(|e| e.to_string())?
                 .get("layer").and_then(Value::as_u64).ok_or("无法复制文字层")?);
         }
-        let coords = payload.get("coords").and_then(Value::as_array).filter(|v| v.len() == 4).ok_or("无效的文本框")?;
+        let old = prior.and_then(|v| v.get("payload")).unwrap_or(&Value::Null);
+        // Sparse host edits take all other values from the current native layer.
+        let value = |key: &str| incoming.get(key).or_else(|| old.get(key));
+        let number = |key, fallback| value(key).and_then(Value::as_f64).unwrap_or(fallback);
+        let coords = value("coords").and_then(Value::as_array).filter(|v| v.len() == 4).ok_or("无效的文本框")?;
         let at = |i: usize| coords.get(i).and_then(Value::as_f64).unwrap_or(0.0);
-        let x = at(0) + payload.pointer("/position/x").and_then(Value::as_f64).unwrap_or(0.0);
-        let y = at(1) + payload.pointer("/position/y").and_then(Value::as_f64).unwrap_or(0.0);
+        let offset = |axis: &str| value("position").and_then(|pos| pos.get(axis)).and_then(Value::as_f64).unwrap_or(0.0);
+        let x = at(0) + offset("x");
+        let y = at(1) + offset("y");
         let w = (at(2) - at(0)).max(1.0);
         let h = (at(3) - at(1)).max(1.0);
-        let font_id = bubble.get("fontId").and_then(Value::as_str).unwrap_or("");
+        let prior_font = prior.and_then(|v| v.get("fontId"));
+        let font_value = bubble.get("fontId").or(prior_font);
+        let font_id = font_value.and_then(Value::as_str).unwrap_or("");
         let font = fonts.get(font_id).or_else(|| fonts.get("__default")).unwrap_or(&Value::Null);
         let family = font_family(font).unwrap_or("Inter");
-        let text = payload.get("translatedText").and_then(Value::as_str).unwrap_or("");
+        let text = value("translatedText").and_then(Value::as_str).unwrap_or("");
         let layer = if let Some(layer) = existing {
             layer
         } else {
@@ -304,8 +307,8 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
                 .execute(
                     "type.create",
                     json!({"text":text,"box":[x,y,w,h],"font":family,
-                "size":number(payload,"fontSize",24.0),"color":payload.get("textColor").cloned().unwrap_or(json!("#000000")),
-                "orientation":payload.get("textDirection").cloned().unwrap_or(json!("horizontal")),
+                "size":number("fontSize",24.0),"color":value("textColor").cloned().unwrap_or(json!("#000000")),
+                "orientation":value("textDirection").cloned().unwrap_or(json!("horizontal")),
                 "name":format!("译文 {}", entries.len()+1)}),
                 )
                 .map_err(|e| e.to_string())?
@@ -313,11 +316,10 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
                 .and_then(Value::as_u64)
                 .ok_or("无法建立文字层")?
         };
-        let old = prior.and_then(|v| v.get("payload")).unwrap_or(&Value::Null);
         let requested = |key: &str| bubble.get("fields").and_then(Value::as_array)
             .is_some_and(|fields| fields.iter().any(|field| field.as_str() == Some(key)));
-        let changed = |key: &str| requested(key) || old.get(key) != payload.get(key);
-        if changed("translatedText") && existing.is_some() {
+        let changed = |key: &str| requested(key) || old.get(key) != value(key);
+        if old.get("translatedText") != value("translatedText") && existing.is_some() {
             // Reuse the engine's range edit so unchanged characters keep their styles.
             let before = old.get("translatedText").and_then(Value::as_str).unwrap_or("");
             let prefix = before.chars().zip(text.chars()).take_while(|(a, b)| a == b).count();
@@ -326,7 +328,7 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
             let inserted: String = text.chars().skip(prefix).take(new_len - prefix - suffix).collect();
             session.execute("type.edit", json!({"layer":layer,"replace":{"start":prefix,"end":old_len-suffix,"text":inserted}})).map_err(|e| e.to_string())?;
         }
-        let rich = payload.get("richText").filter(|v| !v.is_null());
+        let rich = value("richText").filter(|v| !v.is_null());
         if (changed("richText") || existing.is_none())
             && let Some(rich) = rich
         {
@@ -347,11 +349,10 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
         let mut style = json!({"layer":layer});
         for (field, param) in [("fontSize", "size"), ("textColor", "color")] {
             if changed(field) && (existing.is_some() || rich.is_none()) {
-                style[param] = payload.get(field).cloned().unwrap_or(Value::Null);
+                style[param] = value(field).cloned().unwrap_or(Value::Null);
             }
         }
-        let font_changed = requested("fontId")
-            || prior.and_then(|v| v.get("fontId")) != bubble.get("fontId");
+        let font_changed = requested("fontId") || prior_font != font_value;
         // A document patch may restore the font ID and its exact character runs together.
         let keep_rich_faces = rich.is_some() && (existing.is_none() || requested("richText"));
         if font_changed && !keep_rich_faces {
@@ -390,7 +391,7 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
             let (ox, oy) = (prior_at(0, x), prior_at(1, y));
             let (ow, oh) = ((prior_at(2, x + w) - ox).max(1.0), (prior_at(3, y + h) - oy).max(1.0));
             let resized = w != ow || h != oh;
-            let angle = (number(payload, "rotationAngle", 0.0) - m[1].atan2(m[0]).to_degrees()).to_radians();
+            let angle = (number("rotationAngle", 0.0) - m[1].atan2(m[0]).to_degrees()).to_radians();
             let (sin, cos) = angle.sin_cos();
             let (a, b, c, d) = (m[0], m[1], m[2], m[3]);
             m[0] = cos * a - sin * b;
@@ -426,7 +427,7 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
             session.execute("type.edit", params).map_err(|e| e.to_string())?;
         }
         if changed("textDirection") || existing.is_none() {
-            let command = if payload.get("textDirection").and_then(Value::as_str) == Some("vertical") {
+            let command = if value("textDirection").and_then(Value::as_str) == Some("vertical") {
                 "type.orientation.vertical"
             } else {
                 "type.orientation.horizontal"
@@ -434,7 +435,7 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
             session.execute(command, json!({"layer":layer})).map_err(|e| e.to_string())?;
         }
         if changed("inlineAlign") && (existing.is_some() || rich.is_none()) {
-            let align = match payload.get("inlineAlign").and_then(Value::as_str) {
+            let align = match value("inlineAlign").and_then(Value::as_str) {
                 Some("start") => "left",
                 Some("end") => "right",
                 _ => "center",
@@ -442,7 +443,7 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
             session.execute("type.setStyle", json!({"layer":layer,"align":align})).map_err(|e| e.to_string())?;
         }
         if changed("lineSpacing") && (existing.is_some() || rich.is_none()) {
-            let spacing = number(payload, "lineSpacing", 1.0) as f32;
+            let spacing = number("lineSpacing", 1.0) as f32;
             session
                 .edit("行间距", |doc, _| {
                     if let Some(Layer { content: LayerContent::Text(t), .. }) = doc.layer_mut(LayerId(layer)) {
@@ -464,7 +465,7 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
             session
                 .edit("文本块位置", |doc, _| {
                     if let Some(Layer { content: LayerContent::Text(t), .. }) = doc.layer_mut(LayerId(layer)) {
-                        t.block_align = block_align(payload.get("blockAlign").and_then(Value::as_str).unwrap_or("start"));
+                        t.block_align = block_align(value("blockAlign").and_then(Value::as_str).unwrap_or("start"));
                         t.cache = None;
                     }
                     Ok(())
@@ -482,19 +483,25 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
             for i in indices.into_iter().rev() {
                 session.execute("layer.layerStyle.clear", json!({"layer":layer,"effect":i})).map_err(|e| e.to_string())?;
             }
-            if payload.get("strokeEnabled").and_then(Value::as_bool) == Some(true) {
+            if value("strokeEnabled").and_then(Value::as_bool) == Some(true) {
                 session
                     .execute(
                         "layer.layerStyle.stroke",
-                        json!({"layer":layer,"size":number(payload,"strokeWidth",1.0),
-                    "color":payload.get("strokeColor"),"position":"outside"}),
+                        json!({"layer":layer,"size":number("strokeWidth",1.0),
+                    "color":value("strokeColor"),"position":"outside"}),
                     )
                     .map_err(|e| e.to_string())?;
             }
         }
-        let mut entry = bubble.clone();
+        let mut entry = text_entry(bubble);
         entry["layer"] = json!(layer);
-        entries.insert(id.into(), text_entry(&entry));
+        entry["fontId"] = json!(font_value);
+        for key in ["strokeColor", "strokeWidth"] {
+            if let Some(preference) = value(key) {
+                entry["payload"][key] = preference.clone();
+            }
+        }
+        entries.insert(id.into(), entry);
     }
     {
         for (id, entry) in &previous {

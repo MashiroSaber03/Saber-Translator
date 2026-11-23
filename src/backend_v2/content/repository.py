@@ -1913,31 +1913,6 @@ class ContentRepository:
         style_patch = validate_page_style(style_patch, partial=True)
         if len(propagation) != len(set(propagation)):
             raise ValueError("propagateStyleFields must contain unique fields")
-        allowed_propagation = frozenset(
-            {
-                "fontSize",
-                "fontFamily",
-                "layoutDirection",
-                "textColor",
-                "fillColor",
-                "strokeEnabled",
-                "strokeColor",
-                "strokeWidth",
-                "lineSpacing",
-                "inlineAlign",
-                "blockAlign",
-            }
-        )
-        unknown_propagation = set(propagation) - allowed_propagation
-        if unknown_propagation:
-            raise ValueError(
-                "unknown propagateStyleFields: "
-                + ", ".join(sorted(unknown_propagation))
-            )
-        if "fontFamily" in propagation and default_font_id is _MISSING:
-            raise ValueError(
-                "fontFamily propagation requires defaultFontId"
-            )
         propagated_bubble_fields = {
             "fontSize": "fontSize",
             "fontFamily": "fontId",
@@ -1951,6 +1926,16 @@ class ContentRepository:
             "inlineAlign": "inlineAlign",
             "blockAlign": "blockAlign",
         }
+        unknown_propagation = set(propagation).difference(propagated_bubble_fields)
+        if unknown_propagation:
+            raise ValueError(
+                "unknown propagateStyleFields: "
+                + ", ".join(sorted(unknown_propagation))
+            )
+        if "fontFamily" in propagation and default_font_id is _MISSING:
+            raise ValueError(
+                "fontFamily propagation requires defaultFontId"
+            )
         propagated_targets = {
             propagated_bubble_fields[field] for field in propagation
         }
@@ -2146,7 +2131,7 @@ class ContentRepository:
             }
             order = [str(row["id"]) for row in existing_rows]
             mutation_results: list[dict[str, str]] = []
-            native_fields: dict[str, set[str]] = {}
+            native_fields: dict[str, set[str]] = {bubble_id: set() for bubble_id in documents}
             renderable_change = False
             validated_font_ids: set[str] = set()
 
@@ -2266,6 +2251,7 @@ class ContentRepository:
                     renderable_change = renderable_change or bool(set(fields).intersection(NATIVE_BUBBLE_FIELDS | {"fontId"}))
                 if operation == "reset":
                     current["payload"] = payload_fields
+                    current["replace"] = True
                 else:
                     current_payload = dict(before_payload)
                     current_payload.update(payload_fields)
@@ -2301,65 +2287,37 @@ class ContentRepository:
                 )
                 for document in documents.values():
                     payload = dict(document["payload"])  # type: ignore[arg-type]
-                    requested = {"fontId" if field == "fontFamily" else "textDirection" if field == "layoutDirection" else field
-                                 for field in propagation}
-                    native_fields.setdefault(str(document["bubbleId"]), set()).update(requested)
-                    renderable_change = renderable_change or bool(requested.intersection(NATIVE_BUBBLE_FIELDS | {"fontId"}))
+                    requested = set(propagated_targets)
                     for field in propagation_order:
                         if field not in propagation:
                             continue
                         if field == "fontFamily":
-                            value = default_font_id
-                            if document["fontId"] != value:
-                                renderable_change = True
-                            document["fontId"] = value
-                            continue
-                        if field == "layoutDirection":
+                            document["fontId"] = default_font_id
+                        elif field == "layoutDirection":
                             value = current_style[field]
-                            direction = (
+                            payload["textDirection"] = (
                                 payload["autoTextDirection"]
                                 if value == "auto"
                                 else value
                             )
-                            if payload["textDirection"] != direction:
-                                renderable_change = True
-                            payload["textDirection"] = direction
                         elif field in {"textColor", "fillColor"}:
-                            materialized: object | None = None
                             if bool(current_style["useAutoTextColor"]):
-                                automatic_field = (
-                                    "autoFgColor"
-                                    if field == "textColor"
-                                    else "autoBgColor"
-                                )
+                                automatic_field = "autoFgColor" if field == "textColor" else "autoBgColor"
                                 automatic = payload[automatic_field]
                                 if automatic is not None:
-                                    materialized = rgb_to_hex(automatic)
-                            elif field in style_patch:
-                                materialized = current_style[field]
-                            if (
-                                materialized is not None
-                                and payload.get(field) != materialized
-                            ):
-                                if field == "textColor":
-                                    renderable_change = True
-                                payload[field] = materialized
-                        elif field == "fontSize":
-                            if current_style["autoFontSize"]:
-                                if payload["translatedText"].strip(): auto_fit_ids.append(document["bubbleId"])
+                                    payload[field] = rgb_to_hex(automatic)
+                                else:
+                                    requested.discard(field)
                             else:
-                                value = current_style["fontSize"]
-                                if payload["fontSize"] != value:
-                                    renderable_change = True
-                                payload["fontSize"] = value
+                                payload[field] = current_style[field]
+                        elif field == "fontSize" and current_style["autoFontSize"]:
+                            if payload["translatedText"].strip():
+                                auto_fit_ids.append(document["bubbleId"])
                         else:
-                            value = current_style[field]
-                            if (
-                                field != "fillColor"
-                                and payload.get(field) != value
-                            ):
-                                renderable_change = True
-                            payload[field] = value
+                            payload[field] = current_style[field]
+                    if document["bubbleId"] in native_fields:
+                        native_fields[document["bubbleId"]].update(requested)
+                    renderable_change = renderable_change or bool(requested.intersection(NATIVE_BUBBLE_FIELDS | {"fontId"}))
                     document["payload"] = payload
 
             if auto_fit_ids:
@@ -2370,9 +2328,9 @@ class ContentRepository:
                     documents=[{**document, "fontId": document["fontId"] or default_id} for document in documents.values()],
                     fields=native_fields)
                 for item in fitted:
-                    id, calculated = item["bubbleId"], item["fontSize"]
-                    renderable_change |= documents[id]["payload"]["fontSize"] != calculated
-                    documents[id]["payload"]["fontSize"] = calculated
+                    bubble_id, calculated = item["bubbleId"], item["fontSize"]
+                    renderable_change |= documents[bubble_id]["payload"]["fontSize"] != calculated
+                    documents[bubble_id]["payload"]["fontSize"] = calculated
 
             for document in documents.values():
                 document["payload"] = validate_bubble_payload(
@@ -2495,6 +2453,15 @@ class ContentRepository:
                 )
             )
         return result, False
+
+    @staticmethod
+    def _page_document_revision(connection: Any, page_id: str) -> int:
+        revision = connection.execute(
+            select(pages.c.document_revision).where(pages.c.id == page_id)
+        ).scalar_one_or_none()
+        if revision is None:
+            raise ContentNotFound("page not found")
+        return revision
 
     @staticmethod
     def _get_page_document(

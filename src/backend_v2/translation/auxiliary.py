@@ -347,78 +347,12 @@ class AuxiliaryTranslationCommands:
             },
         )
 
-    def export_text(self, chapter_id: str) -> dict[str, object]:
-        with self.engine.connect() as connection:
-            chapter = connection.execute(
+    def _text_export_snapshot(self, chapter_id: str):
+        with read_transaction(self.engine) as connection:
+            book_id = connection.execute(
                 select(chapters.c.book_id).where(chapters.c.id == chapter_id)
-            ).mappings().one_or_none()
-            if chapter is None:
-                raise ValueError("chapter not found")
-            page_rows = list(
-                connection.execute(
-                    select(
-                        pages.c.id,
-                        pages.c.ordinal,
-                        pages.c.document_revision,
-                        assets.c.checksum,
-                    )
-                    .join(
-                        page_assets,
-                        (page_assets.c.page_id == pages.c.id)
-                        & (page_assets.c.role == "source"),
-                    )
-                    .join(assets, assets.c.id == page_assets.c.asset_id)
-                    .where(pages.c.chapter_id == chapter_id)
-                    .order_by(pages.c.ordinal)
-                ).mappings()
-            )
-            bubble_rows_by_page: dict[str, list[Mapping[str, Any]]] = {}
-            for row in connection.execute(
-                select(
-                    bubbles,
-                    pages.c.document_revision.label(
-                        "page_document_revision"
-                    ),
-                )
-                .join(pages, pages.c.id == bubbles.c.page_id)
-                .where(pages.c.chapter_id == chapter_id)
-                .order_by(pages.c.ordinal, bubbles.c.ordinal)
-            ).mappings():
-                bubble_rows_by_page.setdefault(str(row["page_id"]), []).append(
-                    row
-                )
-            exported_pages: list[dict[str, object]] = []
-            for page in page_rows:
-                exported_pages.append(
-                    {
-                        "page_id": page["id"],
-                        "page_number": page["ordinal"],
-                        "source_checksum": page["checksum"],
-                        "document_revision": page["document_revision"],
-                        "bubbles": [
-                            self._text_bubble(row)
-                            for row in bubble_rows_by_page.get(
-                                str(page["id"]),
-                                (),
-                            )
-                        ],
-                    }
-                )
-        from datetime import datetime, timezone
-
-        return {
-            "book_id": chapter["book_id"],
-            "chapter_id": chapter_id,
-            "exported_at": datetime.now(timezone.utc).isoformat(),
-            "pages": exported_pages,
-        }
-
-    def export_labelplus(self, chapter_id: str) -> str:
-        with self.engine.connect() as connection:
-            chapter_exists = connection.execute(
-                select(chapters.c.id).where(chapters.c.id == chapter_id)
             ).scalar_one_or_none()
-            if chapter_exists is None:
+            if book_id is None:
                 raise ValueError("chapter not found")
             page_rows = list(
                 connection.execute(
@@ -427,6 +361,7 @@ class AuxiliaryTranslationCommands:
                         pages.c.ordinal,
                         pages.c.logical_source_path,
                         pages.c.document_revision,
+                        assets.c.checksum,
                         assets.c.width,
                         assets.c.height,
                     )
@@ -442,20 +377,39 @@ class AuxiliaryTranslationCommands:
             )
             bubble_rows_by_page: dict[str, list[Mapping[str, Any]]] = {}
             for row in connection.execute(
-                select(
-                    bubbles,
-                    pages.c.document_revision.label(
-                        "page_document_revision"
-                    ),
-                )
+                select(bubbles)
                 .join(pages, pages.c.id == bubbles.c.page_id)
                 .where(pages.c.chapter_id == chapter_id)
                 .order_by(pages.c.ordinal, bubbles.c.ordinal)
             ).mappings():
-                bubble_rows_by_page.setdefault(str(row["page_id"]), []).append(
-                    row
-                )
+                bubble_rows_by_page.setdefault(str(row["page_id"]), []).append(row)
+        return book_id, page_rows, bubble_rows_by_page
 
+    def export_text(self, chapter_id: str) -> dict[str, object]:
+        from datetime import datetime, timezone
+
+        book_id, page_rows, bubble_rows_by_page = self._text_export_snapshot(chapter_id)
+        return {
+            "book_id": book_id,
+            "chapter_id": chapter_id,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "pages": [
+                {
+                    "page_id": page["id"],
+                    "page_number": page["ordinal"],
+                    "source_checksum": page["checksum"],
+                    "document_revision": page["document_revision"],
+                    "bubbles": [
+                        self._text_bubble(row, document_revision=int(page["document_revision"]))
+                        for row in bubble_rows_by_page.get(str(page["id"]), ())
+                    ],
+                }
+                for page in page_rows
+            ],
+        }
+
+    def export_labelplus(self, chapter_id: str) -> str:
+        _, page_rows, bubble_rows_by_page = self._text_export_snapshot(chapter_id)
         lines = [
             "1,0",
             "-",
@@ -937,10 +891,10 @@ class AuxiliaryTranslationCommands:
         )
 
     @staticmethod
-    def _text_bubble(row: Mapping[str, Any]) -> dict[str, object]:
+    def _text_bubble(row: Mapping[str, Any], *, document_revision: int) -> dict[str, object]:
         payload = _load_current_bubble_payload(
             row,
-            document_revision=int(row["page_document_revision"]),
+            document_revision=document_revision,
             label=f"bubble {row['id']}",
         )
         return {
@@ -1080,87 +1034,58 @@ class StyleApplyWorkerService:
                 frozen.get("useAutoTextColor", False)
             )
         updated_payloads: list[tuple[str, dict[str, Any]]] = []
+        native_fields: dict[str, set[str]] = {}
         changed = (
             new_defaults != defaults
             or default_font_id != page["default_font_id"]
         )
-        render_changed = bool(selected.intersection(RENDER_STYLE_FIELDS) and any(
-            json.loads(row["payload_json"]).get("richText") for row in bubble_rows))
-        changed = changed or render_changed
+        render_changed = False
         has_drawable_text = False
         for row in bubble_rows:
+            bubble_id = str(row["id"])
             payload = _load_current_bubble_payload(
                 row,
                 document_revision=int(page["document_revision"]),
-                label=f"style target bubble {row['id']}",
+                label=f"style target bubble {bubble_id}",
             )
             updated = dict(payload)
-            if (
-                "fontFamily" in selected
-                and row["font_id"] != default_font_id
-            ):
-                changed = True
-                render_changed = True
+            requested = native_fields[bubble_id] = set()
+            has_character_styles = payload.get("richText") is not None
             for field in selected:
                 if field == "fontFamily":
+                    requested.add("fontId")
+                    render_changed |= has_character_styles or row["font_id"] != default_font_id
                     continue
+                target = "textDirection" if field == "layoutDirection" else field
                 value = frozen.get(field)
                 if field == "layoutDirection":
-                    if value == "auto":
-                        direction = updated["autoTextDirection"]
-                    else:
-                        direction = value
-                    updated["textDirection"] = direction
+                    updated[target] = updated["autoTextDirection"] if value == "auto" else value
                 elif (
                     field == "fontSize"
                     and bool(frozen.get("autoFontSize", False))
                 ):
-                    if _bubble_text(
-                        updated,
-                        "translatedText",
-                    ).strip():
-                        # The following render step recalculates and persists the
-                        # concrete size. Force a fresh revision even when the
-                        # target page was already in automatic mode.
-                        changed = True
-                        render_changed = True
+                    # The render step recalculates the concrete size.
+                    render_changed |= bool(_bubble_text(updated, "translatedText").strip())
                 elif (
                     field in {"textColor", "fillColor"}
                     and bool(frozen.get("useAutoTextColor", False))
                 ):
-                    automatic_field = (
-                        "autoFgColor"
-                        if field == "textColor"
-                        else "autoBgColor"
-                    )
+                    automatic_field = "autoFgColor" if field == "textColor" else "autoBgColor"
                     automatic = updated.get(automatic_field)
-                    if automatic is not None:
-                        updated[field] = rgb_to_hex(automatic)
-                    # Missing automatic backup preserves the target bubble's
-                    # current effective value instead of copying a source-page
-                    # manual fallback.
+                    if automatic is None:
+                        continue
+                    updated[target] = rgb_to_hex(automatic)
                 else:
-                    updated[field] = value
-                if (
-                    field in RENDER_STYLE_FIELDS
-                    and field != "fontFamily"
-                    and updated.get(
-                        "textDirection"
-                        if field == "layoutDirection"
-                        else field
-                    )
-                    != payload.get(
-                        "textDirection"
-                        if field == "layoutDirection"
-                        else field
-                    )
-                ):
-                    render_changed = True
+                    updated[target] = value
+                if field in RENDER_STYLE_FIELDS:
+                    requested.add(target)
+                    render_changed |= has_character_styles or updated[target] != payload[target]
             changed = changed or updated != payload
             has_drawable_text = has_drawable_text or bool(
                 _bubble_text(updated, "translatedText").strip()
             )
-            updated_payloads.append((str(row["id"]), updated))
+            updated_payloads.append((bubble_id, updated))
+        changed |= render_changed
         needs_render = bool(
             render_changed
             and (has_translated_asset or has_drawable_text)
@@ -1170,14 +1095,12 @@ class StyleApplyWorkerService:
         if changed:
             from src.backend_v2.editing.native import NativeEditor
 
-            requested = {"fontId" if field == "fontFamily" else "textDirection" if field == "layoutDirection" else field
-                         for field in selected}
             storage = AssetStorageService(Path(self.engine.url.database).parent, self.engine)
             with read_transaction(self.engine) as connection:
                 publish_document = NativeEditor(storage).prepare_commit(connection, page_id, new_revision,
                     [dict(bubbleId=bubble_id, fontId=default_font_id if "fontFamily" in selected else row["font_id"], payload=payload)
                      for row, (bubble_id, payload) in zip(bubble_rows, updated_payloads, strict=True)],
-                    fields={bubble_id: requested for bubble_id, _ in updated_payloads}, job_step_id=str(step["stepId"]))
+                    fields=native_fields, job_step_id=str(step["stepId"]))
 
         def publish(connection: Connection) -> None:
             if connection.execute(

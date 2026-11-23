@@ -63,7 +63,7 @@ class PageMaskService:
                 raise OperationNotFound("page not found")
             asset_ids = dict(connection.execute(select(page_assets.c.role, page_assets.c.asset_id)
                 .where(page_assets.c.page_id == page_id)).all())
-            if for_render and 'translated' in asset_ids:
+            if for_render and 'translated' in asset_ids and 'editor_document' not in asset_ids:
                 payloads = [payload for _, _, payload in materialize_render_payloads(
                     connection, self.storage, page_id)]
             else:
