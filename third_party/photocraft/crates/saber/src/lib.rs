@@ -568,33 +568,42 @@ pub fn fit_text(session: &Session, ids: &[String], minimum: u32, maximum: u32) -
         let Some(layer) = bubble.get("layer").and_then(Value::as_u64).and_then(|id| doc.layer(LayerId(id))) else { continue };
         let LayerContent::Text(text) = &layer.content else { continue };
         if text.text.trim().is_empty() { continue; }
-        let bounds = match text.shape {
-            photocraft_doc::text::TextShape::Box { x, y, width, height } => [x, y, x + width, y + height],
-            _ => engine.layout(text, doc.resolution_dpi).bounds().unwrap_or([0.0, 0.0, 1.0, 1.0]),
+        let (width, height) = match text.shape {
+            photocraft_doc::text::TextShape::Box { width, height, .. } => (width, height),
+            _ => {
+                let [x0, y0, x1, y1] = engine.layout(text, doc.resolution_dpi).bounds().unwrap_or([0.0, 0.0, 1.0, 1.0]);
+                (x1 - x0, y1 - y0)
+            }
         };
-        let width = bounds[2] - bounds[0];
-        let height = bounds[3] - bounds[1];
+        let (width, height) = (f64::from(width) + 0.5, f64::from(height) + 0.5);
         let reference = bubble.pointer("/payload/fontSize").and_then(Value::as_f64).unwrap_or(1.0).max(1.0) as f32;
-        let mut low = minimum.clamp(1, 1000);
-        let mut high = maximum.clamp(low, 1000);
-        let mut best = low;
-        while low <= high {
-            let size = low + (high - low) / 2;
+        let minimum = minimum.clamp(1, 1000);
+        let maximum = maximum.clamp(minimum, 1000);
+        let mut best = minimum;
+        let runs = text.char_runs();
+        let mut candidate = text.clone();
+        candidate.runs.clone_from(&runs);
+        candidate.overflow_visible = true;
+        // Block alignment translates the layout without changing its dimensions.
+        candidate.block_align = BlockAlign::Start;
+        // Rewrapping can make larger text fit even after a smaller size overflowed.
+        for size in (minimum + 1..=maximum).rev() {
             let factor = size as f32 / reference;
-            let mut candidate = text.clone();
-            candidate.runs = text.char_runs();
-            candidate.overflow_visible = true;
-            for run in &mut candidate.runs {
-                run.style.size_pt *= factor;
-                run.style.leading_pt = run.style.leading_pt.map(|leading| leading * factor);
+            for (run, original) in candidate.runs.iter_mut().zip(&runs) {
+                run.style.size_pt = original.style.size_pt * factor;
+                run.style.leading_pt = original.style.leading_pt.map(|leading| leading * factor);
             }
             let layout = engine.layout(&candidate, doc.resolution_dpi);
-            let logical = layout.bounds().unwrap_or([0.0; 4]);
-            let ink = photocraft_text::render::ink_rect(&layout, &Default::default());
-            let fits = (logical[2] - logical[0]).max(ink.width() as f32) <= width + 0.5
-                && (logical[3] - logical[1]).max(ink.height() as f32) <= height + 0.5;
-            if fits { best = size; low = size.saturating_add(1); }
-            else { high = size.saturating_sub(1); }
+            let [x0, y0, x1, y1] = layout.bounds().unwrap_or_default();
+            if f64::from(x1 - x0) > width || f64::from(y1 - y0) > height {
+                continue;
+            }
+            if photocraft_text::render::ink_bounds(&layout, &Default::default(), None)
+                .is_none_or(|[x0, y0, x1, y1]| x1 - x0 <= width && y1 - y0 <= height)
+            {
+                best = size;
+                break;
+            }
         }
         fitted.push(json!({"bubbleId":id,"fontSize":best}));
     }
@@ -904,9 +913,9 @@ mod tests {
             let LayerContent::Text(text) = &doc.layer(LayerId(layer)).unwrap().content else { panic!("text") };
             let layout = photocraft_text::shared().lock().unwrap_or_else(|e| e.into_inner()).layout(text, doc.resolution_dpi);
             let logical = layout.bounds().unwrap();
-            let ink = photocraft_text::render::ink_rect(&layout, &Default::default());
-            assert!((logical[2] - logical[0]).max(ink.width() as f32) <= 100.5);
-            assert!((logical[3] - logical[1]).max(ink.height() as f32) <= 100.5);
+            let [x0, y0, x1, y1] = photocraft_text::render::ink_bounds(&layout, &Default::default(), None).unwrap();
+            assert!(f64::from(logical[2] - logical[0]).max(x1 - x0) <= 100.5);
+            assert!(f64::from(logical[3] - logical[1]).max(y1 - y0) <= 100.5);
             assert_eq!(text.char_runs()[1].style.size_pt / text.char_runs()[0].style.size_pt, 2.0);
             for (run, ratio) in text.char_runs().iter().zip([1.5, 2.0]) {
                 assert!((run.style.leading_pt.unwrap() / run.style.size_pt - ratio).abs() < 0.00001);

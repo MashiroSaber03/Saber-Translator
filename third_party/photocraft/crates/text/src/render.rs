@@ -257,7 +257,8 @@ fn rect_from_bounds([x0, y0, x1, y1]: [f64; 4]) -> Rect {
     Rect::new(x0 as i32, y0 as i32, x1 as i32, y1 as i32)
 }
 
-pub(crate) fn ink_bounds(layout: &TextLayout, transform: &Affine, warp: Option<&Warp>) -> Option<[f64; 4]> {
+/// Bounds of the glyphs and decorations before rounding and padding for rasterization.
+pub fn ink_bounds(layout: &TextLayout, transform: &Affine, warp: Option<&Warp>) -> Option<[f64; 4]> {
     let mut b = Bounds::default();
     draw(layout, &Xform(transform.m), &mut b, None, warp);
     b.rect.filter(|bounds| bounds.iter().all(|v| v.is_finite()))

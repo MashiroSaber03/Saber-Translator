@@ -96,6 +96,32 @@ def test_font_fit_measures_character_scale_and_keeps_the_frame(tmp_path, directi
     assert bounds[2] - bounds[0] <= 100 and bounds[3] - bounds[1] <= 100
 
 
+def test_font_fit_keeps_readable_size_when_a_wrapped_line_fills_the_frame():
+    font = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts/汉仪正圆-75W.TTF'
+    text = '……「阳莉，」听我说。前作「双子爱」的主人公啊，正为了与他一起长大的阳莉四处奔走！'
+    payloads = [
+        {**_bubble_fields(translatedText=text, coords=[25, 25, 25 + width, 143],
+            fontSize=26, textDirection='horizontal', inlineAlign='start', blockAlign='center', lineSpacing=1.2),
+         'fontFamily': str(font)}
+        for width in (380, 382)
+    ]
+    assert NativeEditor.fit_payloads(payloads) == {'0': 27, '1': 27}
+
+
+def test_font_fit_tries_larger_sizes_after_italic_glyphs_overflow():
+    font = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts/汉仪正圆-75W.TTF'
+    text = '甲乙丙丁戊己庚辛壬癸'
+    payload = _bubble_fields(translatedText=text, coords=[25, 25, 105, 143],
+        fontSize=26, textDirection='horizontal', inlineAlign='start', blockAlign='center', lineSpacing=1.2)
+    payload['richText'] = {
+        'runs': [{'len': len(text.encode('utf-8')), 'style': {
+            'font_family': 'HYZhengYuan', 'size_pt': 26, 'weight': 600, 'faux_italic': True,
+        }}],
+        'paragraphs': [],
+    }
+    assert NativeEditor.fit_payloads([{**payload, 'fontFamily': str(font)}]) == {'0': 23}
+
+
 def test_ordinary_history_restores_deleted_box_metadata_in_the_native_commit(content_platform):
     from copy import deepcopy
 
