@@ -35,11 +35,12 @@ import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 import { INPAINT_MODEL_KEYS } from '@/utils/localModelAvailability'
 import { inpaintMethodOptions } from '@/utils/textStyleForm'
 import { apiClient } from '@/api/client'
-import { getPageDocument, type V2PageDocumentMutationResponse } from '@/api/v2/content'
+import { getPageDocument, type LayerStyleRecipe, type V2PageDocumentMutationResponse } from '@/api/v2/content'
 import { flushPageDocument, hasPendingPageDocument, queueEditorDocumentSave, registerPageDocument, registerPageEditor, saveEditorDocument } from '@/services/pageDocumentPersistence'
 import { useEditRender } from '@/composables/useEditRender'
 import { createUuid } from '@/utils/uuid'
 import { triggerBlobDownload } from '@/utils/browserDownload'
+import { deepClone } from '@/utils/deepClone'
 import type { InpaintMethod } from '@/types/bubble'
 import { createMaskRepair, waitForOperation } from '@/api/v2/operations'
 import { useImageStore } from '@/stores/imageStore'
@@ -200,6 +201,14 @@ async function command(id: string): Promise<void> {
   try { await request({ op: 'command', command: id }) }
   catch (reason) { error.value = reason instanceof Error ? reason.message : '操作失败' }
 }
+
+async function applyLayerStyle(recipe: LayerStyleRecipe): Promise<boolean> {
+  if (!loadedPage || loading.value || loadFailed.value || repairing.value || !props.active) return false
+  await request({ op: 'finish' })
+  await request({ op: 'command', command: 'style.presets.apply', params: { recipe: deepClone(recipe) } })
+  await saveNow()
+  return true
+}
 async function repairSelection(): Promise<void> {
   if (repairing.value) return
   repairing.value = true
@@ -281,7 +290,7 @@ onBeforeUnmount(() => {
   for (const pending of requests.values()) { clearTimeout(pending.timer); pending.reject(new Error('编辑画布已关闭')) }
   requests.clear()
 })
-defineExpose({ saveNow, command })
+defineExpose({ saveNow, command, applyLayerStyle })
 </script>
 
 <style scoped>

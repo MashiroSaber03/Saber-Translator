@@ -1,5 +1,6 @@
 """Integration tests against the real Rust executable, not a rendering mock."""
 
+from contextlib import closing
 from io import BytesIO
 import json
 from pathlib import Path
@@ -725,6 +726,87 @@ def test_first_edit_can_duplicate_a_legacy_text_box(content_platform):
     assert copy['payload']['translatedText'] == original['payload']['translatedText']
     assert copy['payload']['richText'] == original['payload']['richText']
     assert copy['payload']['coords'] == fields['coords']
+
+
+@pytest.fixture
+def layer_style_fonts(monkeypatch):
+    from src.backend_v2.storage import font_files, seeding
+    from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
+
+    bundle = tuple(font for font in font_files.bundled_font_files() if font.id == DEFAULT_FONT_ID)
+    monkeypatch.setattr(font_files, 'bundled_font_files', lambda: bundle)
+    monkeypatch.setattr(seeding, 'bundled_font_files', lambda: bundle)
+
+
+def test_apply_manga_style_to_legacy_page_and_preserve_the_native_effect_stack(layer_style_fonts, content_platform, tmp_path):
+    page, target, legacy = _pre_native_page(content_platform, 'vertical')
+    data_root, engine, _, storage, *_ = content_platform
+    app = create_api_app(ApiSettings(data_root=data_root, engine=engine,
+        identity=RuntimeIdentity(epoch_id='manga-styles', epoch_token='test-token', test_mode=True)))
+    prefix = f'/api/v2/pages/{page}'
+    triple = '三层漫画冲击（白黑红）'
+    hollow = '镂空黑边字（空心）'
+
+    def patch(revision, key, **options):
+        return client.patch(prefix + '/document', json={'baseRevision': revision, 'mutations': [], **options},
+                            headers={'Idempotency-Key': key})
+
+    def apply(revision, key, preset, ids=None):
+        return patch(revision, key, layerStyle={'bubbleIds': ids or [target], 'presetName': preset})
+
+    def text_layer():
+        with ZipFile(BytesIO(client.get(prefix + '/editor-document').data)) as archive:
+            document = json.loads(archive.read('manifest.json'))['document']
+        identity = json.loads(dict(document['metadata']['text'])['saber.page'])['bubbles'][target]['layer']
+        return next(layer for layer in document['layers'] if layer['id'] == identity)
+
+    with closing(app.extensions['saber_v2_runtime']), app.test_client() as client:
+        groups = client.get('/api/v2/editor/layer-styles').get_json()['groups']
+        assert [len(group['items']) for group in groups] == [11, 9, 8]
+        assert len({item['name'] for group in groups for item in group['items']}) == 28
+        assert apply(2, 'missing', triple, [str(uuid.uuid4())]).status_code == 404
+        assert apply(2, 'invalid', '不存在的样式').status_code == 422
+        first = apply(2, 'first-style', triple)
+        assert first.status_code == 200, first.get_json()
+        replay = apply(2, 'first-style', triple)
+        assert replay.get_json() == first.get_json()
+        assert replay.headers['Idempotency-Replayed'] == 'true'
+        assert apply(2, 'stale', hollow).status_code == 409
+        state = first.get_json()['document']
+        assert state['renderStatus'] == 'stale'
+        payload = state['bubbles'][0]['payload']
+        for field in ('translatedText', 'coords', 'fontSize', 'textDirection'):
+            assert payload[field] == legacy[field]
+        effects = text_layer()['effects']['items']
+        assert [list(effect) for effect in effects] == [['ColorOverlay'], ['Stroke'], ['Stroke'], ['Stroke']]
+
+        width = patch(3, 'adjust-stroke', mutations=[dict(op='patch', clientMutationId='adjust', bubbleId=target,
+            fields={'translatedText': '改字，保留三重描边', 'strokeWidth': 4})])
+        assert width.status_code == 200, width.get_json()
+        effects[1]['Stroke']['size'] = 4
+        assert text_layer()['effects']['items'] == effects
+        assert width.get_json()['document']['bubbles'][0]['payload']['translatedText'] == '改字，保留三重描边'
+
+        project, output = tmp_path / 'styled.pcraft', tmp_path / 'multiply.pcraft'
+        project.write_bytes(client.get(prefix + '/editor-document').data)
+        with engine.connect() as connection:
+            fonts = NativeEditor(storage).font_files(connection)
+        NativeEditor.invoke(dict(pageId=page, project=str(project), fonts=fonts, output=str(output),
+            commands=[dict(id='layer.layerStyle.blendingOptions', params={'layer': text_layer()['id'], 'blend': 'multiply'})]))
+        fine = client.put(prefix + '/editor-document', content_type='multipart/form-data',
+            data={'baseRevision': '4', 'file': (BytesIO(output.read_bytes()), 'page.pcraft')},
+            headers={'Idempotency-Key': 'fine-blend'})
+        assert fine.status_code == 200, fine.get_json()
+        assert apply(5, 'hollow', hollow).status_code == 200
+        layer = text_layer()
+        assert layer['blend'] == 'Multiply'
+        assert layer['fill_opacity'] == 0
+        assert client.get(prefix + '/export.psd').data[:4] == b'8BPS'
+        assert apply(6, 'clear-effects', None).status_code == 200
+        layer = text_layer()
+        assert layer['blend'] == 'Multiply'
+        assert layer['fill_opacity'] == 1
+        assert layer['effects']['items'] == []
 
 
 @pytest.mark.parametrize('direction', ['horizontal', 'vertical'])

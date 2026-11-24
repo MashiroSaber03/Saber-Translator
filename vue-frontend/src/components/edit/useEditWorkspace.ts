@@ -1,6 +1,6 @@
 import { ref, computed, watch, onMounted, onUnmounted, onErrorCaptured, nextTick, type Ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { calculatePageTextFit, getPageDocument } from '@/api/v2/content'
+import { calculatePageTextFit, getPageDocument, mutatePageDocument, type LayerStyleSelection } from '@/api/v2/content'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageViewer } from '@/composables/useImageViewer'
@@ -18,6 +18,7 @@ import {
   queuePageDocumentMutation,
   queuePageDocumentSave,
   registerPageDocument,
+  withDocumentTransportReplay,
 } from '@/services/pageDocumentPersistence'
 import { deepClone } from '@/utils/deepClone'
 import { applyTextStyle, copiedTextStyle, type TextStyleTemplate } from './textStyleClipboard'
@@ -34,10 +35,12 @@ import {
 export type EditWorkspaceEmit = {
   (e: 'exit'): void
   (e: 'openFontMatchingSettings'): void
+  (e: 'openStyleImitationSettings'): void
 }
 
 export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readonly<Ref<boolean>> = ref(true)) {
   const isTextFitting = ref(false)
+  const isApplyingLayerStyle = ref(false)
   const isSearchReplacing = ref(false)
   const searchTarget = ref<{ pageId: string; bubbleId: string } | null>(null)
   const focusAfterNavigate = ref(false)
@@ -486,6 +489,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     || isOcrLoading.value
     || isRepairLoading.value
     || isTextFitting.value
+    || isApplyingLayerStyle.value
     || isSearchReplacing.value
     || isBrushSubmitting.value
     || isNavigationPending.value
@@ -639,6 +643,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     : maskEditor.busy.value ? '处理范围…'
     : isBrushSubmitting.value || isRepairLoading.value ? '正在修图…'
     : isTextFitting.value ? '计算字号…'
+    : isApplyingLayerStyle.value ? '套用样式…'
     : isSearchReplacing.value ? '替换中…'
     : renderError.value ? (currentImage.value?.hasUnsavedChanges ? '保存失败' : '出图失败')
       : currentImage.value?.hasUnsavedChanges ? '正在保存…'
@@ -970,6 +975,42 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
       ? [[index, applyTextStyle(bubbles.value[index]!, template)] as [number, Partial<BubbleState>]] : []))
   }
 
+  async function handleApplyLayerStyle(selection: LayerStyleSelection): Promise<boolean> {
+    const image = currentImage.value
+    if (!image || image.documentRevision === undefined || isBusy.value) return false
+    const indices = selectedIndices.value.length ? selectedIndices.value : [selectedBubbleIndex.value]
+    const targets = indices.flatMap(index => bubbles.value[index] ? [bubbles.value[index]!] : [])
+    if (!targets.length) return false
+    isApplyingLayerStyle.value = true
+    try {
+      await persistCurrentDocument()
+      const current = currentImage.value
+      if (!current || current.id !== image.id || current.documentRevision === undefined) return false
+      const bubbleIds = targets.map(bubble => bubble.backendBubbleId)
+      if (!bubbleIds.every((id): id is string => Boolean(id))) {
+        showToast('所选气泡尚未保存完成，请稍后重试', 'warning')
+        return false
+      }
+      const baseRevision = current.documentRevision
+      const layerStyle = selection && typeof selection === 'object' ? { bubbleIds, recipe: selection } : { bubbleIds, presetName: selection }
+      const response = await withDocumentTransportReplay(key => mutatePageDocument(
+        image.id,
+        { baseRevision, mutations: [], layerStyle },
+        key,
+      ))
+      if (currentImage.value?.id !== image.id) return false
+      registerPageDocument(response.document)
+      void refreshRenderedImage()
+      showToast(typeof selection === 'string' ? `已套用样式「${selection}」` : selection ? '已套用仿制样式' : '已清除图层特效', 'success')
+      return true
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '样式套用失败', 'error')
+      return false
+    } finally {
+      isApplyingLayerStyle.value = false
+    }
+  }
+
   function handleFormatText(style: RunStyle, reset = false): void {
     if (isBusy.value) return
     const indices = selectedIndices.value.length ? selectedIndices.value : [selectedBubbleIndex.value]
@@ -1231,6 +1272,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     handleMouseDown,
     handleImageLoad,
     handleApplyStyleToAllBubbles,
+    handleApplyLayerStyle,
     handleExitToolbarAction,
     handleBubbleUpdateWithSync,
     handleFormatText,

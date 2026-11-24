@@ -23,8 +23,7 @@ it('reloads named favorites, isolates accounts, and applies snapshots without ad
   account.user.id = 'alice'
   await nextTick()
   expect(api.favorites.value[0]).toEqual({ name: '对白', style })
-  api.selected.value = '对白'
-  api.remove()
+  api.remove('对白')
   expect(JSON.parse(localStorage.getItem('saber.text-styles.alice')!)).toEqual([])
   wrapper.unmount()
 })

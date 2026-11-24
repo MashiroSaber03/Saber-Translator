@@ -1863,6 +1863,7 @@ class ContentRepository:
         user_mask: bytes | None = None,
         editor_document: bytes | None = None,
         editor_metadata: dict[str, object] | None = None,
+        layer_style: dict[str, object] | None = None,
     ) -> tuple[dict[str, object], bool]:
         from src.backend_v2.editing.native import NativeEditor, NATIVE_BUBBLE_FIELDS
 
@@ -1890,6 +1891,28 @@ class ContentRepository:
             raise ValueError("editing assets are unavailable")
         style_patch = dict(page_style_defaults_patch or {})
         propagation = list(propagate_style_fields or [])
+        if layer_style is not None:
+            if self.storage is None:
+                raise ValueError("editing assets are unavailable")
+            if mutations or default_font_id is not _MISSING or style_patch or propagation or user_mask is not None or editor_document is not None:
+                raise ValueError("layerStyle must be submitted as a separate page mutation")
+            if set(layer_style) not in ({"bubbleIds", "presetName"}, {"bubbleIds", "recipe"}):
+                raise ValueError("layerStyle requires bubbleIds and either presetName or recipe")
+            bubble_ids = layer_style["bubbleIds"]
+            if not isinstance(bubble_ids, list) or not bubble_ids or not all(isinstance(item, str) for item in bubble_ids):
+                raise ValueError("layerStyle bubbleIds must be a non-empty UUID array")
+            for bubble_id in bubble_ids:
+                uuid.UUID(bubble_id)
+            if len(bubble_ids) != len(set(bubble_ids)):
+                raise ValueError("layerStyle bubbleIds must be unique")
+            if "recipe" in layer_style:
+                from src.backend_v2.editing.style_imitation import validate_style_recipe
+
+                layer_style = {**layer_style, "recipe": validate_style_recipe(layer_style["recipe"])}
+            else:
+                preset_name = layer_style["presetName"]
+                if preset_name is not None and (not isinstance(preset_name, str) or not preset_name.strip()):
+                    raise ValueError("layerStyle presetName must be a non-empty string or null")
         if (
             not mutations
             and default_font_id is _MISSING
@@ -1897,6 +1920,7 @@ class ContentRepository:
             and not propagation
             and user_mask is None
             and editor_document is None
+            and layer_style is None
         ):
             raise ValueError(
                 "command must mutate bubbles, the default font, or page style"
@@ -2048,6 +2072,8 @@ class ContentRepository:
             request_payload["editorMetadata"] = metadata
         if user_mask is not None:
             request_payload["userMaskChecksum"] = hashlib.sha256(user_mask).hexdigest()
+        if layer_style is not None:
+            request_payload["layerStyle"] = layer_style
         request_hash = hashlib.sha256(
             _json(request_payload).encode("utf-8")
         ).hexdigest()
@@ -2339,10 +2365,16 @@ class ContentRepository:
                 )
 
             new_revision = base_revision + 1
+            if layer_style is not None and not set(layer_style["bubbleIds"]).issubset(documents):
+                raise ContentNotFound("text layer not found on this page")
+            renderable_change |= layer_style is not None
             if self.storage is not None and editor_document is None and (renderable_change or user_mask is not None):
                 native_editor = NativeEditor(self.storage)
-                native_result = native_editor.prepare(connection, page_id, documents=[documents[id] for id in order],
-                                                      mask_override=user_mask, fields=native_fields)
+                native_result = native_editor.prepare(
+                    connection, page_id,
+                    documents=[documents[id] for id in order] if layer_style is None else None,
+                    mask_override=user_mask, fields=native_fields, layer_style=layer_style,
+                )
                 documents = {item["bubbleId"]: item for item in native_result.bubbles}
         # Publish through the same command transaction after checking its original revision again.
         with immediate_transaction(self.engine) as connection:

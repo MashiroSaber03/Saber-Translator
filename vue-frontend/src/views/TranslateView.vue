@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AppShell from '@/components/ui/AppShell.vue'
 import SidebarLayout from '@/components/ui/SidebarLayout.vue'
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, defineAsyncComponent, onMounted, onUnmounted, watch } from 'vue'
 import {
   onBeforeRouteLeave,
   onBeforeRouteUpdate,
@@ -77,6 +77,8 @@ const translation = useTranslation({
 
 const showSettingsModal = ref(false)
 const initialSettingsTab = ref<string>()
+const showInsightSettings = ref(false)
+const InsightSettingsModal = defineAsyncComponent(() => import('@/components/insight/InsightSettingsModal.vue'))
 const showBookGlossaryModal = ref(false)
 const showBookNonTranslateModal = ref(false)
 const showQuickPromoteModal = ref(false)
@@ -256,6 +258,10 @@ function openSettings() {
 function openFontMatchingSettings() {
   initialSettingsTab.value = 'font-matching'
   showSettingsModal.value = true
+}
+
+function openStyleImitationSettings() {
+  showInsightSettings.value = true
 }
 
 function openSponsor() {
@@ -462,6 +468,7 @@ async function handleQuickWorkspacePromoted() {
       v-if="currentImage && isEditMode"
       @exit="toggleEditMode"
       @open-font-matching-settings="openFontMatchingSettings"
+      @open-style-imitation-settings="openStyleImitationSettings"
     />
 
 
@@ -472,6 +479,7 @@ async function handleQuickWorkspacePromoted() {
       :initial-tab="initialSettingsTab"
       :before-close="translateInit.flushChapterWorkState"
     />
+    <InsightSettingsModal v-if="showInsightSettings" @close="showInsightSettings = false" />
 
     <BookGlossaryModal v-model="showBookGlossaryModal" />
     <BookNonTranslateModal v-model="showBookNonTranslateModal" />

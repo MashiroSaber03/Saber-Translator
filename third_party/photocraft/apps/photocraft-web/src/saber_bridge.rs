@@ -148,6 +148,7 @@ impl Bridge {
             "open" => {
                 let page = request.get("pageId").and_then(Value::as_str).ok_or("pageId required")?;
                 // Validate before closing the previous page, so a failed load keeps the work.
+                let styles = photocraft_saber::manga_styles()?;
                 let mut replacement = photocraft_engine::Session::new();
                 photocraft_saber::open(&mut replacement, bytes, page)?;
                 photocraft_saber::render_pending_text(&mut replacement);
@@ -158,6 +159,7 @@ impl Bridge {
                 app.sync_views();
                 // Reuse the engine's history budget; desktop defaults exceed a browser's address space.
                 app.session.edit_prefs(|prefs| prefs.performance.memory_usage_mb = 256);
+                app.session.presets.bundled_styles = styles;
                 if let Some(st) = replacement.active() {
                     app.session.add_document(st.doc.as_ref().clone(), Some("page.pcraft".into()));
                 }

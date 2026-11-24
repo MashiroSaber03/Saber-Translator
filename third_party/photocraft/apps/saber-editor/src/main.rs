@@ -24,6 +24,9 @@ fn process(request: Value) -> Result<Value, String> {
     } else {
         photocraft_saber::render_pending_text(&mut session);
     }
+    if let Some(style) = request.get("layerStyle") {
+        photocraft_saber::apply_bubble_style(&mut session, style)?;
+    }
     if request.get("userMask").is_some() {
         let mask = if request.get("userMask").is_some_and(Value::is_null) { None } else { Some(read("userMask")?) };
         photocraft_saber::user_mask(&mut session, mask.as_deref())?;

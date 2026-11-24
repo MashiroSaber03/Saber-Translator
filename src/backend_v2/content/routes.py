@@ -374,6 +374,38 @@ def create_content_blueprint(
                 for font in catalog
             ]})
 
+    @blueprint.get("/editor/layer-styles")
+    def editor_layer_styles() -> Response:
+        from src.backend_v2.editing.layer_styles import layer_style_groups
+
+        public_access.require_feature("editMode")
+        return jsonify({"groups": layer_style_groups()})
+
+    @blueprint.get("/editor/layer-styles/imitate")
+    def layer_style_imitation_configuration() -> Response:
+        from src.backend_v2.editing.style_imitation import configuration
+
+        public_access.require_feature("editMode")
+        return jsonify(configuration(settings_repository))
+
+    @blueprint.post("/editor/layer-styles/imitate")
+    def imitate_layer_style() -> Response:
+        from src.backend_v2.editing.native import NativeEditor
+        from src.backend_v2.editing.style_imitation import StyleImitationError, imitate
+        from src.backend_v2.font_matching.images import MAX_UPLOAD_BYTES
+
+        public_access.require_feature("editMode")
+        request.max_content_length = MAX_UPLOAD_BYTES + 64 * 1024
+        _validate_multipart_fields(allowed_file_keys={"reference"})
+        files = request.files.getlist("reference")
+        if len(files) != 1:
+            raise ValueError("请选择一张参考文字截图")
+        try:
+            result = imitate(settings_repository, NativeEditor(storage), files[0].stream.read(MAX_UPLOAD_BYTES + 1))
+        except StyleImitationError as error:
+            return _error("style_imitation_failed", str(error), 502)
+        return jsonify(result)
+
     @blueprint.get("/pages/<page_id>/export.psd")
     def export_page_psd(page_id: str) -> Response:
         from io import BytesIO
@@ -513,6 +545,7 @@ def create_content_blueprint(
                 "defaultFontId",
                 "pageStyleDefaultsPatch",
                 "propagateStyleFields",
+                "layerStyle",
             }
         )
         mutations = body.get("mutations")
@@ -547,6 +580,7 @@ def create_content_blueprint(
                 body,
                 "propagateStyleFields",
             ),
+            layer_style=_optional_object(body, "layerStyle"),
             **optional_arguments,
         )
         response = jsonify(result)

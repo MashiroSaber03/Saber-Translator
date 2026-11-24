@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch, type CSSProperties } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch, type CSSProperties } from 'vue'
 import { ApiClientError } from '@/api/client'
 import { newIdempotencyKey } from '@/api/v2/content'
 import { getFontMatch, getFontMatchConfiguration, startFontMatch, type FontMatchConfiguration, type FontMatchStatus } from '@/api/v2/fontMatching'
 import { jobsApi, TERMINAL_JOB_STATUSES } from '@/api/v2/jobs'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiFileInput from '@/components/ui/UiFileInput.vue'
+import ReferenceImageInput from '@/components/common/ReferenceImageInput.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import { showToast } from '@/utils/toast'
@@ -19,46 +19,29 @@ const props = defineProps<{
   selectFont: (fontId: string) => (() => void | Promise<void>) | null
 }>()
 const emit = defineEmits<{ openSettings: [] }>()
-type Region = { x: number; y: number; w: number; h: number }
-const fullImage: Region = { x: 0, y: 0, w: 1, h: 1 }
 const anchor = ref<HTMLElement>()
 const popup = ref<HTMLElement>()
-const preview = ref<HTMLImageElement>()
-const upload = ref<InstanceType<typeof UiFileInput>>()
+const referenceInput = ref<InstanceType<typeof ReferenceImageInput>>()
+const referenceReady = ref(false)
 const opened = ref(false)
 const position = ref<CSSProperties>()
 const readiness = ref<FontMatchConfiguration>()
-const reference = ref('')
-const region = ref<Region>()
 const capturing = ref(false)
 const busy = ref(false)
 const error = ref('')
 const progress = ref('')
 const undo = ref<{ fontId: string; restore: () => void | Promise<void> }>()
-const regionStyle = computed(() => region.value && ({
-  left: region.value.x * 100 + '%', top: region.value.y * 100 + '%',
-  width: region.value.w * 100 + '%', height: region.value.h * 100 + '%',
-}))
 let epoch = 0
 let controller: AbortController | undefined
 let timer: ReturnType<typeof setTimeout> | undefined
-let stream: MediaStream | undefined
 let jobId: string | undefined
 let submission: { image: Blob; key: string } | undefined
-let drag: { x: number; y: number } | undefined
 let observer: ResizeObserver | undefined
 
-function stopCapture(): void {
-  stream?.getTracks().forEach(track => track.stop())
-  stream = undefined
-}
-
-function releaseReference(): void {
-  if (reference.value) URL.revokeObjectURL(reference.value)
-  reference.value = ''
-  region.value = undefined
-  drag = undefined
+function referenceChanged(ready: boolean): void {
+  referenceReady.value = ready
   submission = undefined
+  if (readiness.value?.ready) error.value = ''
 }
 
 function cancelJob(id: string): void {
@@ -72,8 +55,7 @@ function close(restoreFocus = false): void {
   clearTimeout(timer)
   if (jobId) cancelJob(jobId)
   jobId = undefined
-  stopCapture()
-  releaseReference()
+  referenceChanged(false)
   capturing.value = busy.value = opened.value = false
   readiness.value = undefined
   error.value = progress.value = ''
@@ -129,117 +111,6 @@ async function open(): Promise<void> {
   }
 }
 
-function replaceReference(file: Blob, croppedByUser: boolean): void {
-  releaseReference()
-  error.value = ''
-  reference.value = URL.createObjectURL(file)
-  region.value = croppedByUser ? undefined : { ...fullImage }
-}
-
-function uploadReference(files: File[]): void {
-  const [file] = files
-  upload.value?.clear()
-  if (file && opened.value) replaceReference(file, false)
-}
-
-function toPng(canvas: HTMLCanvasElement): Promise<Blob> {
-  return new Promise((resolve, reject) => canvas.toBlob(blob => {
-    if (blob) resolve(blob)
-    else reject(new Error('无法读取参考图片'))
-  }, 'image/png'))
-}
-
-async function captureScreen(): Promise<void> {
-  if (!navigator.mediaDevices?.getDisplayMedia) {
-    error.value = '当前浏览器或页面地址不支持截图，请上传图片'
-    return
-  }
-  const id = epoch
-  popup.value?.focus({ preventScroll: true })
-  capturing.value = true
-  error.value = ''
-  let video: HTMLVideoElement | undefined
-  try {
-    const capture = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
-    if (id !== epoch) { capture.getTracks().forEach(track => track.stop()); return }
-    stream = capture
-    video = document.createElement('video')
-    video.muted = true
-    video.playsInline = true
-    video.srcObject = capture
-    await video.play()
-    if (id !== epoch) return
-    if (!video.videoWidth || !video.videoHeight) throw new Error('empty frame')
-    const canvas = document.createElement('canvas')
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    const context = canvas.getContext('2d')
-    if (!context) throw new Error('canvas unavailable')
-    context.drawImage(video, 0, 0)
-    const image = await toPng(canvas)
-    if (id === epoch) replaceReference(image, true)
-  } catch (cause) {
-    if (id === epoch) error.value = cause instanceof DOMException && cause.name === 'NotAllowedError'
-      ? '截图已取消或授权被拒绝，可以上传图片'
-      : '当前无法截图，请上传图片'
-  } finally {
-    if (video) { video.pause(); video.srcObject = null }
-    if (id === epoch) { stopCapture(); capturing.value = false }
-  }
-}
-
-function pointer(event: PointerEvent): { x: number; y: number } {
-  const box = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  const clamp = (coordinate: number) => Math.max(0, Math.min(1, coordinate))
-  return { x: clamp((event.clientX - box.left) / box.width), y: clamp((event.clientY - box.top) / box.height) }
-}
-
-function beginCrop(event: PointerEvent): void {
-  if (busy.value || capturing.value || event.button !== 0) return
-  const target = event.currentTarget as HTMLElement
-  target.setPointerCapture(event.pointerId)
-  drag = pointer(event)
-  region.value = undefined
-  submission = undefined
-}
-
-function moveCrop(event: PointerEvent): void {
-  if (!drag) return
-  const { x, y } = pointer(event)
-  region.value = { x: Math.min(x, drag.x), y: Math.min(y, drag.y), w: Math.abs(x - drag.x), h: Math.abs(y - drag.y) }
-}
-
-function endCrop(event: PointerEvent): void {
-  moveCrop(event)
-  drag = undefined
-  const selected = region.value
-  const image = preview.value
-  if (!selected || !image || selected.w * image.naturalWidth < 2 || selected.h * image.naturalHeight < 2) {
-    region.value = undefined
-  }
-}
-
-async function chosenImage(): Promise<Blob> {
-  const image = preview.value
-  const area = region.value
-  if (!image || !area) throw new Error('请框选参考文字')
-  await image.decode()
-  const left = Math.floor(area.x * image.naturalWidth)
-  const top = Math.floor(area.y * image.naturalHeight)
-  const width = Math.ceil((area.x + area.w) * image.naturalWidth) - left
-  const height = Math.ceil((area.y + area.h) * image.naturalHeight) - top
-  if (width < 2 || height < 2 || width * height > 20_000_000) throw new Error('请选择不超过 2000 万像素的文字区域')
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('无法读取文字选区')
-  context.drawImage(image, left, top, width, height, 0, 0, width, height)
-  const blob = await toPng(canvas)
-  if (blob.size > 12 * 1024 ** 2) throw new Error('文字选区超过 12 MiB，请缩小选区')
-  return blob
-}
-
 const phases = { samples: '准备字体样张', loading_model: '加载本地模型', style: '比较全库风格', attributes: '评估风格属性' }
 function finish(match: NonNullable<FontMatchStatus['result']>): void {
   const current = props.fontId
@@ -289,7 +160,7 @@ async function poll(id: number, accepted: string, retryMs = 1000): Promise<void>
 }
 
 async function start(): Promise<void> {
-  if (busy.value || capturing.value || !readiness.value?.ready || !region.value || drag) return
+  if (busy.value || capturing.value || !readiness.value?.ready || !referenceReady.value || !referenceInput.value) return
   const id = epoch
   popup.value?.focus({ preventScroll: true })
   busy.value = true
@@ -297,7 +168,7 @@ async function start(): Promise<void> {
   progress.value = '正在提交匹配'
   try {
     if (!submission) {
-      const image = await chosenImage()
+      const image = await referenceInput.value.read()
       if (id !== epoch) return
       submission = { image, key: newIdempotencyKey() }
     }
@@ -370,26 +241,7 @@ onBeforeUnmount(() => close())
           <strong>以图匹配字体</strong>
           <UiButton size="sm" variant="ghost" @click="close(true)">{{ busy ? '取消' : '关闭' }}</UiButton>
         </div>
-        <div class="font-match-popup__reference">
-          <div
-            v-if="reference" class="font-match-popup__image"
-            @pointerdown.prevent="beginCrop" @pointermove="moveCrop" @pointerup="endCrop"
-            @pointercancel="drag = undefined; region = undefined"
-          >
-            <img
-              ref="preview" :src="reference" alt="参考图片" draggable="false"
-              @error="releaseReference(); error = '无法读取参考图片，请重新选取'"
-            >
-            <span v-if="regionStyle" class="font-match-popup__region" :style="regionStyle" />
-          </div>
-          <span v-else>选择一张参考文字图片</span>
-        </div>
-        <p v-if="reference" class="font-match-popup__hint">{{ region ? '可拖动重新框选文字' : '请拖动框选参考文字' }}</p>
-        <div v-if="!busy" class="font-match-popup__row font-match-popup__input">
-          <UiFileInput ref="upload" accept="image/png,image/jpeg,image/webp,image/bmp,image/gif" hidden @files-change="uploadReference" />
-          <UiButton size="sm" variant="secondary" :disabled="capturing" @click="upload?.click()">{{ reference ? '更换图片' : '上传图片' }}</UiButton>
-          <UiButton size="sm" variant="secondary" :disabled="capturing" @click="captureScreen">{{ capturing ? '正在截图…' : '截图' }}</UiButton>
-        </div>
+        <ReferenceImageInput ref="referenceInput" :disabled="busy" @change="referenceChanged" @busy="capturing = $event" />
         <p v-if="error" class="font-match-popup__error" role="alert">{{ error }}</p>
         <p v-if="!readiness && !error" class="font-match-popup__hint" role="status">正在读取设置…</p>
         <div v-if="readiness && !readiness.ready" class="font-match-popup__row">
@@ -397,7 +249,7 @@ onBeforeUnmount(() => close())
           <UiButton size="sm" variant="ghost" @click="goToSettings">打开设置</UiButton>
         </div>
         <p v-if="busy" class="font-match-popup__hint" role="status">{{ progress }}</p>
-        <UiButton v-else size="sm" variant="primary" :disabled="!readiness?.ready || !region || capturing" @click="start">
+        <UiButton v-else size="sm" variant="primary" :disabled="!readiness?.ready || !referenceReady || capturing" @click="start">
           开始匹配
         </UiButton>
       </div>
@@ -436,29 +288,6 @@ onBeforeUnmount(() => close())
 }
 
 .font-match-popup__row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.font-match-popup__input { justify-content: flex-start; }
-
-.font-match-popup__reference {
-  display: grid;
-  place-items: center;
-  min-height: 82px;
-  padding: 4px;
-  border: 1px solid var(--color-border-muted);
-  border-radius: 8px;
-  background: var(--color-surface-subtle);
-  color: var(--color-text-supporting);
-  font-size: 13px;
-}
-.font-match-popup__image { position: relative; overflow: hidden; cursor: crosshair; touch-action: none; }
-.font-match-popup__image img { display: block; max-width: 100%; max-height: min(42dvh, 280px); }
-
-.font-match-popup__region {
-  position: absolute;
-  box-sizing: border-box;
-  border: 2px solid var(--color-action-brand);
-  box-shadow: 0 0 0 999px var(--color-overlay-scrim-subtle);
-  pointer-events: none;
-}
 .font-match-popup__hint, .font-match-popup__error { margin: 0; font-size: 12px; line-height: 1.5; }
 .font-match-popup__hint { color: var(--color-text-supporting); }
 .font-match-popup__error { color: var(--color-status-error); }

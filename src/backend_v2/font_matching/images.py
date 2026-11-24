@@ -39,7 +39,7 @@ def png(image: Image.Image) -> bytes:
     return output.getvalue()
 
 
-def read_reference(data: bytes) -> Image.Image:
+def read_reference(data: bytes, *, background: str = "white") -> Image.Image:
     if not data or len(data) > MAX_UPLOAD_BYTES:
         raise ValueError("请选择不超过 12 MiB 的文字图片")
     try:
@@ -49,9 +49,9 @@ def read_reference(data: bytes) -> Image.Image:
             if getattr(image, "is_animated", False):
                 raise ValueError("请选择静态文字图片")
             rgba = ImageOps.exif_transpose(image).convert("RGBA")
-            white = Image.new("RGBA", rgba.size, "white")
-            white.alpha_composite(rgba)
-            return white.convert("RGB")
+            canvas = Image.new("RGBA", rgba.size, background)
+            canvas.alpha_composite(rgba)
+            return canvas.convert("RGB")
     except (UnidentifiedImageError, Image.DecompressionBombError, OSError) as exc:
         raise ValueError("无法读取参考图片，请重新选取") from exc
 

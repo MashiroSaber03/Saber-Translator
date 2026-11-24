@@ -61,7 +61,7 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let lib = &app.session.presets.swatches;
     let groups: Vec<GroupView> = lib
         .iter()
-        .map(|g| GroupView { name: g.name.clone(), items: g.items.iter().map(|s| ItemView { key: s.name.clone(), name: s.name.clone() }).collect() })
+        .map(|g| GroupView { name: g.name.clone(), read_only: false, items: g.items.iter().map(|s| ItemView { key: s.name.clone(), name: s.name.clone() }).collect() })
         .collect();
     let table = colors(app, ui.ctx());
     let canvas = app.last_canvas_rect;

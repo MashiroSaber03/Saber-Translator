@@ -6,12 +6,12 @@
 //! `layer.layerStyle.*`.
 
 use photocraft_color::{BlendMode, ColorMode, SampleType};
-use photocraft_doc::{Document, Effect, Layer, Size};
+use photocraft_doc::{Document, Effect, Layer, LayerContent, Size};
 use photocraft_geom::Rect;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::{Group, Named, always, bad, edit_groups, find, group_index, has_layer, req_str, str_param, unique_name};
+use super::{Group, Named, always, bad, edit_groups, group_index, has_layer, req_str, str_param, unique_name};
 use crate::commands::CommandSpec;
 use crate::layer_style::effect_from_params;
 use crate::{EngineError, Result, Session};
@@ -145,13 +145,18 @@ pub fn builtin() -> Vec<Group<StylePreset>> {
 
 pub fn find_style<'a>(s: &'a Session, p: &Value, cmd: &str) -> Result<&'a StylePreset> {
     let name = req_str(p, "preset", cmd)?;
-    let (gi, ii) = find(&s.presets.styles, name, str_param(p, "group")).ok_or_else(|| bad(cmd, format!("no style \"{name}\" (see style.presets.list)")))?;
-    Ok(&s.presets.styles[gi].items[ii])
+    let group = str_param(p, "group");
+    let bundled = p.get("bundled").and_then(Value::as_bool);
+    s.presets.style_groups()
+        .filter(|(is_bundled, g)| bundled.is_none_or(|value| value == *is_bundled) && group.is_none_or(|name| g.name == name))
+        .find_map(|(_, g)| g.items.iter().find(|style| style.name == name))
+        .ok_or_else(|| bad(cmd, format!("no style \"{name}\" (see style.presets.list)")))
 }
 
 fn list(s: &mut Session, _: &Value) -> Result<Value> {
-    let groups: Vec<Value> =
-        s.presets.styles.iter().map(|g| json!({"name": g.name, "presets": g.items.iter().map(StylePreset::to_json).collect::<Vec<_>>()})).collect();
+    let groups: Vec<Value> = s.presets.style_groups().map(|(bundled, g)| json!({
+        "name": g.name, "bundled": bundled, "presets": g.items.iter().map(StylePreset::to_json).collect::<Vec<_>>()
+    })).collect();
     Ok(json!({"groups": groups}))
 }
 
@@ -166,9 +171,46 @@ fn targets(s: &Session, p: &Value) -> Vec<photocraft_doc::LayerId> {
     crate::layer_multi_cmds::selected(s)
 }
 
+fn preset_effect(entry: &Value, cmd: &str) -> Result<Effect> {
+    let kind = entry.get(0).and_then(Value::as_str).ok_or_else(|| bad(cmd, "each effect is [kind, params]"))?;
+    effect_from_params(kind, entry.get(1).unwrap_or(&Value::Null)).ok_or_else(|| bad(cmd, format!("unknown effect {kind}")))
+}
+
+fn reference_effects(list: &[Value], font_px: f32, mode: ColorMode, cmd: &str) -> Result<Vec<Effect>> {
+    list.iter().map(|entry| {
+        let kind = entry.get("kind").and_then(Value::as_str).ok_or_else(|| bad(cmd, "reference effect kind required"))?;
+        let mut params = entry.get("params").and_then(Value::as_object).cloned()
+            .ok_or_else(|| bad(cmd, "reference effect params must be an object"))?;
+        for key in ["size", "distance", "soften"] {
+            if let Some(value) = params.get_mut(key) {
+                let percent = value.as_f64().ok_or_else(|| bad(cmd, "invalid reference effect size"))?;
+                *value = json!((percent * f64::from(font_px) / 100.0).clamp(0.0, 256.0));
+            }
+        }
+        let effect = preset_effect(&json!([kind, params]), cmd)?;
+        if matches!(effect, Effect::PatternOverlay { .. }) {
+            return Err(bad(cmd, "reference styles cannot require a pattern"));
+        }
+        Ok(effect.in_mode(mode))
+    }).collect()
+}
+
 fn apply(s: &mut Session, p: &Value) -> Result<Value> {
     const CMD: &str = "style.presets.apply";
-    let style = find_style(s, p, CMD)?.clone();
+    let recipe = p.get("recipe");
+    let inline_effects = recipe.map(|value| {
+        if p.get("preset").is_some() { return Err(bad(CMD, "choose a preset or a reference recipe")); }
+        value.get("effects").and_then(Value::as_array)
+            .filter(|list| (1..=8).contains(&list.len()))
+            .ok_or_else(|| bad(CMD, "reference style needs one to eight effects"))
+    }).transpose()?;
+    let style = if let Some(recipe) = recipe {
+        let fill = recipe.get("fillOpacity").and_then(Value::as_f64).filter(|v| (0.0..=100.0).contains(v))
+            .ok_or_else(|| bad(CMD, "invalid reference fill opacity"))?;
+        StylePreset { name: "参考图样式".into(), effects: vec![], blend: None, fill_opacity: Some((fill / 100.0) as f32) }
+    } else {
+        find_style(s, p, CMD)?.clone()
+    };
     let add = p.get("add").and_then(Value::as_bool).unwrap_or(false);
     let ids = targets(s, p);
     if ids.is_empty() {
@@ -189,16 +231,24 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
         }
         // A preset's colours are RGB; the layer's are in the document's mode.
         let mode = doc.mode;
+        let dpi = doc.resolution_dpi;
         let effects: Vec<_> = effects.iter().cloned().map(|e| e.in_mode(mode)).collect();
         for id in &ids {
             // Styles can't sit on the Background: Photoshop turns it into a normal layer first.
             crate::extra_cmds::background_to_layer(doc, *id);
             let l = doc.layer_mut(*id).ok_or(EngineError::NoLayer(*id))?;
-            if add {
-                l.effects.items.extend(effects.iter().cloned());
+            let reference;
+            let layer_effects = if let Some(list) = inline_effects {
+                let LayerContent::Text(text) = &l.content else { return Err(bad(CMD, "请选择文字图层")); };
+                reference = reference_effects(list, text.size_pt * dpi / 72.0, mode, CMD)?;
+                &reference
             } else {
-                l.effects.items = effects.clone();
-                l.effects.psd_raw = None;
+                &effects
+            };
+            if add {
+                l.effects.items.extend(layer_effects.iter().cloned());
+            } else {
+                l.effects.items = layer_effects.clone();
             }
             l.effects.psd_raw = None;
             l.effects.enabled = true;
@@ -233,14 +283,7 @@ fn new_preset(s: &mut Session, p: &Value) -> Result<Value> {
     let listed = p
         .get("effects")
         .and_then(Value::as_array)
-        .map(|list| -> Result<Vec<Effect>> {
-            list.iter()
-                .map(|e| {
-                    let kind = e.get(0).and_then(Value::as_str).ok_or_else(|| bad(CMD, "each effect is [kind, params]"))?;
-                    effect_from_params(kind, e.get(1).unwrap_or(&Value::Null)).ok_or_else(|| bad(CMD, format!("unknown effect {kind}")))
-                })
-                .collect()
-        })
+        .map(|list| list.iter().map(|entry| preset_effect(entry, CMD)).collect::<Result<Vec<_>>>())
         .transpose()?;
     let style = StylePreset {
         name: unique_name(&s.presets.styles, str_param(p, "name").unwrap_or("Style")),
@@ -336,7 +379,7 @@ pub fn specs() -> Vec<CommandSpec> {
             label: "Style Presets",
             menu: &[],
             shortcut: None,
-            params: "{} → {groups:[{name,presets:[{name,effects,blend,fillOpacity}]}]}",
+            params: "{} → {groups:[{name,bundled,presets:[{name,effects,blend,fillOpacity}]}]}",
             enabled: always,
             run: list,
             journal: false,
@@ -346,7 +389,7 @@ pub fn specs() -> Vec<CommandSpec> {
             label: "Apply Style",
             menu: &[],
             shortcut: None,
-            params: r##"{"preset":name,"group":name?,"layers":[ids]?|"layer":id? (default: the selected layers),"add":bool=false (⇧-click: add to the existing effects)} → {layers,style}"##,
+            params: r##"{"preset":name,"group":name?,"bundled":bool?|"recipe":{"fillOpacity":0..100,"effects":[{"kind":str,"params":object}]},"layers":[ids]?|"layer":id? (default: selected),"add":bool=false} → {layers,style}. Reference recipes target text layers and express size, distance and soften in percent of the font size."##,
             enabled: has_layer,
             run: apply,
             journal: true,

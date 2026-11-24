@@ -38,6 +38,8 @@ module_collection_mode = {
 # 1. v2 静态资源、内置字体、契约和存储基线
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'static'), os.path.join('src', 'backend_v2', 'static')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'resources'), os.path.join('src', 'backend_v2', 'resources')))
+datas.append((os.path.join(PROJECT_ROOT, 'third_party', 'photocraft', 'crates', 'saber', 'src', 'manga_styles.json'),
+              os.path.join('third_party', 'photocraft', 'crates', 'saber', 'src')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'desktop', 'assets'), os.path.join('src', 'backend_v2', 'desktop', 'assets')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'text_style_defaults_factory.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'prompt_defaults_factory.json'), os.path.join('src', 'shared')))

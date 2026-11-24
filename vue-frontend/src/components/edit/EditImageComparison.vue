@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { LayerStyleSelection } from '@/api/v2/content'
 import { computed, ref, watch } from 'vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
@@ -136,6 +137,8 @@ const emit = defineEmits<{
   fitText: []
   moveText: [dx: number, dy: number]
   applyStyle: [scope: 'selected' | 'page', template?: TextStyleTemplate]
+  applyLayerStyle: [selection: LayerStyleSelection]
+  openStyleImitation: []
   ocrRecognize: [index: number]
   reTranslate: [index: number]
   pickColor: [field: BubbleColorField]
@@ -408,6 +411,8 @@ defineExpose({
         @fit-text="emit('fitText')"
         @move-text="(dx, dy) => emit('moveText', dx, dy)"
         @apply-style="(scope, template) => emit('applyStyle', scope, template)"
+        @apply-layer-style="emit('applyLayerStyle', $event)"
+        @open-style-imitation="emit('openStyleImitation')"
         @ocr-recognize="emit('ocrRecognize', $event)"
         @re-translate="emit('reTranslate', $event)"
         @pick-color="emit('pickColor', $event)"

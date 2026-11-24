@@ -73,6 +73,8 @@ pub struct PresetState {
     /// The Gradient tool's current gradient (Gradients panel selection / gradient picker).
     pub gradient: gradients::GradientPreset,
     pub styles: Vec<Group<styles::StylePreset>>,
+    /// Product presets supplied by the host. They are never saved in user preferences.
+    pub bundled_styles: &'static [Group<styles::StylePreset>],
     pub shapes: Vec<Group<shapes::ShapePreset>>,
     /// Pattern groups: pattern names per folder (patterns themselves live in the library).
     pub pattern_groups: Vec<Group<String>>,
@@ -99,6 +101,7 @@ impl Default for PresetState {
             gradients: gradients::builtin(),
             gradient: gradients::GradientPreset::foreground_to_background(),
             styles: styles::builtin(),
+            bundled_styles: &[],
             shapes: shapes::builtin(),
             pattern_groups: patterns::builtin_groups(),
             pattern: None,
@@ -142,6 +145,10 @@ struct Persisted {
 }
 
 impl PresetState {
+    pub fn style_groups(&self) -> impl Iterator<Item = (bool, &Group<styles::StylePreset>)> {
+        self.styles.iter().map(|group| (false, group)).chain(self.bundled_styles.iter().map(|group| (true, group)))
+    }
+
     /// JSON saved with the preferences (`"presets"` key).
     pub fn to_json(&self, s: &Session) -> Value {
         let p = Persisted {

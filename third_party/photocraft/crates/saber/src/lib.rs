@@ -11,6 +11,9 @@ use photocraft_engine::Session;
 use serde_json::{Value, json};
 use skrifa::{MetadataProvider, string::StringId};
 
+mod manga_styles;
+pub use manga_styles::{apply_bubble_style, manga_styles};
+
 const KEY: &str = "saber.page";
 type Result<T> = std::result::Result<T, String>;
 
@@ -473,25 +476,35 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
                 .map_err(|e| e.to_string())?;
         }
         if ["strokeEnabled", "strokeColor", "strokeWidth"].iter().any(|key| changed(key)) {
-            session.execute("layer.select", json!({"layer":layer})).map_err(|e| e.to_string())?;
-            let indices = active(session)?
-                .layer(LayerId(layer))
-                .map(|l| {
-                    l.effects.items.iter().enumerate().filter_map(|(i, e)| matches!(e, photocraft_doc::Effect::Stroke(_)).then_some(i)).collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            for i in indices.into_iter().rev() {
-                session.execute("layer.layerStyle.clear", json!({"layer":layer,"effect":i})).map_err(|e| e.to_string())?;
-            }
-            if value("strokeEnabled").and_then(Value::as_bool) == Some(true) {
-                session
-                    .execute(
-                        "layer.layerStyle.stroke",
-                        json!({"layer":layer,"size":number("strokeWidth",1.0),
-                    "color":value("strokeColor"),"position":"outside"}),
-                    )
-                    .map_err(|e| e.to_string())?;
-            }
+            let enabled = value("strokeEnabled").and_then(Value::as_bool) == Some(true);
+            let toggle = changed("strokeEnabled");
+            let params = json!({
+                "enabled": toggle.then_some(enabled),
+                "size": changed("strokeWidth").then(|| number("strokeWidth", 1.0)),
+                "color": value("strokeColor").filter(|_| changed("strokeColor")),
+            });
+            session.edit("描边", |doc, _| {
+                use photocraft_engine::layer_style::{effect_from_params, overlay_effect};
+                let mode = doc.mode;
+                let id = LayerId(layer);
+                let effects = &mut doc.layer_mut(id).ok_or(photocraft_engine::EngineError::NoLayer(id))?.effects;
+                // The ordinary controls expose the first stroke. The remaining effect stack has its own controls.
+                if let Some(stroke) = effects.items.iter_mut().find(|effect| matches!(effect, photocraft_doc::Effect::Stroke(_))) {
+                    overlay_effect(stroke, &params);
+                    if changed("strokeColor") {
+                        *stroke = stroke.clone().in_mode(mode);
+                    }
+                } else if enabled {
+                    let stroke = effect_from_params("stroke", &json!({"size":number("strokeWidth",1.0),"color":value("strokeColor")}))
+                        .ok_or_else(|| photocraft_engine::EngineError::Other("无效描边".into()))?;
+                    effects.items.push(stroke.in_mode(mode));
+                }
+                if toggle && enabled {
+                    effects.enabled = true;
+                }
+                effects.psd_raw = None;
+                Ok(())
+            }).map_err(|e| e.to_string())?;
         }
         let mut entry = text_entry(bubble);
         entry["layer"] = json!(layer);

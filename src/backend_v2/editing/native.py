@@ -265,7 +265,8 @@ class NativeEditor:
 
     def prepare(self, connection, page_id: str, *, documents=None, uploaded: bytes | None = None,
                 render: bool = False, repair: bytes | None = None, text_only: bool = False,
-                mask_override: bytes | None = None, background: bytes | None = None, fields=None) -> EditingResult:
+                mask_override: bytes | None = None, background: bytes | None = None, fields=None,
+                layer_style: dict[str, object] | None = None) -> EditingResult:
         page = connection.execute(select(pages).where(pages.c.id == page_id)).mappings().one()
         pointer_rows = list(connection.execute(select(page_assets.c.role, page_assets.c.asset_id,
                             page_assets.c.input_source_revision, page_assets.c.input_document_revision,
@@ -283,7 +284,8 @@ class NativeEditor:
                             and clean.input_document_revision == page["document_revision"]
                             and pointers["clean"].is_file())
         writing = (documents is not None or uploaded is not None or repair is not None
-                   or mask_override is not None or background is not None or current is None or legacy is not None)
+                   or mask_override is not None or background is not None or layer_style is not None
+                   or current is None or legacy is not None)
         stored = self.page_bubbles(connection, page_id) if current is None or documents is None and (writing or not render and not text_only) else []
         if documents is None and uploaded is None and (current is None or legacy == "text"):
             documents = stored
@@ -300,6 +302,8 @@ class NativeEditor:
                        "defaultFontId": page["default_font_id"]}
             if writing:
                 request["output"] = str(root / "document.pcraft")
+            if layer_style is not None:
+                request["layerStyle"] = layer_style
             if uploaded is not None:
                 (root / "input.pcraft").write_bytes(uploaded)
                 request["project"] = str(root / "input.pcraft")

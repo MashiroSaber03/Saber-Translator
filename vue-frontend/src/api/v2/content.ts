@@ -11,6 +11,10 @@ export type V2ContainerImportAccepted = components['schemas']['JobBatchAccepted'
 export type V2PageDocument = components['schemas']['PageDocument']
 export type V2PageDocumentBatchMutation = components['schemas']['PageDocumentBatchMutation']
 export type V2PageDocumentMutationResponse = components['schemas']['PageDocumentMutationResponse']
+export type LayerStyleRecipe = components['schemas']['LayerStyleRecipe']
+export type LayerStyleSelection = string | LayerStyleRecipe | null
+export type LayerStyleImitation = operations['imitateLayerStyle']['responses'][200]['content']['application/json']
+export type LayerStyleModel = operations['getLayerStyleImitationConfiguration']['responses'][200]['content']['application/json']
 export type V2CompleteBubbleMutationFields = components['schemas']['CompleteBubbleMutationFields']
 export type V2PageImportResult = components['schemas']['PageImportResult']
 export type V2PageList = components['schemas']['PageList']
@@ -378,6 +382,23 @@ export async function getPageDocument(
 export function calculatePageTextFit(pageId: string, command: operations['calculatePageTextFit']['requestBody']['content']['application/json']) {
   return apiClient.post<operations['calculatePageTextFit']['responses'][200]['content']['application/json']>(
     `${API_ROOT}/pages/${encodeURIComponent(pageId)}/text-fit`, command)
+}
+
+export async function listEditorLayerStyles() {
+  const response = await apiClient.get<operations['listEditorLayerStyles']['responses'][200]['content']['application/json']>(
+    `${API_ROOT}/editor/layer-styles`,
+  )
+  return Array.isArray(response?.groups) ? response.groups : []
+}
+
+export function getLayerStyleModel(signal: AbortSignal): Promise<LayerStyleModel> {
+  return apiClient.get(`${API_ROOT}/editor/layer-styles/imitate`, { signal })
+}
+
+export function imitateLayerStyle(reference: Blob, signal: AbortSignal): Promise<LayerStyleImitation> {
+  const data = new FormData()
+  data.append('reference', reference, 'reference.png')
+  return apiClient.post(`${API_ROOT}/editor/layer-styles/imitate`, data, { signal, timeout: 320_000 })
 }
 
 export function downloadPagePsd(pageId: string): Promise<Blob> {

@@ -1,0 +1,2296 @@
+[
+  {
+    "name": "漫画拟声词 · 立体特效",
+    "items": [
+      {
+        "name": "黑底立体白字（图款·标准）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 95.0,
+              "use_global_light": false,
+              "distance": 3.0,
+              "spread": 1.0,
+              "size": 3.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 95.0,
+              "use_global_light": false,
+              "distance": 6.0,
+              "spread": 1.0,
+              "size": 3.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "黑底立体白字（图款·加厚）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 4.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 98.0,
+              "use_global_light": false,
+              "distance": 3.0,
+              "spread": 1.0,
+              "size": 4.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 98.0,
+              "use_global_light": false,
+              "distance": 6.0,
+              "spread": 1.0,
+              "size": 4.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 98.0,
+              "use_global_light": false,
+              "distance": 9.0,
+              "spread": 1.0,
+              "size": 4.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "黑底立体白字（45°斜影）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 135.0,
+              "use_global_light": false,
+              "distance": 3.0,
+              "spread": 1.0,
+              "size": 3.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 135.0,
+              "use_global_light": false,
+              "distance": 6.0,
+              "spread": 1.0,
+              "size": 3.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "黑底立体（保留原字色）",
+        "effects": [
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 95.0,
+              "use_global_light": false,
+              "distance": 3.0,
+              "spread": 1.0,
+              "size": 3.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 95.0,
+              "use_global_light": false,
+              "distance": 6.0,
+              "spread": 1.0,
+              "size": 3.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "白底立体黑字（暗背景用）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.06666667,
+                  0.06666667,
+                  0.06666667,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 95.0,
+              "use_global_light": false,
+              "distance": 3.0,
+              "spread": 1.0,
+              "size": 3.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 95.0,
+              "use_global_light": false,
+              "distance": 6.0,
+              "spread": 1.0,
+              "size": 3.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "双层白黑描边（黑字爆发）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.06666667,
+                  0.06666667,
+                  0.06666667,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 6.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "双层黑白描边（白字防杂底）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 7.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "三层漫画冲击（白黑红）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 6.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 9.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.8509804,
+                    0.14901961,
+                    0.14901961,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "硬边错位重影（黑白）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 135.0,
+              "use_global_light": false,
+              "distance": 7.0,
+              "spread": 1.0,
+              "size": 3.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "镂空黑边字（空心）",
+        "effects": [
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 0.0
+      },
+      {
+        "name": "镂空白边字（暗底空心）",
+        "effects": [
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 0.85
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 120.0,
+              "use_global_light": false,
+              "distance": 0.0,
+              "spread": 0.1,
+              "size": 7.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 0.0
+      }
+    ]
+  },
+  {
+    "name": "漫画嵌字 · 常规描边与光晕",
+    "items": [
+      {
+        "name": "细白描边（2px·框外小字）",
+        "effects": [
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 2.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "中白描边（4px·通用嵌字）",
+        "effects": [
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 4.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "粗白描边（7px·复杂背景）",
+        "effects": [
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 7.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "柔和白光晕（网点背景用）",
+        "effects": [
+          {
+            "OuterGlow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              },
+              "technique": "Softer",
+              "spread": 0.35,
+              "size": 10.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "range": 0.5,
+              "jitter": 0.0,
+              "noise": 0.0,
+              "source": "Edge"
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "白字细黑边（2px·旁白）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 2.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "白字粗黑边（4px·强调）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 4.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "白字黑光晕（暗场·回忆）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "OuterGlow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 0.9
+              },
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              },
+              "technique": "Softer",
+              "spread": 0.25,
+              "size": 12.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "range": 0.5,
+              "jitter": 0.0,
+              "noise": 0.0,
+              "source": "Edge"
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "内心独白（灰字柔白光）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.2,
+                  0.2,
+                  0.2,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "OuterGlow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 0.95
+              },
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              },
+              "technique": "Softer",
+              "spread": 0.2,
+              "size": 10.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "range": 0.5,
+              "jitter": 0.0,
+              "noise": 0.0,
+              "source": "Edge"
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "彩漫字幕白字（细边柔影）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 2.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.12156863,
+                    0.12156863,
+                    0.12156863,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Multiply",
+                "opacity": 0.55
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 120.0,
+              "use_global_light": false,
+              "distance": 3.0,
+              "spread": 0.0,
+              "size": 6.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      }
+    ]
+  },
+  {
+    "name": "漫画氛围 · 渐变与情绪字",
+    "items": [
+      {
+        "name": "黑白竖渐变（经典拟声）",
+        "effects": [
+          {
+            "GradientOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "gradient": {
+                "stops": [
+                  [
+                    0.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ],
+                  [
+                    1.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        0.101960786,
+                        0.101960786,
+                        0.101960786,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ]
+                ],
+                "opacity_stops": [],
+                "style": "Linear",
+                "angle": 90.0,
+                "scale": 1.0,
+                "reverse": false,
+                "align": true,
+                "offset": [
+                  0.0,
+                  0.0
+                ]
+              },
+              "dither": false
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 5.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "黑灰压抑渐变（阴郁/低沉）",
+        "effects": [
+          {
+            "GradientOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "gradient": {
+                "stops": [
+                  [
+                    0.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        0.03137255,
+                        0.03137255,
+                        0.03137255,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ],
+                  [
+                    1.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        0.53333336,
+                        0.53333336,
+                        0.53333336,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ]
+                ],
+                "opacity_stops": [],
+                "style": "Linear",
+                "angle": 90.0,
+                "scale": 1.0,
+                "reverse": false,
+                "align": true,
+                "offset": [
+                  0.0,
+                  0.0
+                ]
+              },
+              "dither": false
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Multiply",
+                "opacity": 0.6
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 90.0,
+              "use_global_light": false,
+              "distance": 0.0,
+              "spread": 0.15,
+              "size": 10.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "恐怖黑雾字（惊悚/黑化）",
+        "effects": [
+          {
+            "ColorOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.06666667,
+                  0.06666667,
+                  0.06666667,
+                  0.0
+                ],
+                "alpha": 1.0
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 2.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "OuterGlow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 0.92
+              },
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              },
+              "technique": "Softer",
+              "spread": 0.2,
+              "size": 16.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "range": 0.5,
+              "jitter": 0.0,
+              "noise": 0.0,
+              "source": "Edge"
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "血红爆发渐变（愤怒/惊悚）",
+        "effects": [
+          {
+            "GradientOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "gradient": {
+                "stops": [
+                  [
+                    0.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        0.32156864,
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ],
+                  [
+                    1.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        1.0,
+                        0.14117648,
+                        0.14117648,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ]
+                ],
+                "opacity_stops": [],
+                "style": "Linear",
+                "angle": 90.0,
+                "scale": 1.0,
+                "reverse": false,
+                "align": true,
+                "offset": [
+                  0.0,
+                  0.0
+                ]
+              },
+              "dither": false
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "OuterGlow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 0.75
+              },
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.47843137,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              },
+              "technique": "Softer",
+              "spread": 0.1,
+              "size": 12.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "range": 0.5,
+              "jitter": 0.0,
+              "noise": 0.0,
+              "source": "Edge"
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "少女粉嫩渐变（恋爱/可爱）",
+        "effects": [
+          {
+            "GradientOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "gradient": {
+                "stops": [
+                  [
+                    0.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        1.0,
+                        0.43137255,
+                        0.65882355,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ],
+                  [
+                    1.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        1.0,
+                        0.9411765,
+                        0.9647059,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ]
+                ],
+                "opacity_stops": [],
+                "style": "Linear",
+                "angle": 90.0,
+                "scale": 1.0,
+                "reverse": false,
+                "align": true,
+                "offset": [
+                  0.0,
+                  0.0
+                ]
+              },
+              "dither": false
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 5.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    0.2784314,
+                    0.54901963,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Multiply",
+                "opacity": 0.45
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  0.43137255,
+                  0.65882355,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 120.0,
+              "use_global_light": false,
+              "distance": 3.0,
+              "spread": 0.0,
+              "size": 6.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "高能金黄渐变（热血/标题）",
+        "effects": [
+          {
+            "GradientOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "gradient": {
+                "stops": [
+                  [
+                    0.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        1.0,
+                        0.4,
+                        0.0,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ],
+                  [
+                    1.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        1.0,
+                        0.9411765,
+                        0.4,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ]
+                ],
+                "opacity_stops": [],
+                "style": "Linear",
+                "angle": 90.0,
+                "scale": 1.0,
+                "reverse": false,
+                "align": true,
+                "offset": [
+                  0.0,
+                  0.0
+                ]
+              },
+              "dither": false
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.101960786,
+                    0.047058824,
+                    0.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 6.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 0.9
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 120.0,
+              "use_global_light": false,
+              "distance": 5.0,
+              "spread": 1.0,
+              "size": 3.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "冰蓝清爽渐变（冷场/水效）",
+        "effects": [
+          {
+            "GradientOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "gradient": {
+                "stops": [
+                  [
+                    0.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        0.08235294,
+                        0.39607844,
+                        0.7529412,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ],
+                  [
+                    1.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        0.8784314,
+                        0.96862745,
+                        1.0,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ]
+                ],
+                "opacity_stops": [],
+                "style": "Linear",
+                "angle": 90.0,
+                "scale": 1.0,
+                "reverse": false,
+                "align": true,
+                "offset": [
+                  0.0,
+                  0.0
+                ]
+              },
+              "dither": false
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 3.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.05882353,
+                    0.22745098,
+                    0.41960785,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "OuterGlow": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 0.9
+              },
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              },
+              "technique": "Softer",
+              "spread": 0.3,
+              "size": 8.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "range": 0.5,
+              "jitter": 0.0,
+              "noise": 0.0,
+              "source": "Edge"
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      },
+      {
+        "name": "金属银灰浮雕（封面/标题）",
+        "effects": [
+          {
+            "GradientOverlay": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "gradient": {
+                "stops": [
+                  [
+                    0.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        0.9607843,
+                        0.96862745,
+                        0.98039216,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ],
+                  [
+                    1.0,
+                    {
+                      "mode": "Rgb",
+                      "c": [
+                        0.24705882,
+                        0.27450982,
+                        0.3137255,
+                        0.0
+                      ],
+                      "alpha": 1.0
+                    }
+                  ]
+                ],
+                "opacity_stops": [],
+                "style": "Linear",
+                "angle": 90.0,
+                "scale": 1.0,
+                "reverse": false,
+                "align": true,
+                "offset": [
+                  0.0,
+                  0.0
+                ]
+              },
+              "dither": false
+            }
+          },
+          {
+            "BevelEmboss": {
+              "enabled": true,
+              "style": "InnerBevel",
+              "technique": "Smooth",
+              "depth": 2.0,
+              "up": true,
+              "size": 4.0,
+              "soften": 1.0,
+              "angle": 120.0,
+              "altitude": 30.0,
+              "use_global_light": false,
+              "gloss_contour": "Linear",
+              "highlight": {
+                "enabled": true,
+                "blend": "Screen",
+                "opacity": 0.75
+              },
+              "highlight_color": {
+                "mode": "Rgb",
+                "c": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "shadow": {
+                "enabled": true,
+                "blend": "Multiply",
+                "opacity": 0.75
+              },
+              "shadow_color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "contour": null,
+              "texture": null
+            }
+          },
+          {
+            "Stroke": {
+              "common": {
+                "enabled": true,
+                "blend": "Normal",
+                "opacity": 1.0
+              },
+              "size": 2.0,
+              "position": "Outside",
+              "paint": {
+                "Color": {
+                  "mode": "Rgb",
+                  "c": [
+                    0.12156863,
+                    0.13725491,
+                    0.15686275,
+                    0.0
+                  ],
+                  "alpha": 1.0
+                }
+              }
+            }
+          },
+          {
+            "DropShadow": {
+              "common": {
+                "enabled": true,
+                "blend": "Multiply",
+                "opacity": 0.55
+              },
+              "color": {
+                "mode": "Rgb",
+                "c": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "alpha": 1.0
+              },
+              "angle": 120.0,
+              "use_global_light": false,
+              "distance": 4.0,
+              "spread": 0.0,
+              "size": 6.0,
+              "contour": "Linear",
+              "anti_alias": false,
+              "noise": 0.0,
+              "knocks_out": true
+            }
+          }
+        ],
+        "blend": null,
+        "fill_opacity": 1.0
+      }
+    ]
+  }
+]

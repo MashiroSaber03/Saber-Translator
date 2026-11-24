@@ -1932,6 +1932,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/editor/layer-styles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listEditorLayerStyles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/editor/layer-styles/imitate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getLayerStyleImitationConfiguration"];
+        put?: never;
+        post: operations["imitateLayerStyle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pages/{page_id}/document": {
         parameters: {
             query?: never;
@@ -4710,6 +4742,23 @@ export interface components {
             defaultFontId?: components["schemas"]["Uuid"] | null;
             pageStyleDefaultsPatch?: components["schemas"]["PageStyleDefaultsPatch"];
             propagateStyleFields?: components["schemas"]["PageStyleField"][];
+            /** @description Separate page mutation to apply a bundled style or a reference recipe. A null preset name clears effects. */
+            layerStyle?: {
+                bubbleIds: components["schemas"]["Uuid"][];
+                presetName?: string | null;
+                recipe?: components["schemas"]["LayerStyleRecipe"];
+            } & (unknown | unknown);
+        };
+        /** @description Reference effects. Size, distance and soften are percentages of the target font size. */
+        LayerStyleRecipe: {
+            fillOpacity: number;
+            effects: {
+                /** @enum {string} */
+                kind: "stroke" | "dropShadow" | "innerShadow" | "outerGlow" | "innerGlow" | "colorOverlay" | "gradientOverlay" | "bevelEmboss";
+                params: {
+                    [key: string]: number | string | boolean;
+                };
+            }[];
         };
         /** @enum {string} */
         PageStyleField: "fontSize" | "fontFamily" | "layoutDirection" | "textColor" | "fillColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "inlineAlign" | "blockAlign";
@@ -10394,6 +10443,101 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    listEditorLayerStyles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Names of the bundled manga layer styles. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        groups: {
+                            name: string;
+                            items: {
+                                name: string;
+                            }[];
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    getLayerStyleImitationConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Whether the current account has a saved AI vision model. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ready: boolean;
+                        model?: string;
+                        message?: string;
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    imitateLayerStyle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    reference: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Editable lettering effects and a sample rendered by the native engine. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        name: string;
+                        recipe: components["schemas"]["LayerStyleRecipe"];
+                        /** @description PNG data URL for the native preview. */
+                        preview: string;
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationError"];
+            /** @description The saved provider did not return usable style parameters. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
     getPageDocument: {

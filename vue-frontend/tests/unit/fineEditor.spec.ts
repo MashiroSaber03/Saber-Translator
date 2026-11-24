@@ -1,7 +1,9 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { reactive } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FineEditor from '@/components/edit/FineEditor.vue'
+import type { LayerStyleRecipe } from '@/api/v2/content'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { addTestImage } from '../helpers/imageFixtures'
@@ -85,6 +87,17 @@ async function editor(ready = true) {
 }
 
 describe('fine editor page lifecycle', () => {
+  it('sends reactive reference-style favorites as plain data to the canvas and saves the edit', async () => {
+    const { wrapper, send, revise } = await editor()
+    const recipe: LayerStyleRecipe = reactive({ fillOpacity: 0, effects: [{ kind: 'stroke',
+      params: { color: '#112233', size: 5, position: 'outside', opacity: 100 } }] })
+    revise(5)
+    expect(await wrapper.vm.applyLayerStyle(recipe)).toBe(true)
+    const [message] = send.mock.calls.find(([entry]) => entry.payload.command === 'style.presets.apply')!
+    expect(structuredClone(message.payload.params)).toEqual({ recipe })
+    expect(mocks.queue).toHaveBeenCalledWith('page', 5)
+  })
+
   it('keeps a render failure visible after a manual save and retries output without saving twice', async () => {
     const { wrapper, revise } = await editor()
     revise(5)

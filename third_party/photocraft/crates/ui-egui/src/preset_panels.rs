@@ -281,8 +281,8 @@ pub(crate) fn pattern_picker(app: &PhotocraftApp, ui: &mut egui::Ui, selected: &
     picked.filter(|id| id != selected)
 }
 
-pub(crate) fn style_texture(app: &PhotocraftApp, ctx: &egui::Context, st: &photocraft_engine::presets::styles::StylePreset) -> TextureHandle {
-    let key = ("style", st.name.clone(), st.effects.len(), format!("{:?}{:?}", st.blend, st.fill_opacity));
+pub(crate) fn style_texture(app: &PhotocraftApp, ctx: &egui::Context, st: &photocraft_engine::presets::styles::StylePreset, bundled: bool) -> TextureHandle {
+    let key = ("style", bundled, st.name.clone(), st.effects.len(), format!("{:?}{:?}", st.blend, st.fill_opacity));
     cached_texture(ctx, key, || {
         const S: u32 = 64;
         let px = photocraft_engine::presets::styles::thumbnail(&app.session, st, S);
@@ -309,7 +309,11 @@ pub(crate) struct ItemView {
 pub(crate) struct GroupView {
     pub(crate) name: String,
     pub(crate) items: Vec<ItemView>,
+    pub(crate) read_only: bool,
 }
+
+// Keep bundled folders and styles distinct from identically named personal ones.
+const BUNDLED_KEY_PREFIX: char = '\0';
 
 pub(crate) enum Ev {
     Select(String),
@@ -384,7 +388,9 @@ pub(crate) fn browser(
     // frame (the insertion line and the drop are resolved once every header is known).
     let mut drag: Option<(usize, Pos2)> = None;
     let mut released: Option<(usize, Pos2)> = None;
-    let group_names: Vec<String> = groups.iter().map(|g| g.name.clone()).collect();
+    let group_names: Vec<String> = groups.iter().map(|g| {
+        if g.read_only { format!("{BUNDLED_KEY_PREFIX}{}", g.name) } else { g.name.clone() }
+    }).collect();
     let display = st.display_order(panel, &group_names);
     // The footer stays in view: the list gets the height left after it (as measured last frame)
     // and scrolls, rather than pushing the footer out of a short dock group (#4790).
@@ -397,7 +403,8 @@ pub(crate) fn browser(
             ui.spacing_mut().item_spacing = vec2(0.0, 2.0);
             for &gi in &display {
                 let Some(g) = groups.get(gi) else { continue };
-                let open = group_open(st, panel, gi, &g.name);
+                let key = &group_names[gi];
+                let open = group_open(st, panel, gi, key);
                 let (hr, hresp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click_and_drag());
                 if hresp.hovered() || hresp.dragged() {
                     ui.painter().rect_filled(hr, 2.0, t.hover.gamma_multiply(0.5));
@@ -408,21 +415,23 @@ pub(crate) fn browser(
                 crate::icons::paint(ui, fold, if open { "folder-open" } else { "folder" }, 12.0, t.icon);
                 ui.painter().text(pos2(hr.left() + 37.0, hr.center().y), Align2::LEFT_CENTER, &g.name, FontId::proportional(11.5), t.text);
                 if hresp.clicked() {
-                    let k = format!("{panel}/{}", g.name);
+                    let k = format!("{panel}/{key}");
                     if !st.toggled.remove(&k) {
                         st.toggled.insert(k);
                     }
                 }
-                hresp.context_menu(|ui| {
-                    if ui.button(tl!("Rename Group…")).clicked() {
-                        st.renaming = Some((panel.to_string(), format!("group:{}", g.name), g.name.clone()));
-                        ui.close();
-                    }
-                    if ui.button(tl!("Delete Group")).clicked() {
-                        ev.push(Ev::DeleteGroup(g.name.clone()));
-                        ui.close();
-                    }
-                });
+                if !g.read_only {
+                    hresp.context_menu(|ui| {
+                        if ui.button(tl!("Rename Group…")).clicked() {
+                            st.renaming = Some((panel.to_string(), format!("group:{}", g.name), g.name.clone()));
+                            ui.close();
+                        }
+                        if ui.button(tl!("Delete Group")).clicked() {
+                            ev.push(Ev::DeleteGroup(g.name.clone()));
+                            ui.close();
+                        }
+                    });
+                }
                 if hresp.dragged()
                     && let Some(p) = ui.ctx().pointer_interact_pos()
                 {
@@ -497,24 +506,26 @@ pub(crate) fn browser(
                     {
                         dropped = Some((it.key.clone(), pp));
                     }
-                    resp.context_menu(|ui| {
-                        if ui.button(tl!("Rename…")).clicked() {
-                            st.renaming = Some((panel.to_string(), it.key.clone(), it.name.clone()));
-                            ui.close();
-                        }
-                        if ui.button(tl!("Delete")).clicked() {
-                            ev.push(Ev::Delete(it.key.clone()));
-                            ui.close();
-                        }
-                        ui.menu_button(tl!("Move to"), |ui| {
-                            for gname in group_names.iter().filter(|n| **n != g.name) {
-                                if ui.button(gname).clicked() {
-                                    ev.push(Ev::Move(it.key.clone(), gname.clone()));
-                                    ui.close();
-                                }
+                    if !g.read_only {
+                        resp.context_menu(|ui| {
+                            if ui.button(tl!("Rename…")).clicked() {
+                                st.renaming = Some((panel.to_string(), it.key.clone(), it.name.clone()));
+                                ui.close();
                             }
+                            if ui.button(tl!("Delete")).clicked() {
+                                ev.push(Ev::Delete(it.key.clone()));
+                                ui.close();
+                            }
+                            ui.menu_button(tl!("Move to"), |ui| {
+                                for target in groups.iter().filter(|target| !target.read_only && target.name != g.name) {
+                                    if ui.button(&target.name).clicked() {
+                                        ev.push(Ev::Move(it.key.clone(), target.name.clone()));
+                                        ui.close();
+                                    }
+                                }
+                            });
                         });
-                    });
+                    }
                 }
             }
             // Insertion line while a folder is dragged by its header.
@@ -534,17 +545,19 @@ pub(crate) fn browser(
     // Apply the drop now every header rect is known; the next frame draws the new order.
     if let Some((from, p)) = released {
         let before = group_drop_before(&headers, from, p.y);
-        let from_name = groups.get(from).map(|g| g.name.clone());
-        let before_name = before.and_then(|i| groups.get(i).map(|g| g.name.clone()));
+        let from_name = group_names.get(from);
+        let before_name = before.and_then(|i| group_names.get(i));
         if let Some(from_name) = from_name {
-            st.move_group(panel, &group_names, &from_name, before_name.as_deref());
+            st.move_group(panel, &group_names, from_name, before_name.map(String::as_str));
         }
     }
     let recorded: Vec<(String, Rect)> = headers.iter().map(|(_, r, n)| (n.clone(), *r)).collect();
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(("preset-group-headers", panel)), recorded));
     if let Some((key, pos)) = dropped {
-        if let Some((_, _, g)) = headers.iter().find(|(_, r, _)| r.contains(pos)) {
-            ev.push(Ev::Move(key, g.clone()));
+        if let Some((gi, _, g)) = headers.iter().find(|(_, r, _)| r.contains(pos)) {
+            if !key.starts_with(BUNDLED_KEY_PREFIX) && groups.get(*gi).is_some_and(|group| !group.read_only) {
+                ev.push(Ev::Move(key, g.clone()));
+            }
         } else if canvas.contains(pos) {
             ev.push(Ev::Drop(key, pos));
         }
@@ -560,7 +573,9 @@ pub(crate) fn browser(
             st.sizes.insert(panel.to_string(), s);
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if crate::icons::button(ui, "trash", 24.0, false, tl!("Delete")).clicked()
+            let can_delete = selected.as_ref().is_some_and(|key| !key.starts_with(BUNDLED_KEY_PREFIX));
+            let delete = ui.add_enabled_ui(can_delete, |ui| crate::icons::button(ui, "trash", 24.0, false, tl!("Delete"))).inner;
+            if delete.clicked()
                 && let Some(k) = selected.clone()
             {
                 ev.push(Ev::Delete(k));
@@ -662,7 +677,7 @@ pub fn gradients_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     ui.add_space(4.0);
     let groups: Vec<GroupView> = groups_src
         .iter()
-        .map(|g| GroupView { name: g.name.clone(), items: g.items.iter().map(|i| ItemView { key: i.name.clone(), name: i.name.clone() }).collect() })
+        .map(|g| GroupView { name: g.name.clone(), read_only: false, items: g.items.iter().map(|i| ItemView { key: i.name.clone(), name: i.name.clone() }).collect() })
         .collect();
     let canvas = canvas_drop_rect(app);
     let mut st = std::mem::take(&mut app.ui.presets_ui);
@@ -701,6 +716,7 @@ pub fn patterns_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         .iter()
         .map(|g| GroupView {
             name: g.name.clone(),
+            read_only: false,
             items: g
                 .items
                 .iter()
@@ -802,19 +818,22 @@ pub fn windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
 // ------------------------------------------------------------------ Styles
 
 pub fn styles_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
-    let src = app.session.presets.styles.clone();
+    let src: Vec<_> = app.session.presets.style_groups().collect();
     let groups: Vec<GroupView> = src
         .iter()
-        .map(|g| GroupView { name: g.name.clone(), items: g.items.iter().map(|i| ItemView { key: i.name.clone(), name: i.name.clone() }).collect() })
+        .map(|(bundled, g)| GroupView {
+            name: g.name.clone(),
+            read_only: *bundled,
+            items: g.items.iter().map(|style| ItemView {
+                key: if *bundled { format!("{BUNDLED_KEY_PREFIX}{}", style.name) } else { style.name.clone() },
+                name: style.name.clone(),
+            }).collect(),
+        })
         .collect();
     let canvas = canvas_drop_rect(app);
     let mut st = std::mem::take(&mut app.ui.presets_ui);
     let ctx = ui.ctx().clone();
     let t = Tokens::get(&ctx);
-    let mut texes: Vec<Vec<TextureHandle>> = Vec::new();
-    for g in &src {
-        texes.push(g.items.iter().map(|s| style_texture(app, &ctx, s)).collect());
-    }
     let events = browser(
         ui,
         &mut st,
@@ -822,23 +841,26 @@ pub fn styles_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         &groups,
         Place { canvas, max_h: 300.0, new_tip: tl!("Create new style from the selected layer") },
         &mut |ui, r, gi, ii| {
-            ui.painter().rect_filled(r, 2.0, t.field);
-            ui.painter().image(texes[gi][ii].id(), r, Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)), Color32::WHITE);
+            if ui.is_rect_visible(r) {
+                let (bundled, group) = src[gi];
+                let texture = style_texture(app, &ctx, &group.items[ii], bundled);
+                ui.painter().rect_filled(r, 2.0, t.field);
+                ui.painter().image(texture.id(), r, Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)), Color32::WHITE);
+            }
         },
     );
     app.ui.presets_ui = st;
     let shift = ui.input(|i| i.modifiers.shift);
     for e in events {
         match &e {
-            Ev::Select(k) | Ev::Activate(k) => {
+            Ev::Select(k) | Ev::Activate(k) | Ev::Drop(k, _) => {
+                let preset = k.strip_prefix(BUNDLED_KEY_PREFIX);
                 app.ui.presets_ui.selected.insert("styles".into(), k.clone());
                 // Clicking applies to the selected layers (⇧ adds to their effects).
-                run(app, "style.presets.apply", json!({"preset": k, "add": shift}));
-            }
-            Ev::Drop(k, pos) => {
-                // Dropping on the canvas styles the layer under the pointer's selection: the active layer.
-                let _ = pos;
-                run(app, "style.presets.apply", json!({"preset": k}));
+                run(app, "style.presets.apply", json!({
+                    "preset": preset.unwrap_or(k), "bundled": preset.is_some(),
+                    "add": shift && !matches!(&e, Ev::Drop(..)),
+                }));
             }
             _ => {
                 generic(app, "styles", "style.presets", &e, json!({"name": "Style"}));
@@ -853,7 +875,7 @@ pub fn shapes_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let src = photocraft_engine::presets::shapes::all_groups(&app.session);
     let groups: Vec<GroupView> = src
         .iter()
-        .map(|g| GroupView { name: g.name.clone(), items: g.items.iter().map(|i| ItemView { key: i.name.clone(), name: i.name.clone() }).collect() })
+        .map(|g| GroupView { name: g.name.clone(), read_only: false, items: g.items.iter().map(|i| ItemView { key: i.name.clone(), name: i.name.clone() }).collect() })
         .collect();
     let canvas = canvas_drop_rect(app);
     let mut st = std::mem::take(&mut app.ui.presets_ui);

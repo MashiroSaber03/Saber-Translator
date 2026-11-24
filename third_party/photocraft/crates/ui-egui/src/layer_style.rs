@@ -660,8 +660,8 @@ pub fn preview_document(
 
 /// Applies a style preset to the dialog fields in-place without touching the document.
 /// Clicking Cancel leaves the document untouched; clicking OK commits.
-fn apply_style_preset(app: &PhotocraftApp, f: &mut Map<String, Value>, name: &str) {
-    let Ok(style) = photocraft_engine::presets::styles::find_style(&app.session, &json!({"preset": name}), "apply_style_preset") else { return };
+fn apply_style_preset(app: &PhotocraftApp, f: &mut Map<String, Value>, preset: &Value) {
+    let Ok(style) = photocraft_engine::presets::styles::find_style(&app.session, preset, "apply_style_preset") else { return };
     let light = f.get("pendingGlobalLight").or_else(|| f.get("globalLight")).and_then(Value::as_f64).unwrap_or(120.0) as f32;
     let mut effects = Vec::new();
     for (i, e) in style.effects.iter().enumerate() {
@@ -738,7 +738,7 @@ fn fx_checkbox(p: &egui::Painter, cb: egui::Rect, on: bool, t: &Tokens) {
 pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Value>) {
     let t = Tokens::get(ui.ctx());
     let selected = f.get("selected").and_then(Value::as_str).unwrap_or("dropShadow").to_string();
-    let mut style_click: Option<String> = None;
+    let mut style_click = None;
     let mut new_style = false;
     let invalid = validate_params(f).err();
     ui.horizontal_top(|ui| {
@@ -859,14 +859,17 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
                 ui.add_space(8.0);
                 let ctx = ui.ctx().clone();
                 egui::ScrollArea::vertical().max_height(340.0).id_salt("layer-style-presets-main").show(ui, |ui| {
-                    for group in &app.session.presets.styles {
+                    for (bundled, group) in app.session.presets.style_groups() {
                         ui.label(RichText::new(&group.name).size(12.0).color(t.text_dim));
                         ui.add_space(3.0);
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
                             for st in &group.items {
-                                let tex = crate::preset_panels::style_texture(app, &ctx, st);
                                 let (rect, resp) = ui.allocate_exact_size(vec2(32.0, 32.0), Sense::click());
+                                if !ui.is_rect_visible(rect) {
+                                    continue;
+                                }
+                                let tex = crate::preset_panels::style_texture(app, &ctx, st, bundled);
                                 ui.painter().image(tex.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
                                 let (stroke, kind) = if resp.hovered() {
                                     (Stroke::new(1.5, t.accent), egui::StrokeKind::Outside)
@@ -875,7 +878,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
                                 };
                                 ui.painter().rect_stroke(rect, 2.0, stroke, kind);
                                 if resp.on_hover_text(&st.name).clicked() {
-                                    style_click = Some(st.name.clone());
+                                    style_click = Some(json!({"preset": st.name, "group": group.name, "bundled": bundled}));
                                 }
                             }
                         });
@@ -1040,10 +1043,8 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
             });
         });
     });
-    // Style swatch clicks apply to the layer (Photoshop does this immediately);
-    // New Style… saves the dialog's pending state as a preset.
-    if let Some(name) = style_click {
-        apply_style_preset(app, f, &name);
+    if let Some(preset) = style_click {
+        apply_style_preset(app, f, &preset);
     }
     if new_style {
         save_new_style(app, f);
@@ -2005,7 +2006,7 @@ mod tests {
         app.run("layer.new.layer", json!({})).unwrap();
         let mut f2 = initial_fields(app.session.active().unwrap().doc.layer(app.session.active().unwrap().active_layer.unwrap()).unwrap(), None, 120.0);
         f2.insert("layer".into(), json!(app.session.active().unwrap().active_layer.unwrap().0));
-        apply_style_preset(&app, &mut f2, "Style");
+        apply_style_preset(&app, &mut f2, &json!({"preset": "Style"}));
         // Swatch clicks update the dialog fields only; document is untouched until confirm.
         assert_eq!(effects_of(&f2).len(), 1);
         assert_eq!(effects_of(&f2)[0]["params"]["size"], json!(9.0));
@@ -2033,8 +2034,9 @@ mod tests {
         app.run("file.new", json!({"width": 16, "height": 16})).unwrap();
         app.run("layer.new.layer", json!({})).unwrap();
         let id = app.session.active().unwrap().active_layer.unwrap();
+        app.run("layer.layerStyle.blendingOptions", json!({"layer": id.0, "fillOpacity": 47})).unwrap();
         let mut f = initial_fields(app.session.active().unwrap().doc.layer(id).unwrap(), Some(STYLES_PAGE), 120.0);
-        apply_style_preset(&app, &mut f, "Black Stroke");
+        apply_style_preset(&app, &mut f, &json!({"preset": "Black Stroke"}));
         // Document itself still has 0 effects.
         assert_eq!(app.session.active().unwrap().doc.layer(id).unwrap().effects.items.len(), 0);
         // Dialog fields now have the preset loaded.
@@ -2042,6 +2044,8 @@ mod tests {
         // Cancel discards dialog; document remains with 0 effects.
         // Confirm commits the style.
         confirm(&mut app, &f).unwrap();
-        assert_eq!(app.session.active().unwrap().doc.layer(id).unwrap().effects.items.len(), 1);
+        let layer = app.session.active().unwrap().doc.layer(id).unwrap();
+        assert_eq!(layer.effects.items.len(), 1);
+        assert_eq!(layer.fill_opacity, 0.47, "an effect-only preset leaves the existing fill opacity intact");
     }
 }

@@ -222,7 +222,7 @@
               <div
                 v-if="localStrokeEnabled"
                 class="bubble-editor__toolbar-stroke-width bubble-editor__toolbar-stroke-options"
-                title="描边宽度"
+                title="多层描边时，此处调节第一层"
               >
                 <UiNumberField
                   v-model="localStrokeWidth"
@@ -415,15 +415,40 @@
 
       <details class="bubble-editor__advanced">
         <summary class="bubble-editor__disclosure"><UiIcon name="chevron-right" size="14" class="bubble-editor__disclosure-chevron" />常用样式</summary>
-        <div class="bubble-editor__favorites" title="收藏保存在当前浏览器；应用后的样式随页面保存">
+        <div class="bubble-editor__favorites">
           <div class="bubble-editor__favorite-row">
-            <UiSelect v-model="favoriteSelected" :options="favorites.map(item => ({ label: item.name, value: item.name }))" aria-label="常用样式" placeholder="选择收藏的样式" />
-            <UiButton size="sm" variant="secondary" :disabled="!favoriteSelected" @click="applyStyleFavorite">套用样式</UiButton>
-            <UiIconButton size="md" variant="soft" label="删除样式收藏" :disabled="!favoriteSelected" @click="removeFavorite"><UiIcon name="trash" size="14" /></UiIconButton>
+            <UiCombobox
+              :model-value="selectedStyleOption"
+              :groups="styleSelectGroups"
+              aria-label="常用样式"
+              placeholder="选择收藏或漫画特效样式"
+              dropdown-fit-content
+              @update:model-value="value => { selectedStyleOption = String(value ?? '') }"
+            />
+            <UiButton
+              size="sm"
+              variant="secondary"
+              :disabled="!selectedStyleOption"
+              @click="applySelectedStyle"
+            >
+              套用样式
+            </UiButton>
+            <UiIconButton
+              size="md"
+              variant="soft"
+              label="删除样式收藏"
+              :disabled="!canDeleteSelectedStyle"
+              @click="removeFavorite"
+            >
+              <UiIcon name="trash" size="14" />
+            </UiIconButton>
           </div>
           <div class="bubble-editor__favorite-row">
             <UiInput v-model="favoriteName" size="sm" maxlength="30" aria-label="样式名称" placeholder="如：对白、旁白、注释" @keydown.enter.prevent="saveStyleFavorite" />
-            <UiButton size="sm" variant="secondary" :disabled="!canCopyStyle || !favoriteName.trim()" @click="saveStyleFavorite">收藏当前样式</UiButton>
+            <UiButton size="sm" variant="secondary" :disabled="!canCopyStyle || !favoriteName.trim()" @click="saveStyleFavorite">收藏排版</UiButton>
+          </div>
+          <div>
+            <UiButton size="sm" variant="secondary" :disabled="disabled" @click="emit('openStyleImitation')">参考图仿制</UiButton>
           </div>
         </div>
       </details>
@@ -502,7 +527,7 @@ const emit = defineEmits<BubbleEditorEmit>()
 const showOriginalText = ref(false)
 
 const {
-  favorites, favoriteName, favoriteSelected, removeFavorite, saveStyleFavorite, applyStyleFavorite, clearFormatting,
+  favoriteName, selectedStyleOption, styleSelectGroups, canDeleteSelectedStyle, removeFavorite, saveStyleFavorite, applySelectedStyle, clearFormatting,
   copiedTextStyle,
   canCopyStyle,
   copyStyle,

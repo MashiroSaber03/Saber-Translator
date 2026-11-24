@@ -12,6 +12,8 @@ import type {
   LogicalAlign,
 } from '@/types/bubble'
 import { apiClient } from '@/api/client'
+import { listEditorLayerStyles, type LayerStyleSelection } from '@/api/v2/content'
+import type { UiSelectGroup } from '@/components/ui/selectTypes'
 import { defaultRun, plainRun, nativeColor, textColor, type EditorFont, type FontStyleSnapshot, type RunStyle } from './richTextDocument'
 import { copiedTextStyle, copyTextStyle, textStyleTemplate, type TextStyleTemplate } from './textStyleClipboard'
 import { useTextStyleFavorites } from './useTextStyleFavorites'
@@ -35,12 +37,14 @@ export interface BubbleEditorProps {
 
 export type BubbleEditorEmit = {
   (e: 'openFontMatchingSettings'): void
+  (e: 'openStyleImitation'): void
   (e: 'update', updates: Partial<BubbleState>): void
   (e: 'formatText', style: RunStyle, reset?: boolean): void
   (e: 'restoreFonts', originals: FontStyleSnapshot[]): void
   (e: 'fitText'): void
   (e: 'moveText', dx: number, dy: number): void
   (e: 'applyStyle', scope: 'selected' | 'page', template?: TextStyleTemplate): void
+  (e: 'applyLayerStyle', selection: LayerStyleSelection): void
   (e: 'ocrRecognize', index: number): void
   (e: 'reTranslate', index: number): void
   (e: 'pickColor', field: BubbleColorField): void
@@ -57,9 +61,16 @@ type TextareaFieldRef = {
   getSelectedText?: () => string
 }
 
+const FAVORITE_OPTION_PREFIX = 'fav:'
+const RECIPE_OPTION_PREFIX = 'recipe:'
+const LAYER_STYLE_OPTION_PREFIX = 'fx:'
+const CLEAR_LAYER_STYLE_OPTION = 'fx:__clear__'
+
 export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit) {
   const publicAccess = usePublicUserAccess()
-  const { favorites, name: favoriteName, selected: favoriteSelected, save: saveFavorite, remove: removeFavorite } = useTextStyleFavorites()
+  const { favorites, name: favoriteName, save: saveFavorite, remove: deleteFavorite } = useTextStyleFavorites()
+  const layerStyleGroups = ref<Awaited<ReturnType<typeof listEditorLayerStyles>>>([])
+  const selectedStyleOption = ref('')
   const inpaintMethodOptions = computed(() => publicAccess.modelOptions(
     rawInpaintMethodOptions,
     INPAINT_MODEL_KEYS,
@@ -148,13 +159,67 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     else translatedTextInput.value?.format?.(base, true)
   }
 
+  const styleSelectGroups = computed<UiSelectGroup[]>(() => {
+    const groups: UiSelectGroup[] = []
+    for (const [recipe, label, prefix] of [[false, '我的收藏', FAVORITE_OPTION_PREFIX], [true, '我的仿制样式', RECIPE_OPTION_PREFIX]] as const) {
+      const options = favorites.value.filter(item => Boolean(item.recipe) === recipe)
+        .map(item => ({ label: item.name, value: `${prefix}${item.name}` }))
+      if (options.length) groups.push({ label, options })
+    }
+    for (const group of layerStyleGroups.value) {
+      groups.push({
+        label: group.name,
+        options: group.items.map(item => ({
+          label: item.name,
+          value: `${LAYER_STYLE_OPTION_PREFIX}${item.name}`,
+        })),
+      })
+    }
+    if (layerStyleGroups.value.length > 0) {
+      groups.push({
+        label: '图层特效操作',
+        options: [{ label: '清除图层特效（还原纯文字）', value: CLEAR_LAYER_STYLE_OPTION }],
+      })
+    }
+    return groups
+  })
+
+  const selectedFavorite = computed(() => favorites.value.find(item =>
+    `${item.recipe ? RECIPE_OPTION_PREFIX : FAVORITE_OPTION_PREFIX}${item.name}` === selectedStyleOption.value))
+  const canDeleteSelectedStyle = computed(() => Boolean(selectedFavorite.value))
+
+  watch(selectedFavorite, favorite => {
+    if (!favorite && [FAVORITE_OPTION_PREFIX, RECIPE_OPTION_PREFIX].some(prefix => selectedStyleOption.value.startsWith(prefix))) {
+      selectedStyleOption.value = ''
+    }
+  })
+
   function saveStyleFavorite(): void {
-    if (props.bubble && canCopyStyle.value) saveFavorite(textStyleTemplate(props.bubble, selectedStyles.value[0]!))
+    if (!props.bubble || !canCopyStyle.value) return
+    const label = saveFavorite(textStyleTemplate(props.bubble, selectedStyles.value[0]!))
+    if (label) selectedStyleOption.value = `${FAVORITE_OPTION_PREFIX}${label}`
   }
-  function applyStyleFavorite(): void {
-    const favorite = favorites.value.find(item => item.name === favoriteSelected.value)
+
+  function removeFavorite(): void {
+    const favorite = selectedFavorite.value
+    if (favorite && deleteFavorite(favorite.name, Boolean(favorite.recipe))) selectedStyleOption.value = ''
+  }
+
+  function applySelectedStyle(): void {
+    const selected = selectedStyleOption.value
+    if (!selected) return
+    if (selected === CLEAR_LAYER_STYLE_OPTION) {
+      emit('applyLayerStyle', null)
+      return
+    }
+    if (selected.startsWith(LAYER_STYLE_OPTION_PREFIX)) {
+      emit('applyLayerStyle', selected.slice(LAYER_STYLE_OPTION_PREFIX.length))
+      return
+    }
+    const favorite = selectedFavorite.value
     if (!favorite) return
-    if (textSelection.value.active) formatText(favorite.style.character)
+    if (favorite.recipe) emit('applyLayerStyle', favorite.recipe)
+    else if (textSelection.value.active) formatText(favorite.style.character)
     else emit('applyStyle', 'selected', favorite.style)
   }
 
@@ -485,8 +550,18 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     }
   }
 
+  async function loadLayerStyles(): Promise<void> {
+    try {
+      const groups = await listEditorLayerStyles()
+      if (isOwnerMounted) layerStyleGroups.value = groups
+    } catch {
+      // The user's saved styles remain available if the catalogue request fails.
+    }
+  }
+
   onMounted(() => {
     void loadFontList()
+    void loadLayerStyles()
   })
 
   onUnmounted(() => {
@@ -494,7 +569,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   })
 
   return {
-    favorites, favoriteName, favoriteSelected, removeFavorite, saveStyleFavorite, applyStyleFavorite, clearFormatting,
+    favoriteName, selectedStyleOption, styleSelectGroups, canDeleteSelectedStyle, removeFavorite, saveStyleFavorite, applySelectedStyle, clearFormatting,
     copiedTextStyle,
     canCopyStyle,
     copyStyle,

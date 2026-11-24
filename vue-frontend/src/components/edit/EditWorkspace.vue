@@ -154,6 +154,8 @@
         @fit-text="fitSelectedText"
         @move-text="moveSelectedText"
         @apply-style="handleApplyStyleToAllBubbles"
+        @apply-layer-style="handleApplyLayerStyle"
+        @open-style-imitation="showStyleImitation = true"
         @ocr-recognize="handleOcrRecognize"
         @re-translate="handleReTranslateBubble"
         @pick-color="startImageColorPick"
@@ -175,22 +177,31 @@
           </div>
         </template>
         <template #toolbar-end>
+          <UiButton size="sm" variant="inverse" :disabled="modeSwitching" @click="showStyleImitation = true">参考图仿制</UiButton>
           <UiButton size="sm" variant="inverse" :disabled="modeSwitching" @click="exitFine">退出编辑</UiButton>
         </template>
       </FineEditor>
+      <StyleImitationDialog
+        v-if="showStyleImitation"
+        :can-apply="fineActive ? !modeSwitching : !!selectedBubble && !isBusy"
+        :apply="applyReferenceStyle"
+        @close="showStyleImitation = false"
+        @open-settings="openStyleImitationSettings"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import EditImageComparison from './EditImageComparison.vue'
 import EditToolbar from './EditToolbar.vue'
 import EditThumbnailPanel from './EditThumbnailPanel.vue'
 import EditMaskPanel from './EditMaskPanel.vue'
 import FineEditor from './FineEditor.vue'
+import StyleImitationDialog from './StyleImitationDialog.vue'
 import ChapterTextSearch from './ChapterTextSearch.vue'
 import { useEditWorkspace, type EditWorkspaceEmit } from './useEditWorkspace'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -199,6 +210,9 @@ import UiIconButton from '@/components/ui/UiIconButton.vue'
 import { BUBBLE_COLOR_LABELS } from './bubbleColorFields'
 import { showToast } from '@/utils/toast'
 import { flushPageDocument } from '@/services/pageDocumentPersistence'
+import type { LayerStyleRecipe } from '@/api/v2/content'
+import { useAuthStore } from '@/stores/authStore'
+import { provideTextStyleFavorites } from './useTextStyleFavorites'
 
 const emit = defineEmits<EditWorkspaceEmit>()
 const fineActive = ref(false)
@@ -207,6 +221,21 @@ const switching = ref(false)
 const fineBusy = ref(false)
 const modeSwitching = computed(() => switching.value || fineBusy.value)
 const fineEditorRef = ref<InstanceType<typeof FineEditor>>()
+const showStyleImitation = ref(false)
+const auth = useAuthStore()
+provideTextStyleFavorites()
+
+function openStyleImitationSettings(): void {
+  showStyleImitation.value = false
+  emit('openStyleImitationSettings')
+}
+
+async function applyReferenceStyle(recipe: LayerStyleRecipe): Promise<boolean> {
+  if (!fineActive.value) return handleApplyLayerStyle(recipe)
+  const applied = await fineEditorRef.value?.applyLayerStyle(recipe)
+  if (applied) showToast('已套用仿制样式', 'success')
+  return Boolean(applied)
+}
 
 async function setFineMode(value: boolean): Promise<void> {
   if (value === fineActive.value || modeSwitching.value) return
@@ -326,6 +355,7 @@ const {
   handleMouseDown,
   handleImageLoad,
   handleApplyStyleToAllBubbles,
+  handleApplyLayerStyle,
   handleExitToolbarAction,
   handleBubbleUpdateWithSync,
   handleFormatText,
@@ -349,6 +379,11 @@ const {
   detectAllImages,
   translateWithCurrentBubbles,
 } = useEditWorkspace(emit, computed(() => !fineActive.value))
+
+watch(() => `${auth.user?.id ?? 'local'}:${currentImage.value?.id}:${fineActive.value ? 'fine' :
+  (selectedIndices.value.length ? selectedIndices.value : [selectedBubbleIndex.value])
+    .map(index => bubbles.value[index]?.backendBubbleId ?? index).join(',')}`,
+  () => { showStyleImitation.value = false }, { flush: 'sync' })
 
 const cleanPreviewRequested = ref(false)
 const showCleanPreview = computed(() => cleanPreviewRequested.value && !!currentImage.value?.cleanAssetUrl)

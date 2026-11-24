@@ -3,6 +3,8 @@
 //! Key names follow the descriptors Photoshop writes (documented by
 //! reverse-engineering in MIT-licensed psd-tools / ag-psd).
 
+use std::collections::BTreeMap;
+
 use photocraft_color::{BlendMode, Color};
 use photocraft_doc::adjust::CurvePoint;
 use photocraft_doc::{
@@ -332,18 +334,24 @@ fn unit(u: &[u8; 4], v: f32) -> Value {
     Value::UnitFloat { unit: *u, value: f64::from(v) }
 }
 
+fn direction(angle: f32) -> Value {
+    // Photoshop clamps the stored direction to its signed angle range.
+    let angle = angle.rem_euclid(360.0);
+    unit(b"#Ang", if angle > 180.0 { angle - 360.0 } else { angle })
+}
+
 fn with_common(d: Descriptor, c: &FxCommon) -> Descriptor {
     d.with("enab", Value::Boolean(c.enabled))
         .with("present", Value::Boolean(true))
         .with("showInDialog", Value::Boolean(true))
         .with("Md  ", blend_value(c.blend))
-        .with("Opct", unit(b"#Prc", c.opacity * 100.0))
+        .with("Opct", unit(b"#Prc", (c.opacity * 100.0).round()))
 }
 
 fn gradient_keys(mut d: Descriptor, g: &Gradient) -> Descriptor {
     d = d
         .with("Grad", Value::Descriptor(gradient_desc(&g.stops, &g.opacity_stops)))
-        .with("Angl", unit(b"#Ang", g.angle))
+        .with("Angl", direction(g.angle))
         .with("Type", gradient_style_value(g.style))
         .with("Rvrs", Value::Boolean(g.reverse))
         .with("Algn", Value::Boolean(g.align))
@@ -358,7 +366,7 @@ fn write_one(e: &Effect) -> (&'static str, Descriptor) {
             let mut d = with_common(Descriptor::new(if inner { "IrSh" } else { "DrSh" }), &s.common)
                 .with("Clr ", Value::Descriptor(color_to_desc(&s.color)))
                 .with("uglg", Value::Boolean(s.use_global_light))
-                .with("lagl", unit(b"#Ang", s.angle))
+                .with("lagl", direction(s.angle))
                 .with("Dstn", unit(b"#Pxl", s.distance))
                 .with("Ckmt", unit(b"#Pxl", s.spread * 100.0))
                 .with("blur", unit(b"#Pxl", s.size))
@@ -402,9 +410,12 @@ fn write_one(e: &Effect) -> (&'static str, Descriptor) {
                 StrokePosition::Inside => "InsF",
                 StrokePosition::Center => "CtrF",
             };
-            let mut d = with_common(Descriptor::new("FrFX"), &s.common)
+            // Photoshop stores stroke widths as whole pixels and requires at least one.
+            let mut common = s.common.clone();
+            common.enabled &= s.size > 0.0;
+            let mut d = with_common(Descriptor::new("FrFX"), &common)
                 .with("Styl", Value::Enumerated { type_id: Id::new("FStl"), value: Id::new(styl) })
-                .with("Sz  ", unit(b"#Pxl", s.size));
+                .with("Sz  ", unit(b"#Pxl", s.size.round().max(1.0)));
             d = match &s.paint {
                 FxPaint::Color(c) => {
                     d.with("PntT", Value::Enumerated { type_id: Id::new("FrFl"), value: Id::new("SClr") }).with("Clr ", Value::Descriptor(color_to_desc(c)))
@@ -445,7 +456,7 @@ fn write_one(e: &Effect) -> (&'static str, Descriptor) {
                 .with("Clr ", Value::Descriptor(color_to_desc(&s.color)))
                 .with("AntA", Value::Boolean(s.anti_alias))
                 .with("Invr", Value::Boolean(s.invert))
-                .with("lagl", unit(b"#Ang", s.angle))
+                .with("lagl", direction(s.angle))
                 .with("Dstn", unit(b"#Pxl", s.distance))
                 .with("blur", unit(b"#Pxl", s.size))
                 .with("MpgS", contour_value(&s.contour)),
@@ -476,7 +487,7 @@ fn write_one(e: &Effect) -> (&'static str, Descriptor) {
                 .with("bvlT", Value::Enumerated { type_id: Id::new("bvlT"), value: Id::new(tech) })
                 .with("bvlS", Value::Enumerated { type_id: Id::new("BESl"), value: Id::new(style) })
                 .with("uglg", Value::Boolean(b.use_global_light))
-                .with("lagl", unit(b"#Ang", b.angle))
+                .with("lagl", direction(b.angle))
                 .with("Lald", unit(b"#Ang", b.altitude))
                 .with("srgR", unit(b"#Prc", b.depth * 100.0))
                 .with("blur", unit(b"#Pxl", b.size))
@@ -512,14 +523,17 @@ fn write_one(e: &Effect) -> (&'static str, Descriptor) {
 /// Serializes effects as `lfx2` block data.
 pub fn write_lfx2(master: bool, items: &[Effect]) -> Vec<u8> {
     let mut d = Descriptor::new("null").with("Scl ", unit(b"#Prc", 100.0)).with("masterFXSwitch", Value::Boolean(master));
+    let mut grouped = BTreeMap::<_, Vec<_>>::new();
+    for (kind, descriptor) in items.iter().map(write_one) {
+        grouped.entry(kind).or_default().push(Value::Descriptor(descriptor));
+    }
     for (single, multi) in KINDS {
-        let of_kind: Vec<Descriptor> = items.iter().map(write_one).filter(|(k, _)| *k == single).map(|(_, d)| d).collect();
-        match of_kind.len() {
-            0 => {}
-            1 => d = d.with(single, Value::Descriptor(of_kind.into_iter().next().unwrap_or_default())),
-            _ if !multi.is_empty() => d = d.with(multi, Value::List(of_kind.into_iter().map(Value::Descriptor).collect())),
+        let Some(of_kind) = grouped.remove(single) else { continue };
+        if of_kind.len() > 1 && !multi.is_empty() {
+            d = d.with(multi, Value::List(of_kind));
+        } else if let Some(first) = of_kind.into_iter().next() {
             // Kinds without a multi key keep only the first instance.
-            _ => d = d.with(single, Value::Descriptor(of_kind.into_iter().next().unwrap_or_default())),
+            d = d.with(single, first);
         }
     }
     let mut out = 0u32.to_be_bytes().to_vec();
@@ -746,6 +760,35 @@ mod tests {
         // Kind order is canonical: shadows first ... strokes last.
         assert!(matches!(back[0], Effect::DropShadow(_)));
         assert!(matches!(back.last().unwrap(), Effect::Stroke(_)));
+    }
+
+    #[test]
+    fn lfx2_uses_photoshops_signed_directions_and_integral_stroke_widths() {
+        let mut fx = sample_effects();
+        let mut widths = [1.56, 2.6].into_iter();
+        for effect in &mut fx {
+            match effect {
+                Effect::DropShadow(shadow) | Effect::InnerShadow(shadow) => shadow.angle = 225.0,
+                Effect::GradientOverlay { gradient, .. } => gradient.angle = 270.0,
+                Effect::Stroke(stroke) => stroke.size = widths.next().unwrap(),
+                Effect::OuterGlow(glow) => glow.common.opacity = 0.117,
+                _ => {}
+            }
+        }
+        let (_, decoded) = parse_lfx2(&write_lfx2(true, &fx)).unwrap();
+        let widths: Vec<_> = decoded.iter().filter_map(|effect| match effect {
+            Effect::Stroke(stroke) => Some(stroke.size),
+            _ => None,
+        }).collect();
+        assert_eq!(widths, [2.0, 3.0]);
+        for effect in decoded {
+            match effect {
+                Effect::DropShadow(shadow) | Effect::InnerShadow(shadow) => assert_eq!(shadow.angle, -135.0),
+                Effect::GradientOverlay { gradient, .. } => assert_eq!(gradient.angle, -90.0),
+                Effect::OuterGlow(glow) => assert_eq!(glow.common.opacity, 0.12),
+                _ => {}
+            }
+        }
     }
 
     #[test]
