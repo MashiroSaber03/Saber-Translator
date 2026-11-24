@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 from PIL import Image, ImageDraw
 
 from src.backend_v2.editing.native import NativeEditor
-from src.backend_v2.editing.style_reference import native_angle, refine_reference_style
+from src.backend_v2.editing.style_reference import MAX_STYLE_EFFECTS, native_angle, refine_reference_style
 from src.backend_v2.font_matching.images import png, read_reference
 from src.backend_v2.rendering.fonts import resolve_font_paths
 from src.backend_v2.storage.database import read_transaction
@@ -61,8 +61,8 @@ def validate_style_recipe(recipe: object) -> dict:
     if not isinstance(recipe, dict) or set(recipe) != {"fillOpacity", "effects"}:
         raise ValueError("参考图样式必须包含填充透明度和特效")
     effects = recipe["effects"]
-    if not isinstance(effects, list) or not 1 <= len(effects) <= 8:
-        raise ValueError("参考图样式须包含 1–8 项特效")
+    if not isinstance(effects, list) or not 1 <= len(effects) <= MAX_STYLE_EFFECTS:
+        raise ValueError(f"参考图样式须包含 1–{MAX_STYLE_EFFECTS} 项特效")
     normalized = []
     for effect in effects:
         if not isinstance(effect, dict) or set(effect) != {"kind", "params"}:
